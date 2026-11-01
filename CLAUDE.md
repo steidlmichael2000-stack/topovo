@@ -400,6 +400,15 @@ durchgeklickt. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfe
   (`radarPosZuVersatz`). Abspielen steht, solange ein Satz lädt (`radarSatzFertig`), auch nach dem Zoomen.
 - Gleisweg und Streckenlinie werden nicht mehr gezeichnet (`zeichneGleiswegNeu` räumt nur noch weg).
 
+## Service Worker: nichts vor dem Ausliefern abwarten (November 2026)
+
+Kacheln und Dateien gehen sofort an die Seite; abgelegt wird nebenher (`nebenbeiAblegen`,
+`event.waitUntil`, mit `res.clone()` vor dem Ausliefern). Aufgeräumt wird höchstens alle 20 s je Vorrat
+(`trimSelten`). Vorher wartete jede Kachel auf `cache.put` plus `cache.keys()` über 600 Einträge —
+gemessen 0,8–1,8 s statt 0,3–0,45 s je neuer Ansicht, in Firefox schlimmer („hängt, dann auf einmal da“).
+`vendor/` kommt „erst Cache“ (MapLibre 1,1 MB wurde vorher bei jedem Start neu geholt), Stil und
+`/planet` von OpenFreeMap aus dem Vorrat und nebenher erneuert (`vorratDannNetz`).
+
 ## Beim Deployen
 
 `VERSION` in `sw.js` hochzählen. Der Worker arbeitet zwar „erst Netz, dann

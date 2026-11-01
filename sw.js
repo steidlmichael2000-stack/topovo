@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v78';
+const VERSION = 'v79';
 const SHELL = `trackpilot-shell-${VERSION}`;
 const TILES = `trackpilot-tiles-${VERSION}`;
 const DATA = `trackpilot-data-${VERSION}`;
@@ -66,6 +66,21 @@ self.addEventListener('activate', event => {
   })());
 });
 
+/* Aufräumen höchstens alle TRIM_PAUSE_MS je Vorrat: cache.keys() über 600
+ * Einträge kostet in Firefox spürbar, und bis November 2026 lief es nach jeder
+ * einzelnen Kachel — bei 30 Kacheln zugleich stand die Karte, bis alle durch
+ * waren, und erschien dann auf einmal. Der Vorrat darf dazwischen ein paar
+ * Einträge über max liegen. */
+const TRIM_PAUSE_MS = 20000;
+const trimZuletzt = new Map();
+
+async function trimSelten(cacheName, max) {
+  const jetzt = Date.now();
+  if (jetzt - (trimZuletzt.get(cacheName) || 0) < TRIM_PAUSE_MS) return;
+  trimZuletzt.set(cacheName, jetzt);
+  await trim(cacheName, max);
+}
+
 async function trim(cacheName, max) {
   const cache = await caches.open(cacheName);
   const keys = await cache.keys();
@@ -91,6 +106,8 @@ async function cacheLesen(cacheName, request) {
   catch { return undefined; }
 }
 
+/** response muss eine eigene Kopie sein (clone() vor dem Ausliefern): Das
+ *  Ablegen läuft nebenher, während die Seite das Original schon liest. */
 async function cacheSchreiben(cacheName, request, response, max) {
   /* Nur echte, vollständige Treffer ablegen. Undurchsichtige Antworten (opaque)
    * haben ok = false und bleiben draußen: Sie können eine 429- oder 5xx-Seite
@@ -98,12 +115,19 @@ async function cacheSchreiben(cacheName, request, response, max) {
   if (!response || !response.ok || response.status === 206) return;
   try {
     const cache = await caches.open(cacheName);
-    await cache.put(request, response.clone());
-    if (max) await trim(cacheName, max);
+    await cache.put(request, response);
+    if (max) await trimSelten(cacheName, max);
   } catch { /* Die Netzantwort bleibt auch bei vollem Speicher nutzbar. */ }
 }
 
-async function networkFirst(request, cacheName, frisch, max) {
+/* Abgelegt wird nebenher (event.waitUntil), nicht vor dem Ausliefern: Die
+ * Karte bekommt jede Kachel, sobald sie da ist, statt erst nach dem Schreiben. */
+function nebenbeiAblegen(event, cacheName, request, res, max) {
+  if (!res || !res.ok || res.status === 206) return;
+  event.waitUntil(cacheSchreiben(cacheName, request, res.clone(), max));
+}
+
+async function networkFirst(event, request, cacheName, frisch, max) {
   let res, fehler;
   const abbruch = new AbortController();
   const wecker = setTimeout(() => abbruch.abort(), NETZ_GEDULD_MS);
@@ -123,7 +147,7 @@ async function networkFirst(request, cacheName, frisch, max) {
   }
 
   if (res && res.ok) {
-    await cacheSchreiben(cacheName, request, res, max);
+    nebenbeiAblegen(event, cacheName, request, res, max);
     return res;
   }
   /* Ohne Antwort oder bei einem Serverfehler (5xx) hilft der Vorrat. Ein 404
@@ -140,13 +164,21 @@ async function networkFirst(request, cacheName, frisch, max) {
   throw fehler;
 }
 
-async function cacheFirst(request, cacheName, max) {
+async function cacheFirst(event, request, cacheName, max) {
   const hit = await cacheLesen(cacheName, request);
   if (hit) return hit;
   // Scheitert das Ablegen, kostet das die Kachel nicht — und keinen zweiten Abruf
   const res = await fetch(request);
-  await cacheSchreiben(cacheName, request, res, max);
+  nebenbeiAblegen(event, cacheName, request, res, max);
   return res;
+}
+
+/** Aus dem Vorrat sofort, und nebenher frisch geholt für das nächste Mal. */
+async function vorratDannNetz(event, request, cacheName, max) {
+  const hit = await cacheLesen(cacheName, request);
+  const frisch = fetch(request).then(res => { nebenbeiAblegen(event, cacheName, request, res, max); return res; });
+  if (hit) { event.waitUntil(frisch.catch(() => {})); return hit; }
+  return frisch;
 }
 
 self.addEventListener('fetch', event => {
@@ -163,25 +195,33 @@ self.addEventListener('fetch', event => {
     /* Die Nachbar-Apps teilen die Herkunft, nicht diesen Vorrat: Was außerhalb
      * von /trackpilot/ liegt, reicht der Worker unverändert durch. */
     if (!url.pathname.startsWith(new URL(self.registration.scope).pathname)) return;
+    /* vendor/: fremde Bibliotheken (Leaflet, MapLibre 1,1 MB), die sich nur mit
+     * einer neuen VERSION ändern — "erst Cache". Vorher holte jeder Start
+     * MapLibre komplett neu, am HTTP-Cache vorbei. */
     event.respondWith(url.pathname.includes('/netz/')
-      ? cacheFirst(request, NETZ, MAX_NETZ)
+      ? cacheFirst(event, request, NETZ, MAX_NETZ)
       : url.pathname.includes('/infrago/')
-      ? cacheFirst(request, IFG, MAX_IFG)
-      : networkFirst(request, SHELL, true));
+      ? cacheFirst(event, request, IFG, MAX_IFG)
+      : url.pathname.includes('/vendor/')
+      ? cacheFirst(event, request, SHELL)
+      : networkFirst(event, request, SHELL, true));
   } else if (url.hostname === 'tiles.openfreemap.org') {
     /* Die dunkle Karte. Stil (/styles/dark) und Kachelbeschreibung (/planet)
      * haben feste Adressen, zeigen aber jede Woche auf einen neuen Datenstand
      * (/planet/20260927_080001_pt/…). Aus dem Cache zuerst hielte ein Gerät den
-     * alten Verweis fest, bis die Kacheln dahinter gelöscht sind — deshalb diese
-     * beiden "erst Netz". Kacheln, Schriften und Symbole liegen unter
-     * versionierten Pfaden und ändern sich nie: "erst Cache". */
+     * alten Verweis fest, bis die Kacheln dahinter gelöscht sind — deshalb werden
+     * beide bei jedem Abruf nebenher erneuert; ausgeliefert wird aber sofort der
+     * Vorrat (Stand eine Woche alt: dessen Kacheln gab es am 01.11.2026 noch),
+     * statt bei jedem Start auf zwei Netzabrufe nacheinander zu warten.
+     * Kacheln, Schriften und Symbole liegen unter versionierten Pfaden und
+     * ändern sich nie: "erst Cache". */
     const beschreibung = url.pathname.startsWith('/styles/') || url.pathname === '/planet';
     event.respondWith(beschreibung
-      ? networkFirst(request, DATA, false, MAX_DATA)
-      : cacheFirst(request, TILES, MAX_TILES));
+      ? vorratDannNetz(event, request, DATA, MAX_DATA)
+      : cacheFirst(event, request, TILES, MAX_TILES));
   } else if (TILE_HOSTS.some(h => url.hostname === h || url.hostname.endsWith('.' + h))) {
-    event.respondWith(cacheFirst(request, TILES, MAX_TILES));
+    event.respondWith(cacheFirst(event, request, TILES, MAX_TILES));
   } else if (url.hostname === 'api.openrailwaymap.org') {
-    event.respondWith(networkFirst(request, DATA, false, MAX_DATA));
+    event.respondWith(networkFirst(event, request, DATA, false, MAX_DATA));
   }
 });

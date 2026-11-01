@@ -27,30 +27,33 @@ function worker({ fetcher = async () => new Response('neu'), cache = {}, openFai
   return { context, events };
 }
 const request = new Request('https://example.org/trackpilot/app.js');
+// Das Ablegen läuft nebenher über event.waitUntil — hier gesammelt, damit Fehler darin auffallen würden
+const nebenher = [];
+const ev = { waitUntil: p => nebenher.push(p) };
 test('Netzantwort bleibt bei vollem Cache erhalten', async () => {
   const {context:c} = worker({cache:{put:async()=>{throw new Error('QuotaExceededError');}}});
-  assert.equal(await (await c.networkFirst(request,'shell',true)).text(),'neu');
+  assert.equal(await (await c.networkFirst(ev,request,'shell',true)).text(),'neu');
 });
 test('Gesperrter Cache blockiert weder Shell noch Karten', async () => {
   const {context:c} = worker({openFails:true});
-  assert.equal(await (await c.networkFirst(request,'shell',true)).text(),'neu');
-  assert.equal(await (await c.cacheFirst(request,'tiles',10)).text(),'neu');
+  assert.equal(await (await c.networkFirst(ev,request,'shell',true)).text(),'neu');
+  assert.equal(await (await c.cacheFirst(ev,request,'tiles',10)).text(),'neu');
 });
 test('Offline wird die gespeicherte Antwort geliefert', async () => {
   const {context:c}=worker({fetcher:async()=>{throw new Error('offline');},cache:{match:async()=>new Response('offlinebestand')}});
-  assert.equal(await (await c.networkFirst(request,'shell',true)).text(),'offlinebestand');
+  assert.equal(await (await c.networkFirst(ev,request,'shell',true)).text(),'offlinebestand');
 });
 test('HTTP 503 fällt auf Cache zurück, HTTP 404 bleibt sichtbar', async () => {
   for(const status of [503,404]) {
     const {context:c}=worker({fetcher:async()=>new Response('fehler',{status}),cache:{match:async()=>new Response('bestand')}});
-    const response=await c.networkFirst(request,'shell',true);
+    const response=await c.networkFirst(ev,request,'shell',true);
     assert.equal(await response.text(),status===503?'bestand':'fehler');
   }
 });
 test('Kacheln verursachen bei Speicherfehlern keine zweite Netzabfrage', async () => {
   let calls=0;
   const {context:c}=worker({fetcher:async()=>{calls++;return new Response('kachel');},cache:{put:async()=>{throw new Error('voll');}}});
-  assert.equal(await (await c.cacheFirst(request,'tiles',10)).text(),'kachel');assert.equal(calls,1);
+  assert.equal(await (await c.cacheFirst(ev,request,'tiles',10)).text(),'kachel');assert.equal(calls,1);
 });
 test('Teilantworten werden nicht in Cache Storage geschrieben', async () => {
   let writes=0;const {context:c}=worker({cache:{put:async()=>writes++}});
@@ -62,9 +65,9 @@ test('InfraGO-Strecken kommen aus dem eigenen Vorrat zuerst, ohne zweite Netzabf
     cache:{match:async()=>calls?new Response('{"g":[]}'):undefined}});
   const open=c.caches.open;c.caches.open=async n=>{geoeffnet.push(n);return open(n);};
   let antwort;
-  events.fetch({request:new Request('https://example.org/trackpilot/infrago/s/5100.json'),respondWith:p=>antwort=p});
+  events.fetch({request:new Request('https://example.org/trackpilot/infrago/s/5100.json'),respondWith:p=>antwort=p,waitUntil:p=>nebenher.push(p)});
   assert.equal(await (await antwort).text(),'{"g":[]}');
-  events.fetch({request:new Request('https://example.org/trackpilot/infrago/s/5100.json'),respondWith:p=>antwort=p});
+  events.fetch({request:new Request('https://example.org/trackpilot/infrago/s/5100.json'),respondWith:p=>antwort=p,waitUntil:p=>nebenher.push(p)});
   await antwort;
   assert.equal(calls,1);
   assert.ok(geoeffnet.every(n=>n.startsWith('trackpilot-infrago-')),geoeffnet.join());
