@@ -1,7 +1,7 @@
 {
-  "name": "Topovo — Streckenkilometer verorten",
+  "name": "Topovo",
   "short_name": "Topovo",
-  "description": "Streckennummer und Kilometer eingeben, Position auf der Karte sehen und in Google Maps öffnen.",
+  "description": "Kartenwerkzeug für den Außendienst: Streckenkilometer verorten, Gelände- und Querprofile mit PDF, Messen, Abstecken, KML-Dateien, amtliche Luftbilder und Regenradar.",
   "lang": "de",
   "id": "/topovo/",
   "start_url": ".",
