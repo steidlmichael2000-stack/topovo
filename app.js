@@ -3086,7 +3086,6 @@ function setBase(which, still = false) {
   applyBaseOpacity();
   ordneAuflagen();
   radarZeichnen();      // die Konturen des Radars hängen am Grund (RADAR_LINIE_TON)
-  radarLegende();       // die Legende auch
   ifgAuflageZeichnen(); // die Linien des DB-Netzes auch
   if (msLayer) drawMilestones();    // und der Ton der hervorgehobenen Strecke (ifgZeichnen)
   saveStore();
@@ -4231,28 +4230,14 @@ function radarLeisteWerte() {
   text.classList.toggle('laedt', laedt);
 }
 
-/* Die Legende zeigt die Stufen so, wie sie auf der Karte liegen: Fläche zu
- * RADAR_FLAECHE auf dem ungefähren Ton der gewählten Grundkarte, oben die
- * Stufenlinie im Ton des Shaders. Bis November 2026 standen dort die vollen
- * Farben — kräftiger als alles auf der Karte. Ein eigener Grund je Feld statt
- * Durchscheinen auf dem dunklen Glas: Dort wurden die Stufen trüb. */
-const RADAR_LEGENDE_GRUND = { osm: '#f2efe9', relief: '#e4e4e2', sat: '#2f3a2c', dop: '#3a4334', dark: '#1b1d22' };
-
 function radarLegende() {
   const box = $('#radarLegende');
   if (!box) return;
   const n = RADAR_STUFEN.length;
-  const grund = hexRgb(RADAR_LEGENDE_GRUND[prefs.base] || RADAR_LEGENDE_GRUND.osm);
-  const ton = RADAR_GRUND_DUNKEL.has(prefs.base) ? 1 : RADAR_LINIE_TON;
-  const rgb = a => `rgb(${a.map(Math.round).join(',')})`;
-  const feld = f => {
-    const c = hexRgb(f);
-    return `--flaeche:${rgb(c.map((v, i) => v * RADAR_FLAECHE + grund[i] * (1 - RADAR_FLAECHE)))};--linie:${rgb(c.map(v => v * ton))}`;
-  };
   // Beschriftet nur jede zweite bis dritte Stufe, linksbündig an ihrem Anfang: „ab 0,1"
   const zeigen = new Set([0.1, 1, 5, 15, 45, 150]);
   box.innerHTML = `<div class="radar-skala">` +
-    `<div class="radar-stufen">${RADAR_STUFEN.map(([f]) => `<i style="${feld(f)}"></i>`).join('')}</div>` +
+    `<div class="radar-stufen">${RADAR_STUFEN.map(([f]) => `<i style="--f:${f}"></i>`).join('')}</div>` +
     `<div class="radar-werte">${RADAR_STUFEN.map(([, v], i) => zeigen.has(v)
       ? `<span style="left:${(i / n * 100).toFixed(3)}%">${String(v).replace('.', ',')}</span>` : '').join('')}</div>` +
     `</div><span class="radar-einheit">mm/h</span>`;

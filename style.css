@@ -591,16 +591,16 @@ body {
   width: 100%; height: 22px; margin: 0;
   -webkit-appearance: none; appearance: none; cursor: pointer; background: none;
 }
-/* Eine durchgehende Spur in drei Tönen statt Strich, Strichel und Punkten (die
-   wirkten zerrissen, Nov. 2026): Messung neutral, Radarvorhersage in --warn wie
-   „Vorhersage“ in der Uhr, das Modell blasser. Ein Verlauf mit harten Stufen,
+/* Eine durchgehende Spur in drei Helligkeiten statt Strich, Strichel und Punkten
+   (die wirkten zerrissen, Nov. 2026): Messung kräftig, Radarvorhersage mittel,
+   Modell blass. Orange als Spurfarbe hat der Nutzer abgelehnt. Ein Verlauf mit harten Stufen,
    nicht drei Hintergründe: background-position rechnet Prozente vom Rest
    (Fläche − Bild), die Teile saßen dadurch versetzt und ließen eine Lücke. */
 .radar-zeit {
   --spur: linear-gradient(90deg,
-    var(--muted-2) 0 var(--jetzt),
-    var(--warn) var(--jetzt) var(--modell),
-    color-mix(in srgb, var(--warn) 40%, transparent) var(--modell) 100%);
+    color-mix(in srgb, var(--text) 60%, transparent) 0 var(--jetzt),
+    color-mix(in srgb, var(--text) 32%, transparent) var(--jetzt) var(--modell),
+    color-mix(in srgb, var(--text) 14%, transparent) var(--modell) 100%);
 }
 .radar-zeit::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--spur); }
 .radar-zeit::-moz-range-track { height: 4px; border-radius: 2px; background: var(--spur); }
@@ -627,10 +627,12 @@ body {
 /* Farbskala in mm/h — die Stufen des Dienstes, je ein gleich breites Feld */
 .radar-legende { display: flex; align-items: flex-end; gap: 6px; margin-top: 5px; }
 .radar-skala { flex: 1; min-width: 0; }
-/* Jedes Feld wie auf der Karte: Fläche 45 % auf dem Ton der Grundkarte, oben
-   die Stufenlinie (Farben aus radarLegende). Abgerundet wie die Spur darüber. */
-.radar-stufen { display: flex; height: 8px; border-radius: 2px; overflow: hidden; }
-.radar-stufen i { flex: 1; background: var(--flaeche); box-shadow: inset 0 2px 0 var(--linie); }
+/* Volle Farben, obwohl die Fläche auf der Karte nur 45 % deckt: Auf dem dunklen
+   Grund der Leiste wurden die Stufen mit 45 % trüb und kaum unterscheidbar. Eine
+   Fassung wie auf der Karte (45 % auf dem Kartenton, Linie oben) gefiel dem
+   Nutzer im November 2026 schlechter — die vollen Farben bleiben. */
+.radar-stufen { display: flex; height: 6px; }
+.radar-stufen i { flex: 1; background: var(--f); }
 .radar-werte { position: relative; height: 12px; margin-top: 2px; }
 .radar-werte span, .radar-einheit {
   font-size: .6rem; line-height: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
