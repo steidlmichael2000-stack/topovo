@@ -33,8 +33,8 @@ am Rechner und lässt sich als App auf den Startbildschirm legen.
   Man sieht also, worauf sich die Angabe stützt, und kann einen Punkt direkt antippen. Am
   gefundenen Punkt selbst steht der Kilometer
   neben dem Pin, damit er auch ohne die untere Leiste und auf einem Bildschirmfoto ablesbar ist.
-  Die beiden Linien, die die Rechnung belegen — der grüne Gleisweg und die blaue Verbindung durch
-  die Steine —, lassen sich unter *Karte* abschalten, wenn sie im Weg sind; die Steine bleiben.
+  Gleisweg und Streckenlinie (grün und blau) zeichnet die App seit November 2026 nicht mehr — sie
+  brachten im Gelände nichts; die Steine bleiben.
 - **Gemessene Genauigkeitsangabe.** Zu jedem Punkt steht dabei, wie weit er danebenliegen kann —
   nicht geschätzt, sondern an 1474 Steintripeln nachgemessen (siehe unten).
 - **Exakt auf dem Gleis.** Stehen die Steine weit auseinander, wird entlang des tatsächlichen

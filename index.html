@@ -267,6 +267,8 @@
       <div class="parz-wahl" id="fpWahl" hidden>
         <p class="pal-label">Festpunkte zeigen</p>
         <div id="fpInhalt"></div>
+        <p class="fine wahl-hinweis">Alle Arten gibt es offen nur für Baden-Württemberg. Bayern gibt nur
+        Höhenfestpunkte und TP heraus, andere Länder gar nichts.</p>
       </div>
       <!-- Farbwahl der Parzellen, zu bis zum langen Druck auf den Knopf. Die Felder
            baut die App aus PARZ_FARBEN. -->
@@ -278,11 +280,6 @@
           <button class="seg-btn" type="button" id="parzPunkteBtn">Punktraster der Nutzung</button>
         </div>
       </div>
-      <p class="pal-label">Rechenhilfen</p>
-      <div class="seg" role="group" aria-label="Rechenhilfen">
-        <button class="seg-btn" type="button" id="wegLinieBtn">Gleisweg</button>
-        <button class="seg-btn" type="button" id="steinLinieBtn">Streckenlinie</button>
-      </div>
       <label class="slider-row" for="baseOpacity">Hintergrund
         <input id="baseOpacity" type="range" min="0" max="100" step="5" value="100">
         <span id="baseOpacityVal" class="slider-val">100&thinsp;%</span>
@@ -292,17 +289,12 @@
       <button type="button" class="erkl-knopf" aria-expanded="false" aria-controls="erklKarte">Erklärung</button>
       <div class="erkl" id="erklKarte" hidden>
       <p class="fine">Ganz nach links heruntergezogen bleibt nur der Bahn- bzw. WMS-Layer stehen.</p>
-      <p class="fine"><strong>Gleisweg</strong> ist die grüne Linie: der Verlauf zwischen den beiden
-      Steinen, an dem gerechnet wurde. <strong>Streckenlinie</strong> ist die dünne blaue Linie der
-      gesuchten Strecke — die InfraGO-Linie, auf der gerechnet wird, oder die Verbindung durch die
-      Kilometersteine. Beide belegen die Rechnung und lassen sich hier abschalten, wenn sie die Karte
-      verdecken — die Kilometerpunkte selbst bleiben stehen.</p>
-      <p class="fine"><strong>DB-Netz</strong> zeigt die Infrastrukturdaten der DB InfraGO: Strecken mit
-      Nummer, Kilometer, Betriebsstellen, Bahnübergänge, Brücken und Tunnel. <strong>Lange drücken oder
+      <p class="fine"><strong>DB-Netz</strong> zeigt Anlagen aus den Infrastrukturdaten der DB InfraGO:
+      Bahnübergänge als Andreaskreuz, Brücken mit Geländern, Tunnel gestrichelt mit Portalen an den
+      Mundlöchern, Betriebsstellen als Quadrat mit Kürzel. <strong>Lange drücken oder
       Rechtsklick</strong> auf den Knopf öffnet die Auswahl, was davon gezeigt wird. Jedes erst ab seiner
-      Zoomstufe — Strecken ab 10, Betriebsstellen und Tunnel ab 12, Bahnübergänge ab 14, Kilometer und
-      Brücken ab 15. Ein Tipp auf einen Bahnübergang, eine Brücke, einen Tunnel, einen Kilometer oder
-      eine Betriebsstelle macht daraus ein Ergebnis mit Strecke und Kilometer. Ohne Netz, sobald die
+      Zoomstufe — Betriebsstellen und Tunnel ab 12, Brücken ab 13, Bahnübergänge ab 14. Ein Tipp auf
+      eine Anlage macht daraus ein Ergebnis mit Strecke und Kilometer. Ohne Netz, sobald die
       Gegend einmal geladen war.</p>
       <p class="fine"><strong>Festpunkte</strong> zeigt in Baden-Württemberg Höhenfestpunkte,
       trigonometrische Punkte, Aufnahme- und Polygonpunkte, auf Wunsch auch Sicherungs- und

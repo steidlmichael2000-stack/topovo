@@ -1413,10 +1413,9 @@ function projectOnPath(path, lat, lon) {
   return best;
 }
 
-/** Den gefundenen Verlauf über die Karte legen — er belegt, worauf gerechnet wurde.
- *
- * Wer ihn nicht sehen will, schaltet ihn im Menü ab; der Weg bleibt dann trotzdem
- * gemerkt, damit der Schalter ihn ohne neue Rechnung zurückholt. */
+/** Der gefundene Verlauf wird gemerkt, aber nicht mehr gezeichnet: Die grüne
+ *  Linie (und die blaue durch die Steine) brachten dem Nutzer nichts und waren
+ *  bis November 2026 unter „Rechenhilfen" abschaltbar — jetzt immer aus. */
 let gleiswegZuletzt = null;
 
 function zeichneGleisweg(path) {
@@ -1427,8 +1426,6 @@ function zeichneGleisweg(path) {
 function zeichneGleiswegNeu() {
   if (!trackLayer) return;
   trackLayer.clearLayers();
-  if (!gleiswegZuletzt || prefs.wegLinie === false) return;
-  L.polyline(gleiswegZuletzt, { color: '#22c55e', weight: 4, opacity: 0.9, interactive: false }).addTo(trackLayer);
 }
 
 /* Der Gleisweg zwischen zwei Steinen — beide Richtungen brauchen genau das:
@@ -1861,6 +1858,7 @@ const view = {
   ref: '',        // aktuell geladene Strecke
   km: null,
   point: null,    // {lat, lon, quality, …}
+  hervor: false,  // Strecke ohne Kilometer gesucht: Linie kräftig in der Signalfarbe (ifgZeichnen)
   busy: false
 };
 
@@ -1886,7 +1884,6 @@ const PALETTEN = {
 
 let prefs = {
   theme: 'auto', palette: 'lapis', base: 'osm', orm: true, baseOpacity: 100,
-  wegLinie: true, steinLinie: true,      // die beiden Rechenhilfen auf der Karte
   abSort: 'nah',                         // Abstecken: Punktliste nach Entfernung, Name oder Datei
   abKompass: false,                      // Abstecken: Pfeil nach dem Handy statt nach der Karte
   parzFarbe: 'auto',                     // 'auto' (nach Grundkarte) oder '#rrggbb'
@@ -3115,6 +3112,7 @@ function applyBaseOpacity() {
  * OSM-Karte stecken sie schon drin: Dort bleiben sie eingeschaltet, werden aber
  * nicht gezeichnet, und beim Wechsel erscheinen sie. */
 const NUR_UEBER_BILD = new Set(['str', 'ort']);
+let fpBayernGesagt = false;     // Hinweis „in Bayern nur HFP und TP“ einmal je Sitzung
 const AUFLAGEN = ['orm', 'parz', 'ifg', 'fp', 'str', 'ort', 'radar'];
 
 /** Ist die Auflage gewählt? Der Bahn-Layer ist von Haus aus an, die übrigen aus. */
@@ -3143,13 +3141,18 @@ function toggleOverlay(kennung) {
     if (ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng)) toast('Flurstücke gibt es für Bayern und Baden-Württemberg.');
     else if (map.getZoom() < 17) toast('Parzellen zeichnet der Dienst erst ab Zoomstufe 17 (1:5000).');
   }
-  if (an && kennung === 'ifg' && map.getZoom() < IFG_AB_ZOOM.strecken) {
-    toast(`Das DB-Netz erscheint ab Zoomstufe ${IFG_AB_ZOOM.strecken} — näher heranzoomen.`);
+  if (an && kennung === 'ifg' && map.getZoom() < IFG_AB) {
+    toast(`Das DB-Netz erscheint ab Zoomstufe ${IFG_AB} — näher heranzoomen.`);
   }
   if (an && kennung === 'fp') {
     const c = map.getCenter(), ab = Math.min(...FP_ARTEN.filter(([k]) => fpArtAn(k)).map(([, , , z]) => z), 99);
+    const bayern = !ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng);
+    // Einmal je Sitzung: Wer in Bayern Aufnahme- oder Grenzpunkte erwartet, sieht sonst einfach keine
+    const byHinweis = bayern && !fpBayernGesagt ? ' In Bayern gibt es nur Höhenfestpunkte und TP.' : '';
+    if (bayern) fpBayernGesagt = true;
     if (ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng)) toast('Festpunkte gibt es für Bayern und Baden-Württemberg.');
-    else if (map.getZoom() < ab) toast(`Festpunkte erscheinen ab Zoomstufe ${ab} — näher heranzoomen.`);
+    else if (map.getZoom() < ab) toast(`Festpunkte erscheinen ab Zoomstufe ${ab} — näher heranzoomen.${byHinweis}`);
+    else if (byHinweis) toast(byHinweis.trim());
   }
   if (an && NUR_UEBER_BILD.has(kennung) && (prefs.base || 'osm') === 'osm') {
     toast('In der Karte schon enthalten — erscheint über Dunkel, Luftbild, DOP20 und Relief.');
@@ -3389,6 +3392,7 @@ const RADAR_FRISCH = 5 * 60000;
 const RADAR_RASTER = 400;      // Zellen je Richtung höchstens
 const RADAR_ZELLE = 1464;      // Mercator-Meter je Zelle in voller Auflösung (im Süden; im Norden mehr)
 const RADAR_BEREICH_MIN = 250000;   // Mercator-Meter: kleiner wird kein Ausschnitt geholt
+const RADAR_VERSUCHE = 6;     // je Bild: Der DWD antwortet zeitweise jedes dritte Mal mit einem XML-Fehler
 const RADAR_GLEICHZEITIG = 3;  // Abrufe zugleich — der Dienst spricht nur HTTP/1.1
 const RADAR_GEBIET = [[45.68, 1.47], [56.21, 18.73]];   // Abdeckung laut DescribeCoverage
 
@@ -3729,7 +3733,7 @@ function radarLaden() {
   if (!satz || radarRef == null) return;
   const jetzt = radarRef + radarVersatz * 60000;
   const fehlt = radarZeiten()
-    .filter(t => !satz.bilder.has(t) && !satz.offen.has(t) && (satz.fehler.get(t) || 0) < 3)
+    .filter(t => !satz.bilder.has(t) && !satz.offen.has(t) && (satz.fehler.get(t) || 0) < RADAR_VERSUCHE)
     .sort((a, b) => Math.abs(a - jetzt) - Math.abs(b - jetzt));
   while (satz.offen.size < RADAR_GLEICHZEITIG && fehlt.length) radarBildHolen(satz, fehlt.shift());
 }
@@ -3769,7 +3773,8 @@ function radarBildFehlt(satz, t, err) {
   satz.offen.delete(t);
   satz.fehler.set(t, (satz.fehler.get(t) || 0) + 1);
   console.warn('Regenradar', radarIso(t), err);
-  setTimeout(radarLaden, 2000);
+  // Meist klappt die nächste Anfrage gleich (anderer Server), erst danach länger warten
+  setTimeout(radarLaden, satz.fehler.get(t) < 3 ? 400 : 2000);
   radarLeisteWerte();
 }
 
@@ -3869,13 +3874,28 @@ function radarZeichnenJetzt() {
 }
 
 /** Die letzte Messung beim Dienst erfragen. Liefert true, wenn sie neu ist. */
+/* Hinter maps.dwd.de steht (gemessen 01.11.2026) ein Server, der am 28.10.
+ * stehen geblieben ist und etwa jede zweite Anfrage beantwortet: Seine letzte
+ * Messung ist Tage alt, Bilder dazu gibt es nirgends mehr. Übernahm die App
+ * diesen Stand, scheiterten alle Bilder („nicht erreichbar"), oder der Stand
+ * sprang bei jeder Nachfrage hin und her und alles lud neu. Deshalb gilt nur
+ * eine Messung, die höchstens RADAR_REF_ALT alt ist und nicht hinter die
+ * bisherige zurückfällt — sonst gleich noch einmal fragen. */
+const RADAR_REF_ALT = 30 * 60000;
+const RADAR_REF_VERSUCHE = 6;
+
 async function radarRefHolen() {
   try {
-    const r = await fetch(RADAR_CAPS, { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const m = /name="REFERENCE_TIME"[^>]*default="([^"]+)"/.exec(await r.text());
-    const t = m && Date.parse(m[1]);
-    if (!t) throw new Error('keine Zeitangabe');
+    let t = 0;
+    for (let i = 0; i < RADAR_REF_VERSUCHE && !t; i++) {
+      const r = await fetch(RADAR_CAPS, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const m = /name="REFERENCE_TIME"[^>]*default="([^"]+)"/.exec(await r.text());
+      const kandidat = m && Date.parse(m[1]);
+      if (!kandidat) throw new Error('keine Zeitangabe');
+      if (Date.now() - kandidat <= RADAR_REF_ALT && (radarRef == null || kandidat >= radarRef)) t = kandidat;
+    }
+    if (!t) throw new Error('nur veraltete Zeitachse vom Dienst');
     radarRefGeholt = Date.now();
     const neu = t !== radarRef;
     /* Rückt die letzte Messung weiter, bleibt ein gewählter Zeitpunkt stehen,
@@ -4021,7 +4041,7 @@ function radarLeisteWerte() {
     if (!satz) art = 'lädt …';      // noch kein Ausschnitt angefragt
     else {
       const zeiten = radarZeiten(), da = zeiten.filter(t => satz.bilder.has(t)).length;
-      const aufgegeben = zeiten.every(t => satz.bilder.has(t) || (satz.fehler.get(t) || 0) >= 3);
+      const aufgegeben = zeiten.every(t => satz.bilder.has(t) || (satz.fehler.get(t) || 0) >= RADAR_VERSUCHE);
       if (da === 0 && aufgegeben) art = 'nicht erreichbar';
       else if (da < zeiten.length && !aufgegeben) art = `lädt ${Math.round(da / zeiten.length * 100)} %`;
     }
@@ -4871,6 +4891,20 @@ function kmlGroesse(b) {
 
 let kmlOffeneKlappe = null;      // Index der Datei, deren Aussehen gerade offen steht
 
+/** Die Farben, die die Datei selbst mitbringt (Linie, Fläche, Symbol), in der
+ *  Reihenfolge des ersten Auftretens — höchstens vier, für das Farbfeld. */
+function kmlDateiFarben(a) {
+  const farben = [];
+  for (const o of a.objekte) {
+    const s = o.stil || {};
+    for (const f of [s.color, s.fillColor, s.punkt]) {
+      if (f && !farben.includes(f)) farben.push(f);
+      if (farben.length >= 4) return farben;
+    }
+  }
+  return farben;
+}
+
 function kmlListe() {
   const box = $('#kmlList');
   if (!box) return;
@@ -4888,10 +4922,17 @@ function kmlListe() {
     const werte = kmlWerteMit(a, a.autoFeld);
     const labelFelder = a.labelFelder || ['name'];
     const zeigeSymbol = form === 'auto' ? (a.autoFeld ? 'auto' : 'kreis') : form;
+    /* Bringt die Datei eigene Farben mit, kann man zu ihnen zurück — „wie in der
+     * Datei" ist dann gewählt, solange keine eigene Farbe gesetzt ist. */
+    const dateiFarben = kmlDateiFarben(a);
+    const ausDatei = dateiFarben.length && !a.farbeFest;
+    const zeigeFarbe = ausDatei ? dateiFarben[0] : a.farbe;
+    const quelleFeld = dateiFarben.length === 1 ? dateiFarben[0]
+      : `conic-gradient(${dateiFarben.map((c, k) => `${c} ${k / dateiFarben.length * 360}deg ${(k + 1) / dateiFarben.length * 360}deg`).join(', ')})`;
     return `<div class="kml-zeile">
       <div class="kml-item">
         <button class="kml-dot" type="button" data-kstil="${i}" aria-label="Farbe und Symbol von ${esc(a.name)}">
-          ${kmlSymbolSvg(zeigeSymbol, esc(a.farbe), true)}
+          ${kmlSymbolSvg(zeigeSymbol, esc(zeigeFarbe), true)}
         </button>
         <button class="kml-tog${a.sichtbar ? ' is-on' : ''}" type="button" data-ktog="${i}"
                 aria-pressed="${a.sichtbar ? 'true' : 'false'}">
@@ -4910,8 +4951,11 @@ function kmlListe() {
           <button class="kml-zu" type="button" data-kzu="${i}">Fertig</button>
         </div>
         <p class="kml-lab">Farbe</p>
-        <div class="kml-wahl">${KML_FARBEN.map(c =>
-          `<button class="kml-farbe${c === a.farbe ? ' is-on' : ''}" type="button" data-kfarbe="${i}"
+        <div class="kml-wahl">${dateiFarben.length ? `
+          <button class="kml-form kml-auto kml-quelle${ausDatei ? ' is-on' : ''}" type="button" data-kfarbe="${i}"
+                  data-wert="quelle" title="Die Farben, die in der Datei stehen"><span style="background:${quelleFeld}"></span>wie Datei</button>` : ''}
+          ${KML_FARBEN.map(c =>
+          `<button class="kml-farbe${c === a.farbe && !ausDatei ? ' is-on' : ''}" type="button" data-kfarbe="${i}"
                    data-wert="${c}" style="background:${c}" aria-label="Farbe ${c}"></button>`).join('')}</div>
 
         <p class="kml-lab">Symbol</p>
@@ -4920,7 +4964,7 @@ function kmlListe() {
               data-kform="${i}" data-wert="auto">automatisch</button>` : ''}
           ${Object.entries(KML_FORMEN).map(([k, f]) =>
             `<button class="kml-form${k === form ? ' is-on' : ''}" type="button" data-kform="${i}"
-                     data-wert="${k}" aria-label="${f.name}" title="${f.name}">${kmlSymbolSvg(k, esc(a.farbe), true)}</button>`).join('')}
+                     data-wert="${k}" aria-label="${f.name}" title="${f.name}">${kmlSymbolSvg(k, esc(zeigeFarbe), true)}</button>`).join('')}
         </div>
         ${felder.length ? `
         <p class="kml-lab">Merkmal</p>
@@ -4929,7 +4973,7 @@ function kmlListe() {
                    data-wert="${esc(f.key)}">${esc(f.key)} <small>${f.werte}</small></button>`).join('')}</div>` : ''}
         ${form === 'auto' && autoKarte ? `
         <div class="kml-legende">${[...autoKarte].map(([wert, k]) =>
-          `<span>${kmlSymbolSvg(k, esc(a.farbe), false)}${esc(wert)}</span>`).join('')}</div>` : ''}
+          `<span>${kmlSymbolSvg(k, esc(zeigeFarbe), false)}${esc(wert)}</span>`).join('')}</div>` : ''}
         ${werte.length > 1 ? `
         <p class="kml-lab">Sichtbar</p>
         <div class="kml-wahl">${werte.slice(0, 14).map(w =>
@@ -4982,7 +5026,8 @@ function kmlListe() {
   };
 
   box.querySelectorAll('[data-kfarbe]').forEach(btn => btn.addEventListener('click', () =>
-    stilGesetzt(Number(btn.dataset.kfarbe), { farbe: btn.dataset.wert, farbeFest: true })));
+    stilGesetzt(Number(btn.dataset.kfarbe), btn.dataset.wert === 'quelle'
+      ? { farbeFest: false } : { farbe: btn.dataset.wert, farbeFest: true })));
   box.querySelectorAll('[data-kform]').forEach(btn => btn.addEventListener('click', () => {
     const i = Number(btn.dataset.kform), a = kmlAkten[i];
     const wahl = btn.dataset.wert;
@@ -5155,7 +5200,7 @@ function ifgZeichnen() {
    * Der Ton richtet sich nach der Karte, nicht nach der Oberfläche: auf hellem
    * Grund (Karte, Relief) der dunkle Ton der Palette mit weißem Rand, auf dunkler
    * Karte und Luftbild der helle mit schwarzem. */
-  const hervor = !view.point && !reihe.length;
+  const hervor = view.hervor && !view.point && !reihe.length;
   if (hervor) {
     const linien = st.abschnitte.map(g => g.pts.map(p => [p.lat, p.lon]));
     const dunkel = ['dark', 'sat', 'dop'].includes(prefs.base);
@@ -5170,15 +5215,6 @@ function ifgZeichnen() {
 
   const b = map.getBounds().pad(0.3);
   const [s, w, n, o] = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
-  if (prefs.steinLinie !== false && !hervor) {
-    const linien = st.abschnitte
-      .filter(g => !(g.bb[0] > n || g.bb[2] < s || g.bb[1] > o || g.bb[3] < w))
-      .map(g => g.pts.map(p => [p.lat, p.lon]));
-    if (linien.length) {
-      L.polyline(linien, { color: '#4b93e6', weight: 3, opacity: 0.45, interactive: false, attribution: IFG_QUELLE })
-        .addTo(msLayer);
-    }
-  }
 
   /* Beschriftet wie bisher die Steine (labelStep); dazwischen kleine Punkte je
    * Hektometer, solange es nicht zu dicht wird. */
@@ -5209,15 +5245,18 @@ function ifgZeichnen() {
 
 /* ============================ Auflage DB-Netz (InfraGO) ============================ */
 
-/* Das ganze InfraGO-Netz im Ausschnitt, nicht nur die gesuchte Strecke. Was sie
- * zeigt, wählt man einzeln (prefs.ifgInhalt) — lange drücken oder Rechtsklick
- * auf den Knopf DB-Netz, wie die Farbe bei den Parzellen. Jede Art erst ab
- * ihrer Zoomstufe: Ganz Deutschland wären 1548 Dateien, und Brücken von 14 m
- * Länge sind unter Zoom 15 keinen Bildpunkt breit. */
+/* Die Anlagen des InfraGO-Netzes im Ausschnitt. Was sie zeigt, wählt man
+ * einzeln (prefs.ifgInhalt) — lange drücken oder Rechtsklick auf den Knopf
+ * DB-Netz, wie die Farbe bei den Parzellen. Jede Art erst ab ihrer Zoomstufe:
+ * Ganz Deutschland wären 1548 Dateien.
+ * Strecken mit Nummer und Kilometer aller Strecken gab es bis November 2026
+ * auch; der Nutzer hat sie nie gebraucht (die gesuchte Strecke zeichnet
+ * ifgZeichnen, das übrige Netz der Bahn-Layer). */
 const IFG_INHALT = [
-  ['strecken', 'Strecken', 10], ['km', 'Kilometer', 15], ['bs', 'Betriebsstellen', 12],
-  ['bue', 'Bahnübergänge', 14], ['bruecken', 'Brücken', 15], ['tunnel', 'Tunnel', 12]
+  ['bue', 'Bahnübergänge', 14], ['bruecken', 'Brücken', 13], ['tunnel', 'Tunnel', 12],
+  ['bs', 'Betriebsstellen', 12]
 ];
+const IFG_AB = Math.min(...IFG_INHALT.map(([, , z]) => z));
 const IFG_AB_ZOOM = Object.fromEntries(IFG_INHALT.map(([k, , z]) => [k, z]));
 const ifgInhaltAn = k => !prefs.ifgInhalt || prefs.ifgInhalt[k] !== false;
 
@@ -5228,7 +5267,11 @@ let ifgStand = 0;        // jede neue Zeichnung verwirft, was eine ältere noch 
 /* Linien auf Canvas, in einer eigenen Ebene unter den Steinen und dem Pin:
  * Hunderte SVG-Pfade machen das Schieben auf dem Handy zäh. */
 function ifgAuflageAnlegen() {
-  map.createPane('ifgPane');
+  /* In die rotatePane, zu den Kacheln: Direkt in der mapPane lag sie mit z 390
+   * unter der rotatePane (z 400) und damit unter allen Kacheln — bis November
+   * 2026 war von Strecken, Brücken und Tunneln deshalb nichts zu sehen, nur die
+   * Marker (Bahnübergänge, Betriebsstellen) aus der markerPane. */
+  map.createPane('ifgPane', map._rotatePane || undefined);
   map.getPane('ifgPane').style.zIndex = 390;          // über den Kacheln, unter overlayPane (400)
   ifgRenderer = L.canvas({ pane: 'ifgPane', padding: 0.3, tolerance: 6 });
   ifgLayer = L.layerGroup([], { attribution: IFG_QUELLE });
@@ -5256,110 +5299,60 @@ async function ifgAuflageZeichnen() {
   const imBB = bb => !(bb[0] > n || bb[2] < s || bb[1] > o || bb[3] < w);
   const ab = k => ifgInhaltAn(k) && z >= IFG_AB_ZOOM[k];
 
-  const nummern = z >= Math.min(...IFG_INHALT.filter(([k]) => ifgInhaltAn(k) && k !== 'bs').map(([, , zz]) => zz), 99)
-    ? await ifgNummernImRechteck(s, w, n, o) : new Set();
-  const strecken = nummern ? (await Promise.all([...nummern].map(nr => ifgStrecke(nr).catch(() => null)))).filter(Boolean) : [];
   const mitAnlagen = ab('bue') || ab('bruecken') || ab('tunnel');
-  const anlagen = mitAnlagen && nummern
+  const nummern = mitAnlagen ? await ifgNummernImRechteck(s, w, n, o) : new Set();
+  const anlagen = nummern.size
     ? (await Promise.all([...nummern].map(nr => ifgAnlagen(nr).catch(() => null)))).filter(Boolean) : [];
   const stellen = ab('bs') ? (await ifgStellen()).filter(x => im(x.lat, x.lon)) : [];
   if (stand !== ifgStand) return;              // inzwischen weitergeschoben
 
   const neu = [];
   const r = ifgRenderer;
+  const dunkel = prefs.base === 'dark';
+  /* Strich und Saum: auf Karte und Luftbild dunkel auf weißem Saum, auf der
+   * dunklen Karte umgekehrt — sonst ging die Signatur dort unter. */
+  const tinte = dunkel ? '#e6ebf1' : '#1d2733', saum = dunkel ? '#06070b' : '#ffffff';
+  const strich = (pts, opt) => {
+    neu.push(L.polyline(pts, { renderer: r, color: saum, weight: (opt.weight || 2) + 2.5, opacity: 0.8,
+      interactive: false, lineCap: 'butt', lineJoin: 'miter', dashArray: opt.dashArray }));
+    neu.push(L.polyline(pts, { renderer: r, color: tinte, weight: opt.weight || 2, opacity: 1,
+      interactive: false, lineCap: 'butt', lineJoin: 'miter', dashArray: opt.dashArray }));
+  };
+  // Unsichtbar, aber breit: darauf landet der Tipp (der Canvas fragt die Strichbreite ab, nicht die Deckung)
+  const griff = (pts, tipp) => neu.push(L.polyline(pts, {
+    renderer: r, color: '#000', weight: 16, opacity: 0, lineCap: 'butt', bubblingMouseEvents: false
+  }).on('click', tipp));
 
-  /* Tunnel und Brücken unter den Gleisen: als breites Band, über dem die Linie liegt */
+  /* Tunnel wie in der topografischen Karte: zwei gestrichelte Linien neben dem
+   * Gleis, an beiden Mundlöchern ein Portal — ein Querstrich, dessen Enden vom
+   * Tunnel weg nach außen knicken. */
   if (ab('tunnel')) {
     for (const a of anlagen) for (const t of a.tunnel) {
       if (!imBB(t.bb)) continue;
-      neu.push(L.polyline(t.pts.map(p => [p.lat, p.lon]), {
-        renderer: r, color: '#4a5260', weight: 9, opacity: 0.45, dashArray: '10 7', lineCap: 'butt',
-        bubblingMouseEvents: false
-      }).on('click', ev => ifgAnlageTipp(ev, () => ifgAnlageWaehlen(a.nr, ev.latlng, {
+      const sig = ifgSignatur(t.pts, 5, 10);
+      if (!sig) continue;
+      for (const kante of sig.kanten) strich(kante, { weight: 1.6, dashArray: '5 4' });
+      for (const portal of sig.portale) strich(portal, { weight: 2 });
+      griff(sig.mitte, ev => ifgAnlageTipp(ev, () => ifgAnlageWaehlen(a.nr, ev.latlng, {
         art: 'Tunnel', bez: t.bez, von: t.von, bis: t.bis, laenge: t.laenge
-      }))));
+      })));
     }
   }
+
+  /* Brücken als Brückensignatur: zwei Geländer neben dem Gleis, an den Enden
+   * schräg nach außen gezogen, dazwischen hell die Fahrbahn. Kurze Brücken
+   * mindestens 14 px lang, sonst wären sie bei Zoom 13 ein Punkt. */
   if (ab('bruecken')) {
     for (const a of anlagen) for (const br of a.bruecken) {
       if (!imBB(br.bb)) continue;
-      neu.push(L.polyline(br.pts.map(p => [p.lat, p.lon]), {
-        renderer: r, color: '#1d2733', weight: 11, opacity: 0.5, lineCap: 'butt', bubblingMouseEvents: false
-      }).on('click', ev => ifgAnlageTipp(ev, () => ifgAnlageWaehlen(a.nr, ev.latlng, {
+      const sig = ifgSignatur(br.pts, 5, 0, 14);
+      if (!sig) continue;
+      neu.push(L.polyline(sig.mitte, { renderer: r, color: saum, weight: 10, opacity: 0.45,
+        interactive: false, lineCap: 'butt' }));
+      for (const kante of sig.kanten) strich(kante, { weight: 2 });
+      griff(sig.mitte, ev => ifgAnlageTipp(ev, () => ifgAnlageWaehlen(a.nr, ev.latlng, {
         art: 'Brücke', bez: br.bez, von: br.von, bis: br.bis, laenge: br.laenge, kreuzung: br.kreuzung
-      }))));
-    }
-  }
-
-  /* Die Strecken: dunkle Linie auf hellem Saum, damit sie auf Karte und Luftbild
-   * gleich gut steht. Nicht antippbar — ein kurzer Tipp liest bewusst nichts ab. */
-  const nrMarken = [];
-  const gesetzt = [];            // Streckenschilder, auch für die Kilometer unten
-  if (ab('strecken')) {
-    const linien = [];
-    for (const st of strecken) for (const g of st.abschnitte) {
-      if (imBB(g.bb)) linien.push(g.pts.map(p => [p.lat, p.lon]));
-    }
-    if (linien.length) {
-      /* Schlank: An Bahnhöfen liegen Richtungs- und Gegengleis mehrerer Strecken
-       * dicht an dicht, mit 2 px auf 5 px Saum wurde daraus ein schwarzer Balken.
-       * Auf der dunklen Karte umgekehrt, dort ging die dunkle Linie unter. */
-      const dunkel = prefs.base === 'dark';
-      neu.push(L.polyline(linien, { renderer: r, color: dunkel ? '#06070b' : '#ffffff', weight: 3.5, opacity: 0.7, interactive: false }));
-      neu.push(L.polyline(linien, { renderer: r, color: dunkel ? '#e6ebf1' : '#1d2733', weight: 1.5, opacity: 0.9, interactive: false }));
-    }
-    /* Streckennummer je Abschnittsmitte, aber nicht dichter als 160 Bildpunkte
-     * für dieselbe Nummer, kein Schild über einem anderen (im Ruhrgebiet lagen
-     * bei Zoom 11 drei Nummern übereinander) und höchstens 80 auf einmal. Die
-     * Schildgröße geschätzt: 7 px je Ziffer plus Rand, 16 px hoch, 4 px Luft. */
-    for (const st of strecken) for (const g of st.abschnitte) {
-      if (g.ri === 2 || !imBB(g.bb) || nrMarken.length >= 80) continue;
-      const m = ifgAufAbschnitt(g, (g.a + g.b) / 2);
-      if (!map.getBounds().contains([m.lat, m.lon])) continue;
-      const px = map.latLngToContainerPoint([m.lat, m.lon]);
-      const breit = st.nr.length * 7 + 14;
-      if (gesetzt.some(q => (q.nr === st.nr && Math.hypot(q.px.x - px.x, q.px.y - px.y) < 160) ||
-        (Math.abs(q.px.x - px.x) < (q.breit + breit) / 2 && Math.abs(q.px.y - px.y) < 20))) continue;
-      gesetzt.push({ nr: st.nr, px, breit });
-      nrMarken.push(L.marker([m.lat, m.lon], {
-        interactive: false, keyboard: false,
-        icon: L.divIcon({ className: '', iconSize: null, iconAnchor: [0, 0], html: `<span class="ifg-nr">${esc(st.nr)}</span>` })
-      }));
-    }
-  }
-
-  /* Kilometer auf allen Strecken außer der gesuchten — die zeichnet ifgZeichnen schon */
-  const kmMarken = [];
-  if (ab('km')) {
-    const schritt = labelStep(z) || 0.1;
-    /* Parallele Strecken (5100 und 5919 bei Zapfendorf) schrieben ihre Kilometer
-     * ineinander. Der Punkt bleibt, das Schild entfällt, wenn es ein schon
-     * gesetztes träfe: rechts vom Punkt, 6 px je Zeichen, 12 px hoch. */
-    const schilder = gesetzt.map(q => ({ l: q.px.x - q.breit / 2, r: q.px.x + q.breit / 2, o: q.px.y - 9, u: q.px.y + 9 }));
-    const frei = (px, text) => {
-      const b = { l: px.x + 6, r: px.x + 6 + text.length * 6 + 2, o: px.y - 6, u: px.y + 6 };
-      if (schilder.some(q => !(b.r <= q.l || q.r <= b.l || b.u <= q.o || q.u <= b.o))) return false;
-      schilder.push(b);
-      return true;
-    };
-    for (const st of strecken) {
-      if (st.nr === String(view.ref || '').trim()) continue;
-      for (const p of ifgKmPunkte(st, schritt, s, w, n, o)) {
-        if (kmMarken.length >= 600) break;
-        const text = fmtKm(p.km);
-        const mitSchild = frei(map.latLngToContainerPoint([p.lat, p.lon]), text);
-        kmMarken.push(L.circleMarker([p.lat, p.lon], {
-          renderer: r, radius: 3, color: '#ffffff', weight: 1, fillColor: '#1d2733', fillOpacity: 1,
-          bubblingMouseEvents: false
-        }).on('click', ev => ifgAnlageTipp(ev, async () => {
-          const res = await ifgLage(st.nr, p.km);
-          if (res) applyPoint(st.nr, p.km, res);
-        })));
-        if (mitSchild) kmMarken.push(L.marker([p.lat, p.lon], {
-          interactive: false, keyboard: false,
-          icon: L.divIcon({ className: '', iconSize: null, iconAnchor: [-6, 6], html: `<span class="ms ifg-km">${text}</span>` })
-        }));
-      }
+      })));
     }
   }
 
@@ -5390,7 +5383,55 @@ async function ifgAuflageZeichnen() {
   }
 
   ifgLayer.clearLayers();
-  for (const l of [...neu, ...kmMarken, ...nrMarken]) l.addTo(ifgLayer);
+  for (const l of neu) l.addTo(ifgLayer);
+}
+
+/** Signatur einer Anlage in Bildpunkten gerechnet, zurück in Lagen: die Achse
+ *  (mitte), zwei Kanten im Abstand ab links und rechts, und — mit portal > 0 —
+ *  je Ende ein Querstrich über portal px, dessen Enden 4 px vom Bauwerk weg
+ *  knicken. Ohne portal knicken stattdessen die Kanten selbst nach außen
+ *  (Brückengeländer). mindestens: kürzere Anlagen um ihre Mitte verlängert.
+ *  Gerechnet bei jedem Zeichnen, also passend zur Zoomstufe. */
+function ifgSignatur(lagen, ab, portal = 0, mindestens = 0) {
+  let p = lagen.map(q => map.latLngToLayerPoint([q.lat, q.lon]));
+  p = L.LineUtil.simplify(p, 0.5);
+  let laenge = 0;
+  for (let i = 1; i < p.length; i++) laenge += p[i].distanceTo(p[i - 1]);
+  if (p.length < 2 || laenge < 1e-6) {
+    if (!mindestens || !p.length) return null;
+    p = [p[0].subtract(L.point(mindestens / 2, 0)), p[0].add(L.point(mindestens / 2, 0))];
+  } else if (laenge < mindestens) {
+    const a = p[0], b = p[p.length - 1], m = a.add(b).divideBy(2);
+    const d = b.subtract(a), l = Math.hypot(d.x, d.y) || 1;
+    const e = L.point(d.x / l * mindestens / 2, d.y / l * mindestens / 2);
+    p = [m.subtract(e), m.add(e)];
+  }
+  // Senkrechte je Punkt: Mittel der angrenzenden Abschnitte, an Ecken auf Gehrung gestreckt
+  const senk = p.map((_, i) => {
+    const vor = p[Math.max(0, i - 1)], nach = p[Math.min(p.length - 1, i + 1)];
+    const d = nach.subtract(vor), l = Math.hypot(d.x, d.y) || 1;
+    return L.point(-d.y / l, d.x / l);
+  });
+  const kante = sgn => p.map((q, i) => q.add(senk[i].multiplyBy(sgn * ab)));
+  const richtung = (i, j) => { const d = p[j].subtract(p[i]), l = Math.hypot(d.x, d.y) || 1; return L.point(d.x / l, d.y / l); };
+  const ende0 = richtung(1, 0), ende1 = richtung(p.length - 2, p.length - 1);    // je vom Bauwerk weg
+  const zurueck = pts => pts.map(q => map.layerPointToLatLng(q));
+  const kanten = [kante(1), kante(-1)];
+  const portale = [];
+  if (portal) {
+    for (const [q, n, raus] of [[p[0], senk[0], ende0], [p[p.length - 1], senk[p.length - 1], ende1]]) {
+      const h = n.multiplyBy(portal / 2 + 2);
+      portale.push(zurueck([q.add(h).add(raus.multiplyBy(4)), q.add(h), q.subtract(h), q.subtract(h).add(raus.multiplyBy(4))]));
+    }
+  } else {
+    // Geländer: an beiden Enden 4 px schräg nach außen
+    for (const [k, sgn] of [[kanten[0], 1], [kanten[1], -1]]) {
+      const a = k[0], b = k[k.length - 1];
+      k.unshift(a.add(ende0.multiplyBy(3)).add(senk[0].multiplyBy(sgn * 3)));
+      k.push(b.add(ende1.multiplyBy(3)).add(senk[p.length - 1].multiplyBy(sgn * 3)));
+    }
+  }
+  return { mitte: zurueck(p), kanten: kanten.map(zurueck), portale };
 }
 
 /* Andreaskreuz, 16 px: zwei weiße Balken unter zwei roten — liest sich auf Karte
@@ -5432,7 +5473,7 @@ function ifgStelleZeigen(t) {
 function ifgWahlBauen() {
   const box = $('#ifgInhalt');
   if (!box) return;
-  const reihen = [IFG_INHALT.slice(0, 3), IFG_INHALT.slice(3)];
+  const reihen = [IFG_INHALT.slice(0, 3), IFG_INHALT.slice(3)];   // Betriebsstellen in eigener Zeile
   box.innerHTML = reihen.map((reihe, i) =>
     `<div class="seg" role="group" aria-label="Inhalt DB-Netz"${i ? ' style="margin-top:7px"' : ''}>` +
     reihe.map(([k, name, zz]) =>
@@ -5762,8 +5803,6 @@ function fpKnopfBinden() { auswahlKnopfBinden('fp', '#fpWahl', fpWahlZeigen); }
 
 function drawMilestones() {
   msLayer.clearLayers();
-  // Die Auflage lässt die Kilometer der gesuchten Strecke aus — nach einem Wechsel neu
-  if (ifgLayer && map.hasLayer(ifgLayer) && ifgInhaltAn('km') && map.getZoom() >= IFG_AB_ZOOM.km) ifgAuflageZeichnen();
   if (ifgZeichnen()) return;
   const e = view.ref && lineCache.get(view.ref);
   if (!e || !e.sorted.length) return;
@@ -5774,16 +5813,6 @@ function drawMilestones() {
   const bounds = map.getBounds().pad(0.3);
   const step = labelStep(z);
   let lastLabelKm = -Infinity;
-
-  // dünne Linie durch die Steine: macht sichtbar, welcher Strang gemeint ist
-  const path = [];
-  for (let i = 1; i < e.sorted.length; i++) {
-    const a = e.sorted[i - 1], b = e.sorted[i];
-    if (segmentOk(a, b, MAX_DRAW_GAP_KM)) path.push([[a.lat, a.lon], [b.lat, b.lon]]);
-  }
-  if (path.length && prefs.steinLinie !== false) {
-    L.polyline(path, { color: '#4b93e6', weight: 3, opacity: 0.45, interactive: false }).addTo(msLayer);
-  }
 
   // Die Punkte wie erfasst, auch beide eines Doppelsteins — die Linie oben läuft durch die vereinten
   for (const p of (e.alle && e.alle.length ? e.alle : e.sorted)) {
@@ -6304,7 +6333,7 @@ function messZeichnen() {
   const umriss = messLayer.getLayers().find(l => l instanceof L.Polyline) || null;
   messPunkte.forEach((p, i) => {
     const m = L.marker(p, {
-      draggable: true, keyboard: false, autoPan: true, zIndexOffset: 500,
+      draggable: true, keyboard: false, autoPan: false, zIndexOffset: 500,
       icon: L.divIcon({ className: 'prof-griff', iconSize: [26, 26], iconAnchor: [13, 13], html: '<i></i>' })
     }).addTo(messLayer);
     m.on('drag', () => { if (umriss) umriss.setLatLngs(messPunkte.map((q, j) => j === i ? m.getLatLng() : q)); });
@@ -6685,6 +6714,53 @@ let profPdf = null;                    // PDF-Zeile: { wahl } · { laeuft: Text 
 
 const profName = i => i < 26 ? String.fromCharCode(65 + i) : String(i + 1);
 const profMB = byte => nfH.format(Math.max(0.1, byte / 2 ** 20)) + ' MB';
+
+/* Fortschritt beim Laden: Ein Profil über 18 Kacheln braucht auf dem Handy
+ * gut eine halbe Minute, und „wird geladen …" allein sah aus wie hängen
+ * geblieben. hoehen.js meldet Kacheln und jedes Stück über die Leitung; die
+ * Anzeige wird nur einmal je Bild geschrieben, nicht die ganze Leiste neu. */
+let profLade = null;                    // { art, kacheln, fertig, start }
+let profLadeBild = 0;
+
+function profLadeBeginnen(art) {
+  const stand = { art, kacheln: 0, fertig: 0, start: HOEHEN.geladen };
+  profLade = stand;
+  HOEHEN.fortschritt = info => {
+    if (profLade !== stand) return;
+    if (info) { stand.kacheln = info.kacheln; stand.fertig = info.fertig; }
+    if (!profLadeBild) profLadeBild = requestAnimationFrame(profLadeZeigen);
+  };
+  return stand;
+}
+
+function profLadeEnde(stand) {
+  if (profLade !== stand) return;
+  profLade = null;
+  HOEHEN.fortschritt = null;
+}
+
+function profLadeZeigen() {
+  profLadeBild = 0;
+  const p = profLade;
+  if (!p) return;
+  const byte = HOEHEN.geladen - p.start;
+  if (p.art === 'dom') {
+    const klein = $('#profDom small');
+    if (klein && byte > 0) klein.textContent = profMB(byte);
+    return;
+  }
+  const text = $('#profLadeText'), balken = $('#profLadeBalken');
+  if (!text || !balken) return;
+  const teile = [];
+  if (p.kacheln) teile.push(`${p.fertig} von ${p.kacheln} ${p.kacheln === 1 ? 'Kachel' : 'Kacheln'}`);
+  if (byte > 0) teile.push(profMB(byte));
+  text.textContent = teile.length ? ' · ' + teile.join(' · ') : '';
+  /* Der Balken läuft auch während einer Kachel weiter: nach Bytes, geschätzt
+   * mit der mittleren Kachelgröße — Kacheln aus dem Vorrat zählen über fertig. */
+  const anteil = p.kacheln ? Math.max(p.fertig / p.kacheln,
+    Math.min(0.97, byte / (p.kacheln * PROF_KACHEL_MB * 2 ** 20))) : 0;
+  balken.style.transform = `scaleX(${anteil.toFixed(3)})`;
+}
 const gpBreite = () => GP_BREITEN.includes(prefs.gpBreite) ? prefs.gpBreite : 50;
 const gpLaenge = () => GP_LAENGEN.includes(prefs.gpLaenge) ? prefs.gpLaenge : 250;
 // Vorzeichen immer ausgeschrieben, unter 5 cm „±"
@@ -6843,10 +6919,12 @@ function profZeichnen() {
   /* A und B zum Ziehen: ein Marker mit großer Griffläche (26 px) um den
    * sichtbaren Punkt. Er sitzt auf dem getippten Punkt — beim Versatz also auf
    * der blassen Linie. Beim Ziehen läuft die Linie mit, gerechnet wird beim
-   * Loslassen. */
+   * Loslassen. Ohne autoPan: Leaflet schiebt die Karte, solange der Finger in
+   * 50 px am Rand steht, mit 10 px je Bild — unter der Leiste oder der Suchzeile
+   * merkt man das nicht, und der Punkt landete Kilometer weiter. */
   profPunkte.forEach((p, i) => {
     const m = L.marker(p, {
-      draggable: true, keyboard: false, autoPan: true, zIndexOffset: 500,
+      draggable: true, keyboard: false, autoPan: false, zIndexOffset: 500,
       icon: L.divIcon({ className: 'prof-griff', iconSize: [26, 26], iconAnchor: [13, 13],
         html: `<i></i>${pts === profPunkte ? `<span class="mess-lbl">${esc(profName(i))}</span>` : ''}` })
     }).addTo(profLayer);
@@ -6892,8 +6970,10 @@ async function profRechnen({ behalten = false } = {}) {
     profLaedt = 'dgm';
     profLeiste();
   }
+  const lade = profLadeBeginnen('dgm');
   try {
     const dgm = await hoehenProfil(linie, 'dgm1');
+    profLadeEnde(lade);
     if (lauf !== profLauf) return;
     profDgm = dgm;
     profDom = profDomDgm = profGeb = null; // gehörten zur vorigen Linie, kommen unten neu
@@ -6902,6 +6982,7 @@ async function profRechnen({ behalten = false } = {}) {
       profNochmal = false;
     }
   } catch (err) {
+    profLadeEnde(lade);
     if (lauf !== profLauf) return;
     profFehler = navigator.onLine === false
       ? 'Ohne Netz gibt es hier keine Höhen — die Geländekachel war noch nicht auf dem Gerät.'
@@ -6921,10 +7002,12 @@ async function profDomLaden() {
   profDomAn = true;
   profLaedt = 'dom';
   profLeiste();
+  const lade = profLadeBeginnen('dom');
   try {
     // 0,2 m Abstand, damit kein Mast und kein Baum zwischen zwei Stützpunkte fällt
     const dom = await hoehenProfil(profLinie(), 'dom20', { maxPunkte: 6000 });
     const dgmDort = await hoehenWerte('dgm1', dom.ost, dom.nord);
+    profLadeEnde(lade);
     if (lauf !== profLauf) return;
     if (!dom.hoehe.some(Number.isFinite)) {
       profDomAn = false;
@@ -6934,6 +7017,7 @@ async function profDomLaden() {
       profDomDgm = dgmDort;
     }
   } catch (err) {
+    profLadeEnde(lade);
     if (lauf !== profLauf) return;
     profDomAn = false;
     toast(`Oberfläche nicht geladen (${err.message}).`);
@@ -7084,7 +7168,8 @@ function profLeiste() {
     teile.push('<button type="button" class="refine" id="profFreigeben">Gelände laden' +
       `<small>${k} Kacheln, rund ${k * PROF_KACHEL_MB} MB — danach liegen sie auf dem Gerät</small></button>`);
   } else if (!profDgm) {
-    teile.push('<p class="bb-note plain">Gelände wird geladen …</p>');
+    teile.push('<div class="prof-lade"><p class="bb-note plain">Gelände wird geladen<span id="profLadeText"></span></p>' +
+      '<div class="prof-balken" aria-hidden="true"><i id="profLadeBalken"></i></div></div>');
   } else {
     /* Unter dem Bild feste Zeilen mit Namen davor, statt einer Chip-Reihe, die
      * auf dem Handy irgendwo umbricht. Die Kennwerte stehen nicht mehr über dem
@@ -8545,8 +8630,8 @@ function profZeigerSetzen() {
   schild.setAttribute('height', Math.round(k.height + 4));
 
   const ll = utm32Zurueck(profDgm.ost[i], profDgm.nord[i]);
-  /* Der Ring lag als dünner Kreis in derselben Farbe auf der gestrichelten
-   * Schnittlinie und ging darin unter: jetzt mit dunklem Rand und Mittelpunkt. */
+  /* Der Zeiger auf der Karte: Punkt mit weißem Ring und hellem Hof, wie der
+   * Standort — eine dünne Linie in derselben Farbe ging auf der Schnittlinie unter. */
   if (!profRing) {
     profRing = L.marker(ll, {
       icon: L.divIcon({ className: 'prof-ring', html: '<i></i>', iconSize: [26, 26], iconAnchor: [13, 13] }),
@@ -9031,6 +9116,7 @@ function showPicker(refs, seeds, lat, lon) {
 /* ============================ Punkt setzen & anzeigen ============================ */
 
 function applyPoint(ref, km, result) {
+  view.hervor = false;   // ab jetzt trägt der Pin die Farbe, auch nach dem Schließen
   reihe = [];          // ein einzelner Punkt löst die Reihe ab
   reiheAktiv = 0;
   reiheFehler = [];
@@ -9431,6 +9517,7 @@ function showError(msg) {
 /** Anzeige wegdrücken — vor allem für den versehentlichen Tipp auf die Karte. */
 function closeBottom() {
   view.point = null;
+  view.hervor = false;
   pointMarker = null;
   reihe = [];
   reiheAktiv = 0;
@@ -9441,6 +9528,7 @@ function closeBottom() {
   $('#bottom').hidden = true;
   $('#bottom').innerHTML = '';
   updateBH();
+  drawMilestones();        // die Strecke wieder blass, nicht mehr als Ergebnis hervorgehoben
 }
 
 /** Leaflet-Bedienelemente über der unteren Leiste halten */
@@ -9634,6 +9722,7 @@ async function streckeZeigen(ref) {
   if (String(view.ref) !== ref) return;      // inzwischen etwas anderes gesucht
   if (st) {
     view.point = null;
+    view.hervor = true;
     drawPoint();
     let s = 90, w = 180, n = -90, o = -180;
     for (const g of st.abschnitte) {
@@ -9650,6 +9739,7 @@ async function streckeZeigen(ref) {
   const e = lineCache.get(ref);
   if (!e.sorted.length) { showError(`Für Strecke ${ref} sind keine Kilometersteine erfasst — Nummer prüfen.`); return; }
   view.point = null;
+  view.hervor = true;
   drawPoint();
   drawMilestones();
   fitLine(e);
@@ -11401,12 +11491,6 @@ function syncButtons() {
   });
   abKnopf();
 
-  const wl = $('#wegLinieBtn');
-  if (wl) wl.classList.toggle('is-on', prefs.wegLinie !== false);
-
-  const sl = $('#steinLinieBtn');
-  if (sl) sl.classList.toggle('is-on', prefs.steinLinie !== false);
-
   const kn = $('#kmlNamenBtn');
   if (kn) kn.classList.toggle('is-on', prefs.kmlNamen !== false);
 
@@ -11582,6 +11666,15 @@ function bind() {
     suchTextMerken();
     if (document.activeElement && $('#search').contains(document.activeElement)) document.activeElement.blur();
     suchZu();
+    /* Leeren heißt auch: weg mit dem Gesuchten — Pin, Ergebnis und die
+     * hervorgehobene Strecke. Ein offenes Werkzeug (Profil, Messen) bleibt. */
+    if ($('#bottom').dataset.art !== 'werkzeug') {
+      closeBottom();
+      view.ref = '';
+      view.km = null;
+      drawMilestones();
+      updateHash();
+    }
   });
 
   /* Aufgeklappter Teil: bleibt offen, solange darin gearbeitet wird, und
@@ -11612,18 +11705,6 @@ function bind() {
 
   document.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => setBase(b.dataset.base)));
   on('#ormBtn', 'click', () => toggleOverlay('orm'));
-  on('#wegLinieBtn', 'click', () => {
-    prefs.wegLinie = prefs.wegLinie === false;
-    saveStore();
-    syncButtons();
-    zeichneGleiswegNeu();
-  });
-  on('#steinLinieBtn', 'click', () => {
-    prefs.steinLinie = prefs.steinLinie === false;
-    saveStore();
-    syncButtons();
-    drawMilestones();
-  });
   parzKnopfBinden();
   buildParzRow();
   ifgKnopfBinden();

@@ -248,6 +248,11 @@ der Rückfall für Strecken und Kilometer, die InfraGO nicht kennt. Eingehängt 
 - `IFG_ERR` (2,5 / 6,3 m) stammt aus der Messung an 6271 OSM-Bahnübergängen — keine Zahlen erfinden;
   bei neuem Datenstand die Messung wiederholen, nicht die Konstante raten.
 - Fehlgeschlagene Abrufe pausieren `IFG_PAUSE_MS`: Die Live-Anzeige ruft im Sekundentakt.
+- **Auflage DB-Netz** seit November 2026 nur Anlagen: Bahnübergänge, Brücken (Signatur mit Geländern),
+  Tunnel (gestrichelt, Portale), Betriebsstellen — Strecken und Kilometer aller Strecken hat der Nutzer
+  nie gebraucht. Signaturen rechnet `ifgSignatur` in Bildpunkten bei jedem Zeichnen. **`ifgPane` muss in
+  `map._rotatePane` liegen** — direkt in der mapPane lag sie unter den Kacheln, bis dahin war von den
+  Linien nie etwas zu sehen.
 - **Auflage DB-Netz** (`ifgAuflage…` in `app.js`, Daten `infrago/o/`): Knopf `#ifgBtn` wie `#parzBtn` —
   Tippen schaltet, lang/Rechtsklick öffnet `#ifgWahl` (Inhalt aus `IFG_INHALT`, gespeichert in
   `prefs.ifgInhalt`, fehlender Schlüssel = an). Beide Auswahlen klappen **unter** der Reihe
@@ -374,6 +379,21 @@ MESSWERK bleibt, aber gerundet und mit Glas. Alles hängt an Tokens oben in `sty
 sind (Menü-, Messknopf). Polygon, Live, Mappe und Abstecken sind am Desktop nicht einzeln
 durchgeklickt. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfeile an Leisten
 (der Pfeil an der Werkzeugleiste wurde verworfen), und kein Plus/Minus.
+
+## November 2026, Rückmeldungen vom Handy
+
+- **KML-Farbe „wie Datei"** (`kmlDateiFarben`): erscheint, wenn die Datei eigene Farben trägt; setzt
+  `farbeFest: false`.
+- **Profilpunkte ohne `autoPan`** (auch Polygon): Leaflet schob die Karte, solange der Finger am Rand
+  unter Leiste oder Suchzeile stand — der Punkt landete Kilometer weiter.
+- **Ladebalken im Profil**: `HOEHEN.fortschritt` in `hoehen.js` meldet Kacheln und Bytes (gelesen in
+  Stücken, `hoehenKoerper`); `profLadeBeginnen`/`profLadeEnde` in `app.js`.
+- **× in der Suchzeile** räumt Ergebnis und Strecke weg (außer bei offenem Werkzeug). Hervorgehoben wird
+  eine Strecke nur, solange `view.hervor` steht (nur Strecke gesucht).
+- **Regenradar**: Ein DWD-Server liefert seit 28.10.2026 eine alte Zeitachse. `radarRefHolen` nimmt nur
+  eine Messung ≤ 30 min alt, sonst neu fragen; je Bild bis `RADAR_VERSUCHE` (6). Längere Vorhersage
+  ginge über `dwd__Icon-eu_reg00625_fd_sl_TOTPREC01H` (stündlich, +78 h, CORS) — noch nicht gebaut.
+- Gleisweg und Streckenlinie werden nicht mehr gezeichnet (`zeichneGleiswegNeu` räumt nur noch weg).
 
 ## Beim Deployen
 

@@ -568,6 +568,8 @@ body {
 }
 .radar-knopf.is-on .spiel { display: none; }
 .radar-knopf.is-on .pause { display: inline; }
+/* Abspielen rund wie die Kartenknöpfe: ein Medienknopf, kein Menüknopf */
+#radarSpiel { width: 32px; height: 32px; border-radius: 50%; }
 #radarZu { border-color: transparent; background: none; color: var(--muted-2); }
 #radarZu svg { width: 15px; height: 15px; }
 
@@ -825,7 +827,9 @@ body {
   display: inline-block; width: 9px; height: 9px; margin-right: 7px;
   border: 1px solid var(--muted-2); background: var(--parz, #000);
 }
-.parz-pal { gap: 6px; }
+/* Fluss statt Raster: „Auto" ist breiter als ein Farbfeld und stand im
+ * 32-px-Raster halb im Nachbarn */
+.parz-pal { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 /* DB-Netz: drei Striche vor dem Wort, gleich groß wie das Farbfeld der Parzellen */
 .ifg-wahl-zeichen {
   display: inline-block; width: 10px; height: 9px; margin-right: 7px;
@@ -835,6 +839,7 @@ body {
    den 7 px der nächsten Reihe zusammen — es gilt der größere, nicht die Summe. */
 .parz-wahl { margin-bottom: 10px; }
 .parz-wahl .pal-label { margin-top: 10px; }
+.parz-wahl .wahl-hinweis { margin: 8px 0 0; }
 .parz-btn {
   position: relative; width: 30px; height: 30px; padding: 0;
   border: 0; border-radius: 50%;
@@ -844,7 +849,7 @@ body {
 .parz-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 /* Auto ist ein Wort, kein Farbfeld — eingeschaltet wie die Knöpfe darüber */
 .parz-auto {
-  width: auto; padding: 0 9px;
+  width: auto; padding: 0 11px; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--muted);
   font: inherit; font-size: .76rem; font-weight: 600;
 }
@@ -935,6 +940,9 @@ body {
   background: var(--accent);
 }
 .kml-auto { width: auto; padding: 0 10px; font: inherit; font-size: .76rem; font-weight: 600; }
+/* „wie Datei": ein Farbfeld mit den Farben aus der Datei vor dem Wort */
+.kml-quelle { display: inline-flex; align-items: center; gap: 7px; }
+.kml-quelle span { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255,255,255,.85); }
 
 /* Merkmalsknoepfe: welches Feld unterscheidet, was in der Beschriftung steht */
 .kml-feld {
@@ -1387,6 +1395,13 @@ body {
 .prof-sprung button:active { background: color-mix(in srgb, var(--warn) 18%, var(--panel-2)); }
 
 /* Wischen im Diagramm führt den Zeiger, statt die Seite zu verschieben */
+/* Ladebalken unter „Gelände wird geladen": skaliert statt breiter, damit er
+ * ohne Umbruch der Leiste mitläuft */
+.prof-balken { height: 4px; margin-top: 8px; border-radius: 2px; overflow: hidden; background: var(--panel-2); }
+.prof-balken i {
+  display: block; height: 100%; background: var(--warn);
+  transform: scaleX(0); transform-origin: left center; transition: transform .25s linear;
+}
 .prof-bild { margin-top: 6px; touch-action: none; user-select: none; -webkit-user-select: none; }
 .prof-bild svg { display: block; overflow: visible; font-size: 11px; font-variant-numeric: tabular-nums; cursor: crosshair; }
 .prof-bild .gitter { fill: none; stroke: var(--line); }
@@ -1472,13 +1487,18 @@ body {
 .prof-weite input:disabled::-webkit-slider-thumb { background: var(--muted-2); }
 .prof-weite input:disabled::-moz-range-thumb { background: var(--muted-2); }
 /* Die Stelle unter dem Finger auf der Karte: Ring mit dunklem Rand und Mittelpunkt */
+/* Zeiger des Profils auf der Karte: gebaut wie der Standort (.me-dot) — voller
+ * Punkt mit weißem Ring —, nur in Amber und mit einem durchscheinenden Hof,
+ * damit er auf der gestrichelten Schnittlinie nicht untergeht. 26 px Icon,
+ * Hof und Punkt beide auf (13, 13) zentriert. */
 .prof-ring i {
-  position: absolute; inset: 0; border: 3px solid #ff9f0a; border-radius: 50%;
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .8), inset 0 0 0 1.5px rgba(0, 0, 0, .8);
+  position: absolute; inset: 0; border-radius: 50%;
+  background: rgba(255, 159, 10, .28);
 }
 .prof-ring i::after {
-  content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
-  border-radius: 50%; background: #ff9f0a; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .8);
+  content: ""; position: absolute; left: 5px; top: 5px; width: 16px; height: 16px; box-sizing: border-box;
+  border-radius: 50%; background: #ff9f0a; border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .3);
 }
 .prof-quelle { margin: 7px 0 0; font-size: .68rem; line-height: 1.45; color: var(--muted-2); }
 .prof-quelle a { color: inherit; }

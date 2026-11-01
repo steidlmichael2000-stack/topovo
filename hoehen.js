@@ -40,7 +40,11 @@ const HOEHEN = {
   /* Nur für die Prüfung unter Node: Dort gilt kein CORS, und die Kacheln
    * kommen direkt vom Server der Vermessungsverwaltung. */
   direkt: false,
-  geladen: 0          // Bytes über die Leitung, seit dem Start
+  geladen: 0,         // Bytes über die Leitung, seit dem Start
+  /* Wer den Fortschritt sehen will, setzt hier eine Funktion: Sie bekommt
+   * { kacheln, fertig } beim Abgreifen und wird bei jedem Stück, das über die
+   * Leitung kommt, ohne Argument gerufen (dann steht geladen schon weiter). */
+  fortschritt: null
 };
 
 const BVV_DOWNLOAD = 'https://download1.bayernwolke.de/a';
@@ -323,6 +327,31 @@ function hoehenAdresse(art, e, n) {
   return HOEHEN.direkt ? HOEHEN_ARTEN[art].direkt(e, n) : `${HOEHEN.proxy}/${art}/${e}_${n}.tif`;
 }
 
+/** Liest die Antwort und zählt dabei mit — in Stücken, damit eine Anzeige
+ *  schon während einer 3-MB-Kachel weiterläuft und nicht nur nach jeder. */
+async function hoehenKoerper(r) {
+  if (!HOEHEN.fortschritt || !r.body || !r.body.getReader) {
+    const b = new Uint8Array(await r.arrayBuffer());
+    HOEHEN.geladen += b.byteLength;
+    return b;
+  }
+  const leser = r.body.getReader(), teile = [];
+  let summe = 0;
+  for (;;) {
+    const { done, value } = await leser.read();
+    if (done) break;
+    teile.push(value);
+    summe += value.byteLength;
+    HOEHEN.geladen += value.byteLength;
+    if (HOEHEN.fortschritt) HOEHEN.fortschritt();
+  }
+  if (teile.length === 1) return teile[0];
+  const b = new Uint8Array(summe);
+  let o = 0;
+  for (const t of teile) { b.set(t, o); o += t.byteLength; }
+  return b;
+}
+
 /** Holt eine Datei oder einen Bytebereich daraus; null, wenn es sie nicht gibt.
  *  Negatives von: die letzten −von Byte (für das Verzeichnis einer ZIP-Datei). */
 async function hoehenHolen(url, von, laenge) {
@@ -330,8 +359,7 @@ async function hoehenHolen(url, von, laenge) {
   const r = await fetch(url, bereich ? { headers: { Range: bereich } } : {});
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`Höhendaten: HTTP ${r.status}`);
-  const b = new Uint8Array(await r.arrayBuffer());
-  HOEHEN.geladen += b.byteLength;
+  const b = await hoehenKoerper(r);
   // Hat der Server den Bereich übergangen, kam die ganze Datei
   if (!bereich || r.status === 206) return b;
   return von < 0 ? b.subarray(Math.max(0, b.byteLength + von)) : b.subarray(von, von + laenge);
@@ -802,9 +830,12 @@ async function hoehenWerteArt(art, ost, nord, verfahren, teil, staende = null) {
   }
 
   const geladen = new Map();     // Kachel → { kopf, bloecke }
+  const melden = HOEHEN.fortschritt;
+  let fertig = 0;
+  if (melden) melden({ kacheln: bedarf.size, fertig });
   await hoehenParallel([...bedarf.values()], 4, async b => {
     const kachel = await hoehenKachel(art, b.e, b.n, teil);
-    if (!kachel) return;
+    if (!kachel) { if (melden && HOEHEN.fortschritt === melden) melden({ kacheln: bedarf.size, fertig: ++fertig }); return; }
     const k = kachel.kopf, noetig = new Set();
     for (let j = 0; j < b.pixel.length; j += 2) {
       const c = b.pixel[j] - k.dl, r = b.pixel[j + 1] - k.dr;
@@ -812,6 +843,7 @@ async function hoehenWerteArt(art, ost, nord, verfahren, teil, staende = null) {
     }
     geladen.set(`${b.e}_${b.n}`, { kopf: k, bloecke: await hoehenBloeckeLaden(kachel, noetig) });
     if (staende && kachel.stand && noetig.size) staende.add(kachel.stand);
+    if (melden && HOEHEN.fortschritt === melden) melden({ kacheln: bedarf.size, fertig: ++fertig });
   });
 
   const wert = (C, R) => {
