@@ -10,11 +10,12 @@
   /* Glas: durchscheinend und unscharf, die Karte bleibt darunter sichtbar.
      Bis November 2026 deckend (.94) — seitdem gewünscht wie Apples Glas. */
   --glass: rgba(18, 20, 28, .62);
-  /* Feste Leiste links (ab 1010 px): dichter als das schwebende Glas, damit
-     Leiste und Werkzeuge über der Karte sich voneinander abheben */
-  --glass-dicht: rgba(18, 20, 28, .88);
+  /* Feste Leiste links (ab 1010 px): etwas dichter als das schwebende Glas, damit
+     Leiste und Werkzeuge über der Karte sich voneinander abheben. Am 01.11.2026
+     auf Wunsch durchsichtiger: .88 → .72, die Spalte .96 → .82 */
+  --glass-dicht: rgba(18, 20, 28, .72);
   /* Symbolspalte daneben: eigener, dunklerer Grund, damit sie sich von der Leiste abhebt */
-  --schiene-grund: rgba(6, 7, 11, .96);
+  --schiene-grund: rgba(6, 7, 11, .82);
   --blur: blur(28px) saturate(170%);
   /* Schieberknopf: runder weißer Knauf wie bei iOS, statt des blauen Klotzes */
   --knauf: #ffffff;
@@ -55,8 +56,8 @@
 html[data-theme="light"] {
   --bg: #eef1f5;
   --glass: rgba(250, 251, 253, .5);
-  --glass-dicht: rgba(250, 251, 253, .8);
-  --schiene-grund: rgba(222, 226, 233, .97);
+  --glass-dicht: rgba(250, 251, 253, .66);
+  --schiene-grund: rgba(222, 226, 233, .84);
   --panel-2: rgba(118, 118, 128, .12);
   --line: #d5dbe3;
   --text: #17202a;
@@ -75,8 +76,8 @@ html[data-theme="light"] {
   html:not([data-theme="dark"]) {
     --bg: #eef1f5;
     --glass: rgba(250, 251, 253, .5);
-    --glass-dicht: rgba(250, 251, 253, .8);
-    --schiene-grund: rgba(222, 226, 233, .97);
+    --glass-dicht: rgba(250, 251, 253, .66);
+    --schiene-grund: rgba(222, 226, 233, .84);
     --panel-2: rgba(118, 118, 128, .12);
     --line: #d5dbe3;
     --text: #17202a;
@@ -777,6 +778,9 @@ body {
   font-size: .8rem; color: var(--muted);
 }
 .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+/* Firefox gibt Schiebereglern eine Mindestbreite von gut 130 px: Ohne min-width 0
+   schrumpfte der Regler nicht, und die Zahl rutschte unter den Griff der Leiste. */
+input[type="range"] { min-width: 0; }
 .slider-val { flex: none; min-width: 3.4em; text-align: right; font-variant-numeric: tabular-nums; }
 
 .stack textarea {
