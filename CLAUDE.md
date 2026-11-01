@@ -352,6 +352,29 @@ Die Grenze steht zweimal: in `style.css` („Desktop und Tablet quer“) und als
 `app.js`. **Ausschnitte nur über `kartePassen` (statt `map.fitBounds`) und `sichtSetzen` (statt
 `setView`/`panTo`) setzen**, sonst landet das Gezeigte unter Leiste oder Anwendungen.
 
+## Aussehen: Apple-Rundung, Glas, Knöpfe ohne Rahmen (November 2026)
+
+Aus einem Vergleich von sechs Stilen (`../_design/stilvergleich/`, außerhalb des Repos) gewählt:
+MESSWERK bleibt, aber gerundet und mit Glas. Alles hängt an Tokens oben in `style.css`.
+
+- Rundung `--r` 20 px (Flächen), `--r-knopf` 12 px, `--r-klein` 7 px.
+- Glas `--glass` (dunkel .62, hell .5) mit `--blur`, **überall gleich** — Menü, Suche, Radar,
+  Leisten. Ein dichteres Menü hat der Nutzer abgelehnt. Hell war .74 zu deckend („das Durchsichtige
+  hat es nicht ins Helle geschafft").
+- Knöpfe ohne Rahmen: `border: 1px solid transparent` statt weg, damit die Maße pixelgleich
+  bleiben. Gewählt = gefüllt in `--accent`; Kartenknöpfe an = getöntes Glas (`color-mix`), nicht
+  gefüllt (gefüllt sah „komisch" aus).
+- Regler mit rundem weißem Knauf (`--knauf`), kein blauer Klotz. `--warn` kräftiger (#ff9f0a / #d96400).
+- Höhenprofil: Fläche mit Verlauf `#profVerlauf` (oben kräftig, unten durchsichtig) — ausdrücklich
+  gewünscht, nur in der App, im PDF darf es anders sein. Zeigerschild ohne schwarze Kontur.
+- Aufklapp-Animationen (`von-oben`, `von-unten`, `vom-knopf`, `einblenden`, Kurve `--auf`) nur mit
+  transform/opacity, sonst stimmen die Höhen in `updateBH` nicht. Die Tour misst nach `animationend`.
+
+**Offen (Stand 01.11.2026, Feintuning folgt):** Die Tour zeigt am Desktop auf Knöpfe, die dort aus
+sind (Menü-, Messknopf). Polygon, Live, Mappe und Abstecken sind am Desktop nicht einzeln
+durchgeklickt. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfeile an Leisten
+(der Pfeil an der Werkzeugleiste wurde verworfen), und kein Plus/Minus.
+
 ## Beim Deployen
 
 `VERSION` in `sw.js` hochzählen. Der Worker arbeitet zwar „erst Netz, dann
