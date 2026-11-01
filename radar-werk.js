@@ -52,7 +52,10 @@ export async function tiffLesen(puffer) {
 
   const w = tag[256][0], h = tag[257][0];
   const komp = tag[259] ? tag[259][0] : 1;
-  if ((tag[258] || [0])[0] !== 32 || (tag[339] || [1])[0] !== 3) throw new Error('keine Float32-Werte');
+  // Float32 vom Radar, Float64 vom Modell (ICON-EU)
+  const bits = (tag[258] || [0])[0];
+  if ((bits !== 32 && bits !== 64) || (tag[339] || [1])[0] !== 3) throw new Error('keine Gleitkommawerte');
+  const bps = bits / 8;
   if ((tag[277] || [1])[0] !== 1) throw new Error('mehr als ein Kanal');
   if ((tag[317] || [1])[0] !== 1) throw new Error('Predictor nicht unterstützt');
   if (komp !== 1 && komp !== 8 && komp !== 32946) throw new Error('Kompression ' + komp);
@@ -73,9 +76,9 @@ export async function tiffLesen(puffer) {
     const bx = (b % quer) * bw, by = Math.floor(b / quer) * bh;
     const zeilen = Math.min(bh, h - by), spalten = Math.min(bw, w - bx);
     for (let y = 0; y < zeilen; y++) {
-      const ziel = (by + y) * w + bx, quelle = y * bw * 4;
+      const ziel = (by + y) * w + bx, quelle = y * bw * bps;
       for (let x = 0; x < spalten; x++) {
-        const v = bdv.getFloat32(quelle + x * 4, le);
+        const v = bps === 8 ? bdv.getFloat64(quelle + x * 8, le) : bdv.getFloat32(quelle + x * 4, le);
         werte[ziel + x] = v > 0 && v < 1e6 ? v : 0;
       }
     }
@@ -93,6 +96,51 @@ export async function tiffLesen(puffer) {
     throw new Error('keine Lageangabe');
   }
   return { w, h, werte, x0, yOben, dx, dy };
+}
+
+/* ---------- Modell ---------- */
+
+const ERDE = 6378137;
+
+/** Das Modell (ICON-EU, Grad, rund 7 km je Zelle, mm in der Stunde) auf das
+ *  Raster des Radars umrechnen: bilinear, damit die Stufenlinien nicht als
+ *  Treppe aus 7-km-Kästchen erscheinen, und in mm je 5 Minuten wie das Radar
+ *  (der Shader rechnet × 12 auf mm/h). Außerhalb des Modells 0. */
+export function modellUmrechnen(m, ziel) {
+  const aus = new Float32Array(ziel.w * ziel.h);
+  for (let j = 0; j < ziel.h; j++) {
+    const Y = ziel.yOben - (j + 0.5) * ziel.dy;
+    const lat = (2 * Math.atan(Math.exp(Y / ERDE)) - Math.PI / 2) * 180 / Math.PI;
+    const fy = (m.yOben - lat) / m.dy - 0.5;
+    const y0 = Math.floor(fy), ty = fy - y0;
+    if (y0 < -1 || y0 >= m.h) continue;
+    for (let i = 0; i < ziel.w; i++) {
+      const lon = (ziel.x0 + (i + 0.5) * ziel.dx) / ERDE * 180 / Math.PI;
+      const fx = (lon - m.x0) / m.dx - 0.5;
+      const x0 = Math.floor(fx), tx = fx - x0;
+      if (x0 < -1 || x0 >= m.w) continue;
+      const wert = (x, y) => m.werte[Math.min(m.h - 1, Math.max(0, y)) * m.w + Math.min(m.w - 1, Math.max(0, x))];
+      const v = (wert(x0, y0) * (1 - tx) + wert(x0 + 1, y0) * tx) * (1 - ty) +
+        (wert(x0, y0 + 1) * (1 - tx) + wert(x0 + 1, y0 + 1) * tx) * ty;
+      aus[j * ziel.w + i] = v / 12;
+    }
+  }
+  return aus;
+}
+
+async function modellNehmen(m) {
+  const meinSatz = m.satz;
+  try {
+    const g = await tiffLesen(m.puffer);
+    if (meinSatz !== satz) return;
+    const z = m.geo;
+    const werte = modellUmrechnen(g, z);
+    // Nicht in bilder: Zwischen Modellstunden wird überblendet, keine Bewegung geschätzt
+    self.postMessage({ art: 'bild', satz, t: m.t, ref: m.ref, lauf: m.lauf, modell: true,
+      w: z.w, h: z.h, x0: z.x0, yOben: z.yOben, dx: z.dx, dy: z.dy, werte }, [werte.buffer]);
+  } catch (err) {
+    if (meinSatz === satz) self.postMessage({ art: 'fehler', satz, t: m.t, text: String(err && err.message || err) });
+  }
 }
 
 /* ---------- Bewegung ---------- */
@@ -278,6 +326,8 @@ if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScop
       }
     } else if (m.art === 'bild' && m.satz === satz) {
       bildNehmen(m);
+    } else if (m.art === 'modell' && m.satz === satz) {
+      modellNehmen(m);
     }
   };
 }

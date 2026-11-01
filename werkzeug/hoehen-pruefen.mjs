@@ -49,6 +49,22 @@ const pruefe = (ok, text) => {
   console.log(`${ok ? 'ok    ' : 'FEHLER'}  ${text}`);
   if (!ok) fehler++;
 };
+/* Die BVV erneuert XYZ-Fassung und Höhendienst nicht immer zugleich mit dem
+ * GeoTIFF, das die App liest: 778_5292 (Lattengebirge) kam am 29.10.2026 als
+ * XYZ neu, das TIFF blieb vom 30.04.2024 — median 5 cm, am Hang bis 7 m anders.
+ * Ist die Vergleichsfassung mehr als 30 Tage jünger, ist eine Abweichung kein
+ * Fehler im Leser, sondern ein neuer Datenstand: dann HINWEIS statt FEHLER. */
+const geaendert = async url => Date.parse((await fetch(url, { method: 'HEAD' })).headers.get('last-modified') || '');
+async function standVerschieden(ke, kn) {
+  const tif = await geaendert(`https://download1.bayernwolke.de/a/dgm/dgm1/${ke}_${kn}.tif`);
+  const xyz = await geaendert(`https://download1.bayernwolke.de/a/dgm/dgm1xyz/${ke}_${kn}.zip`);
+  return xyz - tif > 30 * 86400000
+    ? `XYZ vom ${new Date(xyz).toLocaleDateString('de-DE')}, TIFF vom ${new Date(tif).toLocaleDateString('de-DE')}` : '';
+}
+const pruefeStand = (ok, text, neuer) => {
+  if (!ok && neuer) console.log(`HINWEIS ${text} — neuer Datenstand (${neuer}), die App liest das ältere TIFF`);
+  else pruefe(ok, text);
+};
 const zahl = (x, stellen = 2) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
 const quantil = (werte, q) => {
   const s = [...werte].filter(Number.isFinite).sort((a, b) => a - b);
@@ -156,9 +172,9 @@ for (const [name, ke, kn] of [['Bamberg', 636, 5528], ['Berchtesgaden', 778, 529
     if (!Number.isFinite(nn[i]) || !Number.isFinite(bl[i])) { fehlt++; return; }
     groesste = Math.max(groesste, Math.abs(nn[i] - z[2]), Math.abs(bl[i] - z[2]));
   });
-  pruefe(!fehlt && groesste < 0.006,
+  pruefeStand(!fehlt && groesste < 0.006,
     `DGM1 ${name} gegen XYZ: ${xyz.length} Werte, ${fehlt} ohne Wert, größte Abweichung ${zahl(groesste * 100, 2)} cm ` +
-    `(nächster Nachbar und bilinear an der Pixelmitte)`);
+    `(nächster Nachbar und bilinear an der Pixelmitte)`, await standVerschieden(ke, kn));
 }
 
 /* ---- 5. DGM1 gegen den Höhendienst ---- */
@@ -191,10 +207,10 @@ for (const [name, ke, kn] of [['Bamberg', 636, 5528], ['Berchtesgaden', 778, 529
     return { gleich, fehlt, groesste };
   };
   const a = vergleich(mit), b = vergleich(ohne);
-  pruefe(a.gleich === ost.length,
+  pruefeStand(a.gleich === ost.length,
     `DGM1 ${name} gegen Höhendienst (um ½ m versetzt): ${a.gleich} von ${ost.length} aus demselben Pixel, ` +
     `${a.fehlt} ohne Wert, größte Abweichung ${zahl(a.groesste)} m (${zahl(dauer, 0)} ms samt Laden) — ` +
-    `ohne Versatz ${b.gleich} gleich, größte ${zahl(b.groesste)} m`);
+    `ohne Versatz ${b.gleich} gleich, größte ${zahl(b.groesste)} m`, await standVerschieden(ke, kn));
 }
 
 /* ---- 6. Über die Kachelgrenze 636/637 ---- */

@@ -391,8 +391,13 @@ durchgeklickt. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfe
 - **× in der Suchzeile** räumt Ergebnis und Strecke weg (außer bei offenem Werkzeug). Hervorgehoben wird
   eine Strecke nur, solange `view.hervor` steht (nur Strecke gesucht).
 - **Regenradar**: Ein DWD-Server liefert seit 28.10.2026 eine alte Zeitachse. `radarRefHolen` nimmt nur
-  eine Messung ≤ 30 min alt, sonst neu fragen; je Bild bis `RADAR_VERSUCHE` (6). Längere Vorhersage
-  ginge über `dwd__Icon-eu_reg00625_fd_sl_TOTPREC01H` (stündlich, +78 h, CORS) — noch nicht gebaut.
+  eine Messung ≤ 30 min alt, sonst neu fragen; je Bild bis `RADAR_VERSUCHE` (6).
+- **Modell hinter dem Radar** (`modell…`, `MODELL_*`): ICON-EU `dwd__Icon-eu_reg00625_fd_sl_TOTPREC01H`,
+  stündlich bis 48 h, in Grad als Float64 geholt (`modellUrl`), im Worker bilinear aufs Raster des
+  Radarsatzes gerechnet und durch 12 geteilt (`modellUmrechnen`) — deshalb erst laden, wenn `satz.geo`
+  steht. Bilder liegen mit im Satz (`satz.modell` merkt, welche), Paare über `radarPaar` (t0/t1), Bewegung
+  nur bei 5 min Abstand. Regler: Positionen −60…120 = Minuten, dahinter `MODELL_BREITE` Einheiten
+  (`radarPosZuVersatz`). Abspielen steht, solange ein Satz lädt (`radarSatzFertig`), auch nach dem Zoomen.
 - Gleisweg und Streckenlinie werden nicht mehr gezeichnet (`zeichneGleiswegNeu` räumt nur noch weg).
 
 ## Beim Deployen
@@ -403,6 +408,10 @@ Cache", aber die Kachel- und Netzdaten-Caches hängen an der Version.
 Seit v38 installiert der Worker nur, wenn **jede** Datei aus `SHELL_FILES` geladen
 werden kann (sonst bleibt der alte im Dienst). Steht dort eine Datei, die es nicht
 gibt, kommt nie wieder ein Update an — beim Ändern der Liste jede Datei prüfen.
+
+Unter Node 18 laden `radar-pruefen.mjs` (radar-werk.js als ESM) und Prüfung 8 in `hoehen-pruefen.mjs`
+(`deflate-raw`) nicht — dafür Node ≥ 22 nehmen. Weicht Berchtesgaden in `hoehen-pruefen.mjs` ab, meldet
+die Prüfung HINWEIS: Die BVV hat dort XYZ und Höhendienst am 29.10.2026 erneuert, das TIFF noch nicht.
 
 Vorher `node --test tests/robustheit.test.mjs` (Service Worker, WMS, KMZ; von
 Codex übernommen) und nach Änderungen an `hoehen.js` `node werkzeug/hoehen-pruefen.mjs`,

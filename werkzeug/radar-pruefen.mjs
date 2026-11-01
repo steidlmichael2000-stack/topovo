@@ -11,10 +11,17 @@ const CRS = 'http://www.opengis.net/def/crs/EPSG/0/3857';
 let fehler = 0;
 const ok = (bed, text) => { console.log((bed ? 'ok    ' : 'FEHLER') + '  ' + text); if (!bed) fehler++; };
 
+/* Seit 28.10.2026 steht hinter maps.dwd.de ein Server mit altem Stand, und
+ * jede dritte Abfrage kommt als XML-Fehler: wie in der App nur eine frische
+ * Zeitachse nehmen und Bilder mehrmals versuchen. */
 async function referenz() {
-  const r = await fetch('https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0');
-  const m = /name="REFERENCE_TIME"[^>]*default="([^"]+)"/.exec(await r.text());
-  return Date.parse(m[1]);
+  for (let i = 0; i < 10; i++) {
+    const r = await fetch('https://maps.dwd.de/geoserver/dwd/Niederschlagsradar/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0', { cache: 'no-store' });
+    const m = /name="REFERENCE_TIME"[^>]*default="([^"]+)"/.exec(await r.text());
+    const t = m && Date.parse(m[1]);
+    if (t && Date.now() - t < 30 * 60000) return t;
+  }
+  throw new Error('nur veraltete Zeitachse vom Dienst');
 }
 
 const iso = t => new Date(t).toISOString().replace('.000Z', 'Z');
@@ -23,9 +30,12 @@ async function bild(t, [x0, y0, x1, y1], gr = null, lauf = null) {
     `&format=image/tiff&geotiff:compression=Deflate&subsettingCrs=${CRS}&outputCrs=${CRS}` +
     `&subset=X(${x0},${x1})&subset=Y(${y0},${y1})&subset=time("${iso(t)}")` +
     (lauf ? `&subset=REFERENCE_TIME("${iso(lauf)}")` : '') + (gr ? `&scalesize=i(${gr[0]}),j(${gr[1]})` : '');
-  const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 300));
-  return tiffLesen(await r.arrayBuffer());
+  for (let i = 0; ; i++) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + (await r.text()).slice(0, 300));
+    const puffer = await r.arrayBuffer();
+    if (new Uint8Array(puffer)[0] !== 0x3c || i >= 8) return tiffLesen(puffer);   // „<": XML-Fehler, nochmal
+  }
 }
 
 // Wo regnet es gerade? Ganz Deutschland verkleinert holen und die nasseste Gegend nehmen.
@@ -54,9 +64,14 @@ for (let k = 0; k < a.werte.length; k++) if (a.werte[k] > a.werte[gi]) gi = k;
 if (a.werte[gi] > 0) {
   const px = a.x0 + ((gi % a.w) + 0.5) * a.dx, py = a.yOben - (Math.floor(gi / a.w) + 0.5) * a.dy;
   const d = 300;
-  const fi = await (await fetch(`https://maps.dwd.de/geoserver/dwd/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo` +
-    `&LAYERS=Niederschlagsradar&QUERY_LAYERS=Niederschlagsradar&CRS=EPSG:3857&BBOX=${px - d},${py - d},${px + d},${py + d}` +
-    `&WIDTH=3&HEIGHT=3&I=1&J=1&INFO_FORMAT=application/json&TIME=${new Date(ref - 5 * 60000).toISOString().replace('.000Z', 'Z')}`)).json();
+  let fi = null;
+  for (let i = 0; i < 9 && !fi; i++) {
+    const text = await (await fetch(`https://maps.dwd.de/geoserver/dwd/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo` +
+      `&LAYERS=Niederschlagsradar&QUERY_LAYERS=Niederschlagsradar&CRS=EPSG:3857&BBOX=${px - d},${py - d},${px + d},${py + d}` +
+      `&WIDTH=3&HEIGHT=3&I=1&J=1&INFO_FORMAT=application/json&TIME=${new Date(ref - 5 * 60000).toISOString().replace('.000Z', 'Z')}`,
+      { cache: 'no-store' })).text();
+    if (text[0] === '{') fi = JSON.parse(text);
+  }
   const soll = fi.features[0].properties.RV_ANALYSIS;
   ok(Math.abs(soll - a.werte[gi]) < 0.011, `Höchstwert ${a.werte[gi].toFixed(3)} mm/5 min, WMS an derselben Stelle ${soll.toFixed(3)}`);
 } else {

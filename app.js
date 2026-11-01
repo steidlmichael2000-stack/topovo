@@ -3393,7 +3393,8 @@ const RADAR_RASTER = 400;      // Zellen je Richtung höchstens
 const RADAR_ZELLE = 1464;      // Mercator-Meter je Zelle in voller Auflösung (im Süden; im Norden mehr)
 const RADAR_BEREICH_MIN = 250000;   // Mercator-Meter: kleiner wird kein Ausschnitt geholt
 const RADAR_VERSUCHE = 6;     // je Bild: Der DWD antwortet zeitweise jedes dritte Mal mit einem XML-Fehler
-const RADAR_GLEICHZEITIG = 3;  // Abrufe zugleich — der Dienst spricht nur HTTP/1.1
+const RADAR_GLEICHZEITIG = 6;  // Abrufe zugleich — HTTP/1.1, mehr lässt der Browser je Server nicht zu
+                               // (gemessen 01.11.2026: 37 Bilder mit 3 zugleich 2,4 s, mit 6 1,4 s)
 const RADAR_GEBIET = [[45.68, 1.47], [56.21, 18.73]];   // Abdeckung laut DescribeCoverage
 
 /* Farbstufen des Dienstes, aus GetLegendGraphic (application/json), mm/h */
@@ -3403,6 +3404,24 @@ const RADAR_STUFEN = [
   ['#fe0000', 30], ['#e5004c', 45], ['#cc0098', 75], ['#6600cb', 100], ['#0000fe', 150]
 ];
 
+/* Hinter den zwei Stunden des Radars: das Wettermodell ICON-EU des DWD,
+ * Niederschlag je Stunde (mm in der Stunde bis zum Zeitpunkt = mm/h), rund
+ * 7 km je Zelle, neu alle 6 h, bis 78 h nach dem Lauf. Dieselbe Schnittstelle
+ * wie das Radar, mit CORS. Der Worker rechnet es bilinear auf das Raster des
+ * Radarausschnitts um — so laufen Radar und Modell durch denselben Shader, nur
+ * ohne Bewegungsschätzung (zwischen Stunden wird überblendet). Gezeigt bis
+ * MODELL_VOR nach der letzten Messung; auf dem Regler bekommt der Abschnitt
+ * MODELL_BREITE Einheiten, das Radar seine 180 Minuten. Gewünscht 01.11.2026. */
+const MODELL_ID = 'dwd__Icon-eu_reg00625_fd_sl_TOTPREC01H';
+const MODELL_CAPS = 'https://maps.dwd.de/geoserver/dwd/Icon-eu_reg00625_fd_sl_TOTPREC01H/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0';
+const MODELL_REICHWEITE = 78 * 3600000;   // so weit rechnet ein Lauf
+const MODELL_VOR = 48 * 60;               // Minuten nach der letzten Messung
+const MODELL_BREITE = 120;                // Reglereinheiten für den Modellabschnitt
+const MODELL_TEMPO = 180;                 // Minuten je Sekunde beim Abspielen: 46 h in gut 15 s
+const MODELL_FRISCH = 30 * 60000;
+const STUNDE = 3600000;
+
+let radarModell = null;        // { lauf: ms, geholt: ms } — der Lauf von ICON-EU
 let radarRef = null;           // letzte Messung, ms
 let radarRefGeholt = 0;
 let radarVersatz = 0;          // gezeigt: Minuten zur letzten Messung, stufenlos
@@ -3693,7 +3712,7 @@ function radarBereichPruefen(sicht) {
   if (radarSatzNeu) radarSatzWeg(radarSatzNeu);
   const satz = {
     id: ++radarSatzZahl, bereich: w.bereich, groesse: w.groesse, zelle: w.zelle, geo: null,
-    bilder: new Map(), fluesse: new Map(), offen: new Set(), fehler: new Map()
+    bilder: new Map(), fluesse: new Map(), offen: new Set(), fehler: new Map(), modell: new Set()
   };
   radarWerkHolen().postMessage({ art: 'satz', satz: satz.id, ref: radarRef });
   if (radarSatz) radarSatzNeu = satz; else radarSatz = satz;
@@ -3705,6 +3724,7 @@ function radarSatzWeg(satz) {
   for (const f of satz.fluesse.values()) radarTexWeg(f.tex);
   satz.bilder.clear();
   satz.fluesse.clear();
+  satz.modell.clear();
   if (satz === radarSatz) radarSatz = null;
   if (satz === radarSatzNeu) radarSatzNeu = null;
 }
@@ -3715,16 +3735,55 @@ function radarZeiten() {
   return z;
 }
 
-/** Das Paar um einen Zeitpunkt: früheres Bild und Anteil des späteren. */
+/** Die vollen Stunden des Modells hinter dem Radar, bis MODELL_VOR. */
+function modellZeiten() {
+  const z = [];
+  if (radarRef == null || !radarModell) return z;
+  const ende = Math.min(radarModell.lauf + MODELL_REICHWEITE, radarRef + MODELL_VOR * 60000);
+  for (let t = Math.floor((radarRef + RADAR_VOR * 60000) / STUNDE) * STUNDE + STUNDE; t <= ende; t += STUNDE) z.push(t);
+  return z;
+}
+
+const alleZeiten = () => [...radarZeiten(), ...modellZeiten()];
+
+/** Wie weit der Regler reicht, in Minuten nach der letzten Messung. */
+function radarEnde() {
+  const m = modellZeiten();
+  return m.length ? Math.round((m[m.length - 1] - radarRef) / 60000) : RADAR_VOR;
+}
+
+/* Regler: −60 … 120 sind Minuten, dahinter MODELL_BREITE Einheiten für die
+ * Stunden des Modells — sonst wäre das Radar auf zwei Tagen ein schmaler Rand. */
+function radarPosZuVersatz(p) {
+  const ende = radarEnde();
+  if (p <= RADAR_VOR || ende <= RADAR_VOR) return Math.min(p, ende);
+  return RADAR_VOR + (p - RADAR_VOR) / MODELL_BREITE * (ende - RADAR_VOR);
+}
+function radarVersatzZuPos(v) {
+  const ende = radarEnde();
+  if (v <= RADAR_VOR || ende <= RADAR_VOR) return v;
+  return RADAR_VOR + (v - RADAR_VOR) / (ende - RADAR_VOR) * MODELL_BREITE;
+}
+
+/** Das Paar um einen Zeitpunkt: früheres und späteres Bild, Anteil des späteren.
+ *  Im Radar fünf Minuten auseinander, im Modell eine Stunde. */
 function radarPaar(versatz = radarVersatz) {
-  const t0 = radarRef + Math.floor(versatz / 5) * RADAR_SCHRITT;
-  return { t0, f: (radarRef + versatz * 60000 - t0) / RADAR_SCHRITT };
+  const zeiten = alleZeiten(), t = radarRef + versatz * 60000;
+  let i = 0;
+  while (i < zeiten.length - 1 && zeiten[i + 1] <= t) i++;
+  const t0 = zeiten[i], t1 = zeiten[Math.min(i + 1, zeiten.length - 1)];
+  return { t0, t1, f: t1 > t0 ? Math.max(0, Math.min(1, (t - t0) / (t1 - t0))) : 0 };
 }
 
 function radarSatzTraegt(satz, versatz = radarVersatz) {
   if (!satz || radarRef == null) return false;
-  const { t0, f } = radarPaar(versatz);
-  return satz.bilder.has(t0) && (f < 1e-3 || satz.bilder.has(t0 + RADAR_SCHRITT));
+  const { t0, t1, f } = radarPaar(versatz);
+  return satz.bilder.has(t0) && (f < 1e-3 || satz.bilder.has(t1));
+}
+
+/** Alles geladen, was zu holen geht — erst dann läuft das Abspielen. */
+function radarSatzFertig(satz) {
+  return !!satz && alleZeiten().every(t => satz.bilder.has(t) || (satz.fehler.get(t) || 0) >= RADAR_VERSUCHE);
 }
 
 /** Fehlende Zeitpunkte holen, die um den Regler zuerst. */
@@ -3732,8 +3791,11 @@ function radarLaden() {
   const satz = radarSatzNeu || radarSatz;
   if (!satz || radarRef == null) return;
   const jetzt = radarRef + radarVersatz * 60000;
-  const fehlt = radarZeiten()
-    .filter(t => !satz.bilder.has(t) && !satz.offen.has(t) && (satz.fehler.get(t) || 0) < RADAR_VERSUCHE)
+  const modell = new Set(modellZeiten());
+  // Das Modell wird auf das Raster des Radars gerechnet: erst, wenn das erste Radarbild es kennt
+  const fehlt = alleZeiten()
+    .filter(t => !satz.bilder.has(t) && !satz.offen.has(t) && (satz.fehler.get(t) || 0) < RADAR_VERSUCHE &&
+      (!modell.has(t) || satz.geo))
     .sort((a, b) => Math.abs(a - jetzt) - Math.abs(b - jetzt));
   while (satz.offen.size < RADAR_GLEICHZEITIG && fehlt.length) radarBildHolen(satz, fehlt.shift());
 }
@@ -3754,7 +3816,33 @@ function radarUrl(satz, t, ref) {
 
 /* Bis der Worker das Bild zurückgibt, bleibt es in offen. Vorhersagen ohne
  * Zwischenspeicher: Dieselbe Adresse liefert mit jedem Lauf ein anderes Bild. */
+function modellUrl(satz, t, lauf) {
+  const b = satz.bereich, sw = radarLatLng(b.x0, b.y0), ne = radarLatLng(b.x1, b.y1);
+  const rand = 0.15;      // gut zwei Zellen, damit bilinear auch am Rand Nachbarn hat
+  return `${RADAR_WCS}?service=WCS&version=2.0.1&request=GetCoverage&coverageId=${MODELL_ID}` +
+    `&format=image/tiff&geotiff:compression=Deflate` +
+    `&subset=Lat(${(sw.lat - rand).toFixed(3)},${(ne.lat + rand).toFixed(3)})` +
+    `&subset=Long(${(sw.lng - rand).toFixed(3)},${(ne.lng + rand).toFixed(3)})` +
+    `&subset=time("${radarIso(t)}")&subset=REFERENCE_TIME("${radarIso(lauf)}")`;
+}
+
+async function modellBildHolen(satz, t) {
+  satz.offen.add(t);
+  const lauf = radarModell.lauf, geo = satz.geo;
+  try {
+    const r = await fetch(modellUrl(satz, t, lauf), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!/tiff/.test(r.headers.get('content-type') || '')) throw new Error('keine TIFF-Antwort');
+    const puffer = await r.arrayBuffer();
+    if (satz !== radarSatz && satz !== radarSatzNeu) return;
+    radarWerkHolen().postMessage({ art: 'modell', satz: satz.id, t, ref: radarRef, lauf, geo, puffer }, [puffer]);
+  } catch (err) {
+    radarBildFehlt(satz, t, err);
+  }
+}
+
 async function radarBildHolen(satz, t) {
+  if (t > radarRef + RADAR_VOR * 60000) return modellBildHolen(satz, t);
   satz.offen.add(t);
   const ref = radarRef;
   try {
@@ -3795,8 +3883,8 @@ function radarWerkAntwort(m) {
   if (m.art === 'bild') {
     satz.offen.delete(m.t);
     // Eine Vorhersage aus einem Lauf, den es nicht mehr gibt
-    if (m.t > m.ref && m.ref !== radarRef) return;
-    if (!radarZeiten().includes(m.t)) return;
+    if (m.modell ? !radarModell || m.lauf !== radarModell.lauf : m.t > m.ref && m.ref !== radarRef) return;
+    if (!(m.modell ? modellZeiten() : radarZeiten()).includes(m.t)) return;
     const geo = { w: m.w, h: m.h, x0: m.x0, yOben: m.yOben, dx: m.dx, dy: m.dy };
     if (!satz.geo) satz.geo = geo;
     else if (geo.w !== satz.geo.w || geo.h !== satz.geo.h || Math.abs(geo.x0 - satz.geo.x0) > 1 || Math.abs(geo.yOben - satz.geo.yOben) > 1) {
@@ -3807,7 +3895,11 @@ function radarWerkAntwort(m) {
     if (!tex) return;
     radarTexWeg(satz.bilder.get(m.t));
     satz.bilder.set(m.t, tex);
-    if (satz === radarSatzNeu && radarSatzTraegt(satz)) {
+    if (m.modell) satz.modell.add(m.t); else satz.modell.delete(m.t);
+    /* Beim Abspielen erst wechseln, wenn der neue Ausschnitt ganz da ist: Bis
+     * dahin steht das Abspielen (radarSpielSchritt), statt mit halben Bildern
+     * weiterzulaufen. */
+    if (satz === radarSatzNeu && radarSatzTraegt(satz) && (!radarSpielt || radarSatzFertig(satz))) {
       radarSatzWeg(radarSatz);
       radarSatz = satz;
       radarSatzNeu = null;
@@ -3844,8 +3936,9 @@ function radarZeichnenJetzt() {
   const satz = radarSatz;
   if (!satz || !satz.geo || radarRef == null) return;
 
-  let { t0, f } = radarPaar();
-  let a = satz.bilder.get(t0), b = satz.bilder.get(t0 + RADAR_SCHRITT), fl = satz.fluesse.get(t0);
+  let { t0, t1, f } = radarPaar();
+  // Bewegung gibt es nur zwischen zwei Radarbildern im Fünfminutenabstand
+  let a = satz.bilder.get(t0), b = satz.bilder.get(t1), fl = t1 - t0 === RADAR_SCHRITT ? satz.fluesse.get(t0) : null;
   if (a && f < 1e-3) {
     b = a; f = 0; fl = null;
   } else if (!a || !b) {
@@ -3911,6 +4004,39 @@ async function radarRefHolen() {
   }
 }
 
+/** Den neuesten Lauf von ICON-EU erfragen — mit derselben Vorsicht wie beim
+ *  Radar: Der stehengebliebene Server meldet den Lauf vom 28.10. Läufe gibt es
+ *  alle 6 h, gut 4 h später sind sie da; älter als einen Tag heißt veraltet. */
+async function modellLaufHolen() {
+  try {
+    let lauf = 0;
+    for (let i = 0; i < RADAR_REF_VERSUCHE && !lauf; i++) {
+      const r = await fetch(MODELL_CAPS, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const m = /name="REFERENCE_TIME"[^>]*default="([^"]+)"/.exec(await r.text());
+      const k = m && Date.parse(m[1]);
+      if (k && Date.now() - k <= 24 * STUNDE && (!radarModell || k >= radarModell.lauf)) lauf = k;
+    }
+    if (!lauf) throw new Error('nur veraltete Läufe vom Dienst');
+    const neu = !radarModell || radarModell.lauf !== lauf;
+    radarModell = { lauf, geholt: Date.now() };
+    if (neu) {
+      // Stunden eines alten Laufs verwerfen
+      for (const satz of [radarSatz, radarSatzNeu]) {
+        if (!satz) continue;
+        for (const t of satz.modell) { radarTexWeg(satz.bilder.get(t)); satz.bilder.delete(t); satz.fehler.delete(t); }
+        satz.modell.clear();
+      }
+      radarLaden();
+      radarZeichnen();
+    }
+    radarLeisteWerte();
+  } catch (err) {
+    console.warn('Regenradar, Modell:', err);
+    if (radarModell) radarModell.geholt = Date.now();     // nicht jede Minute neu versuchen
+  }
+}
+
 /** Auflage an oder aus, wie prefs.radar es sagt. */
 function radarSetzen() {
   const an = auflageGewaehlt('radar');
@@ -3935,6 +4061,7 @@ function radarSetzen() {
    * es radarFrisch jede Minute wieder. */
   radarHolt = true;
   radarLeisteWerte();
+  if (!radarModell || Date.now() - radarModell.geholt > MODELL_FRISCH) modellLaufHolen();
   radarRefHolen().then(() => {
     radarHolt = false;
     if (!auflageGewaehlt('radar') || (radarSchicht && map.hasLayer(radarSchicht))) return;
@@ -3955,6 +4082,7 @@ async function radarFrisch() {
     if (auflageGewaehlt('radar') && !radarHolt) radarSetzen();
     return;
   }
+  if (!radarModell || Date.now() - radarModell.geholt > MODELL_FRISCH) modellLaufHolen();
   if (Date.now() - radarRefGeholt < RADAR_FRISCH) return;
   const alt = radarRef;
   if (await radarRefHolen()) radarAchseNeu(alt);
@@ -3964,18 +4092,21 @@ async function radarFrisch() {
  * Vorhersage des alten Laufs und wird neu geholt — auch die Bewegung an der
  * Nahtstelle. Was vorn aus der Stunde fällt, kommt weg. */
 function radarAchseNeu(alt) {
-  const zeiten = new Set(radarZeiten());
+  const zeiten = new Set(radarZeiten()), modell = new Set(modellZeiten());
   const ziel = radarSatzNeu || radarSatz;
   for (const satz of [radarSatz, radarSatzNeu]) {
     if (!satz) continue;
     const weg = [];
     for (const [t, tex] of satz.bilder) {
-      if (t > alt || !zeiten.has(t)) { weg.push(t); radarTexWeg(tex); satz.bilder.delete(t); }
+      /* Bleiben: Messungen bis zur alten und Modellstunden, die noch Modell sind —
+       * die hängen am Lauf des Modells, nicht an der Messung. */
+      const bleibt = satz.modell.has(t) ? modell.has(t) : zeiten.has(t) && t <= alt;
+      if (!bleibt) { weg.push(t); radarTexWeg(tex); satz.bilder.delete(t); satz.modell.delete(t); }
     }
     for (const [t, f] of satz.fluesse) {
       if (t >= alt || !zeiten.has(t)) { radarTexWeg(f.tex); satz.fluesse.delete(t); }
     }
-    for (const t of [...satz.offen]) if (t > alt) satz.offen.delete(t);
+    for (const t of [...satz.offen]) if (t > alt && !modell.has(t)) satz.offen.delete(t);
     satz.fehler.clear();
     if (satz === ziel && radarWerk) radarWerk.postMessage({ art: 'weg', satz: satz.id, zeiten: weg, ref: radarRef });
   }
@@ -3993,29 +4124,41 @@ function radarSpielen(an) {
     btn.setAttribute('aria-label', radarSpielt ? 'Anhalten' : 'Abspielen');
   }
   if (!radarSpielt) return;
-  if (radarVersatz >= RADAR_VOR) radarVersatz = -RADAR_ZURUECK;
+  if (radarVersatz >= radarEnde()) radarVersatz = -RADAR_ZURUECK;
   radarHaltRest = 0;
   radarSpielZeit = performance.now();
   requestAnimationFrame(radarSpielSchritt);
 }
 
-/* Abspielen gleitet, RADAR_TEMPO Minuten je Sekunde, von der ersten Messung bis
- * zum Ende der Vorhersage; dort kurz stehen und von vorn. Fehlt das Bild an der
- * nächsten Stelle noch, wartet es, statt über die Lücke zu springen. */
+/* Abspielen gleitet, im Radar RADAR_TEMPO, im Modell MODELL_TEMPO Minuten je
+ * Sekunde, von der ersten Messung bis zum Ende der Vorhersage; dort kurz stehen
+ * und von vorn. Es steht, solange noch geladen wird — beim ersten Start und
+ * nach dem Zoomen (neuer Ausschnitt): Vorher lief die Uhr mit dem alten,
+ * zu kleinen Ausschnitt weiter und wartete dann Bild für Bild. */
 function radarSpielSchritt(jetzt) {
   if (!radarSpielt) return;
   const dt = Math.min(100, jetzt - radarSpielZeit);
   radarSpielZeit = jetzt;
-  if (radarHaltRest > 0) {
+  const ende = radarEnde();
+  // Ist der neue Ausschnitt fertig, auch wenn das letzte Bild ein Fehlschlag war: jetzt wechseln
+  if (radarSatzNeu && radarSatzFertig(radarSatzNeu) && radarSatzTraegt(radarSatzNeu)) {
+    radarSatzWeg(radarSatz);
+    radarSatz = radarSatzNeu;
+    radarSatzNeu = null;
+  }
+  if (radarSatzNeu || !radarSatzFertig(radarSatz)) {
+    // warten
+  } else if (radarHaltRest > 0) {
     radarHaltRest -= dt;
     if (radarHaltRest <= 0) {
       if (radarSatzTraegt(radarSatz, -RADAR_ZURUECK)) radarVersatz = -RADAR_ZURUECK;
       else radarHaltRest = 1;
     }
-  } else if (radarVersatz >= RADAR_VOR) {
+  } else if (radarVersatz >= ende) {
     radarHaltRest = RADAR_HALT;
   } else {
-    const weiter = Math.min(RADAR_VOR, radarVersatz + dt * RADAR_TEMPO / 1000);
+    const tempo = radarVersatz >= RADAR_VOR ? MODELL_TEMPO : RADAR_TEMPO;
+    const weiter = Math.min(ende, radarVersatz + dt * tempo / 1000);
     if (radarSatzTraegt(radarSatz, weiter)) radarVersatz = weiter;
   }
   radarLeisteWerte();
@@ -4023,9 +4166,20 @@ function radarSpielSchritt(jetzt) {
   requestAnimationFrame(radarSpielSchritt);
 }
 
+const radarTag = new Intl.DateTimeFormat('de-DE', { weekday: 'short' });
+
 function radarLeisteWerte() {
   const zeit = $('#radarZeit'), text = $('#radarText');
-  if (zeit && document.activeElement !== zeit) zeit.value = String(radarVersatz);
+  if (zeit) {
+    /* Reglerlänge und die Teile der Leiste (Messung, Radarvorhersage, Modell)
+     * nach dem, was es gibt; das CSS liest die Anteile. */
+    const max = radarVersatzZuPos(radarEnde());
+    if (zeit.max !== String(max)) zeit.max = String(max);
+    const breite = max + RADAR_ZURUECK;
+    zeit.style.setProperty('--a-jetzt', (RADAR_ZURUECK / breite).toFixed(4));
+    zeit.style.setProperty('--a-modell', ((RADAR_ZURUECK + RADAR_VOR) / breite).toFixed(4));
+    if (document.activeElement !== zeit) zeit.value = String(radarVersatzZuPos(radarVersatz));
+  }
   if (!text) return;
   let html, vorhersage = false, laedt = false;
   if (radarKaputt) {
@@ -4035,17 +4189,22 @@ function radarLeisteWerte() {
   } else {
     /* Die Uhr auf fünf Minuten wie in WarnWetter: Das Bild gleitet, die Anzeige
      * springt von Messung zu Messung. */
-    const stufe = Math.round(radarVersatz / 5) * 5;
-    let art = stufe > 0 ? 'Vorhersage' : stufe === 0 ? 'letzte Messung' : 'Messung';
+    const imModell = radarVersatz > RADAR_VOR;
+    // Im Modell auf die volle Stunde, mit Wochentag, sobald es nicht mehr heute ist
+    const uhrzeit = imModell ? Math.round((radarRef + radarVersatz * 60000) / STUNDE) * STUNDE
+      : radarRef + Math.round(radarVersatz / 5) * 5 * 60000;
+    const stufe = Math.round((uhrzeit - radarRef) / 60000);
+    let art = imModell ? 'Modell ICON-EU' : stufe > 0 ? 'Vorhersage' : stufe === 0 ? 'letzte Messung' : 'Messung';
     const satz = radarSatzNeu || radarSatz;
     if (!satz) art = 'lädt …';      // noch kein Ausschnitt angefragt
     else {
-      const zeiten = radarZeiten(), da = zeiten.filter(t => satz.bilder.has(t)).length;
+      const zeiten = alleZeiten(), da = zeiten.filter(t => satz.bilder.has(t)).length;
       const aufgegeben = zeiten.every(t => satz.bilder.has(t) || (satz.fehler.get(t) || 0) >= RADAR_VERSUCHE);
       if (da === 0 && aufgegeben) art = 'nicht erreichbar';
       else if (da < zeiten.length && !aufgegeben) art = `lädt ${Math.round(da / zeiten.length * 100)} %`;
     }
-    html = `<b>${esc(radarUhr.format(radarRef + stufe * 60000))}</b><small>${art}</small>`;
+    const tag = new Date(uhrzeit).toDateString() !== new Date().toDateString() ? radarTag.format(uhrzeit).replace('.', '') + ' ' : '';
+    html = `<b>${esc(tag + radarUhr.format(uhrzeit))}</b><small>${art}</small>`;
     vorhersage = stufe > 0;
     laedt = !radarSatzTraegt(radarSatz);
   }
@@ -4074,7 +4233,7 @@ function radarBinden() {
     // Stufenlos: Das Bild folgt dem Finger, auch zwischen den Fünfminutenmarken
     zeit.addEventListener('input', () => {
       radarSpielen(false);
-      radarVersatz = Math.max(-RADAR_ZURUECK, Math.min(RADAR_VOR, Number(zeit.value)));
+      radarVersatz = Math.max(-RADAR_ZURUECK, Math.min(radarEnde(), radarPosZuVersatz(Number(zeit.value))));
       radarLeisteWerte();
       radarZeichnen();
       radarLaden();      // zuerst holen, was um die neue Stelle liegt
