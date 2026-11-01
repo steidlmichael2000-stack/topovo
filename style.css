@@ -330,12 +330,11 @@ body {
      Leisten unten —, ihr Inhalt wandert ins Eck */
   .quellen, #ziel[hidden] + #bottom[hidden] + .quellen { height: 0; margin-bottom: 0; }
   .quellen-kasten { position: fixed; left: var(--gap); bottom: calc(6px + env(safe-area-inset-bottom)); }
-  /* Der aufgeklappte Quellentext bleibt in seiner Ecke, höchstens so breit wie
-     der Platz neben der Spalte */
+  /* Der aufgeklappte Quellentext bleibt in seiner Ecke, so breit wie die Seitenleiste */
   .quellen-text {
     position: fixed; left: var(--gap); right: auto;
     bottom: calc(6px + 22px + 4px + env(safe-area-inset-bottom));
-    max-width: calc((100vw - 640px) / 2 - var(--gap) - 8px);
+    max-width: var(--seite);
   }
   /* Das Messmenü reicht dann über die Spalte — es gehört über eine offene Leiste */
   .mess-menue { z-index: 510; }
@@ -1687,6 +1686,120 @@ body {
 /* Inhalt eines aufgeklappten Menüabschnitts */
 .sheet-sec[open] > :not(summary) { animation: von-oben .24s var(--auf); }
 .tour-angebot { animation: von-unten .3s var(--auf); }
+
+/* ---------- Desktop und Tablet quer: Symbolspalte, feste Leiste, Anwendungen unten ----------
+   Ab 1010 px Fensterbreite, entschieden nur nach der Breite — ein Tablet quer
+   kommt damit genauso zurecht. Vorbild Apple Karten (feste Leiste links, Knöpfe
+   oben rechts) und BayernAtlas (Symbolspalte, Werkzeugleiste unten rechts):
+   - links die Symbolspalte (#schiene) und daneben die Leiste aus Glas: Suche,
+     Ergebnis und — über die Spalte gewählt — ein Abschnitt des Menüs;
+   - Anwendungen (Profil, Polygon, Live, Mappe, Abstecken, Radar) unten mittig
+     über der Karte, übereinander gestapelt (Lage aus updateBH: --unten);
+   - Standort, Abstecken und Nord oben rechts, Zoom und Werkzeuge unten rechts.
+   Dieselbe Grenze steht in app.js (SEITENLEISTE). */
+.schiene, .werkzeuge, .zoom-knoepfe { display: none; }
+
+@media (min-width: 1010px) {
+  :root { --schiene: 64px; --seite: 320px; --links: calc(var(--schiene) + var(--seite)); --werkzeug-h: 60px; }
+
+  /* Symbolspalte */
+  .schiene {
+    position: fixed; left: 0; top: 0; bottom: 0; width: var(--schiene);
+    display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
+    background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+    box-shadow: inset -.5px 0 0 var(--line);
+  }
+  .schiene button {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 0 7px;
+    border: 0; border-radius: var(--r-knopf); background: none; color: var(--muted); cursor: pointer;
+    font: inherit; font-size: .64rem; font-weight: 600;
+  }
+  .schiene .sec-ikon { width: 22px; height: 22px; stroke: currentColor; }
+  .schiene .sec-ikon .voll { fill: currentColor; }
+  .schiene button:hover { background: var(--panel-2); color: var(--text); }
+  .schiene button.is-on { background: var(--accent); color: var(--accent-ink); }
+
+  /* Feste Leiste: .ui ist die Spalte, ihr Glas liegt als ::before dahinter —
+     nicht auf .ui selbst, sonst würden die festen Anwendungen darin an der
+     Leiste statt am Fenster ausgerichtet. */
+  .ui { left: var(--schiene); right: auto; width: var(--seite); padding-bottom: 40px; }
+  .ui::before {
+    content: ""; position: fixed; z-index: -1; top: 0; bottom: 0; left: var(--schiene); width: var(--seite);
+    background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+    box-shadow: inset -.5px 0 0 var(--line), 8px 0 24px rgba(0, 0, 0, .18);
+    pointer-events: none;
+  }
+  /* In der Leiste kein Glas auf Glas: Suche als gefülltes Feld, Menü und Ergebnis flach */
+  .bar-top, .sheet, .bar-bottom:not([data-art="werkzeug"]) {
+    background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .bar-top { background: var(--panel-2); border-radius: var(--r-knopf); }
+  #menuBtn { display: none; }
+  .sheet { flex: 1 1 auto; min-height: 0; max-height: none; margin-top: 4px; }
+  .bar-bottom:not([data-art="werkzeug"]) { margin: 8px auto 0; border-top: 1px solid var(--line); border-radius: 0; }
+  .bar-bottom:not([hidden]):not([data-art="werkzeug"]) { animation-name: von-oben; }
+  /* Die Quellenzeile ist nur noch Abstandhalter, ihr Inhalt steht unten in der Leiste */
+  .quellen, #ziel[hidden] + #bottom[hidden] + .quellen, .menue-offen .quellen { order: 3; height: 0; margin: 0; }
+  .quellen-kasten { left: calc(var(--schiene) + var(--gap)); }
+  .quellen-text { left: calc(var(--schiene) + var(--gap)); max-width: calc(var(--seite) - 2 * var(--gap)); }
+
+  /* Ein über die Symbolspalte gewählter Abschnitt steht allein, seine Kopfzeile ist Titel */
+  .sheet[data-nur] > .sheet-sec:not([open]) { display: none; }
+  .sheet[data-nur] > .sheet-sec { border-top: 0; }
+  .sheet[data-nur] > .sheet-sec > summary { pointer-events: none; }
+  .sheet[data-nur] > .sheet-sec > summary::after { display: none; }
+
+  /* Anwendungen unten mittig über der Karte, zwischen Leiste und Knöpfen rechts */
+  .live:not([hidden]), .radar:not([hidden]), .bar-ziel:not([hidden]),
+  .bar-bottom[data-art="werkzeug"]:not([hidden]) {
+    position: fixed; left: calc(var(--links) + 16px); right: 76px; bottom: var(--unten, 16px);
+    width: auto; max-width: 640px; margin: 0 auto;
+  }
+  /* Offenes Menü und Anwendungen stören sich hier nicht */
+  .menue-offen .bar-ziel, .menue-offen .bar-bottom[data-art="werkzeug"] { display: block; }
+  .ui:has(> .sheet:not([hidden])) > .radar:not([hidden]) { display: block; }
+
+  /* Knöpfe oben rechts: Standort, Abstecken, Nord */
+  .maploc, .mapziel, .north { top: 16px; right: 16px; bottom: auto; }
+  .mapziel, .mapziel[hidden] ~ .north { top: 68px; }
+  .mapziel:not([hidden]) ~ .north { top: 120px; bottom: auto; }
+  /* Messen läuft über die Werkzeugleiste */
+  .mapmess, .mess-menue { display: none; }
+
+  /* Zoom über den Werkzeugen, rechts */
+  .zoom-knoepfe {
+    position: fixed; z-index: 450; right: 16px; bottom: calc(16px + var(--werkzeug-h) + 12px);
+    display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 22px; background: var(--glass); box-shadow: var(--shadow);
+    backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  }
+  .zoom-knoepfe button {
+    display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
+    border: 0; background: none; color: var(--text); cursor: pointer;
+  }
+  .zoom-knoepfe button + button { box-shadow: inset 0 1px 0 var(--line); }
+  .zoom-knoepfe button:hover { background: var(--panel-2); }
+  .zoom-knoepfe svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+  /* Werkzeugleiste unten rechts */
+  .werkzeuge {
+    position: fixed; z-index: 450; right: 16px; bottom: 16px; height: var(--werkzeug-h);
+    display: flex; gap: 2px; padding: 4px;
+    border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow);
+    backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  }
+  .werkzeuge button {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    width: 60px; padding: 0; border: 0; border-radius: var(--r-knopf);
+    background: none; color: var(--muted); cursor: pointer;
+    font: inherit; font-size: .64rem; font-weight: 600;
+  }
+  .werkzeuge svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+  .werkzeuge svg .voll { fill: currentColor; stroke: none; }
+  .werkzeuge button:hover { background: var(--panel-2); color: var(--text); }
+  .werkzeuge button.is-on { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+  .werkzeuge button[data-werkzeug="radar"].is-on { background: var(--accent); color: var(--accent-ink); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

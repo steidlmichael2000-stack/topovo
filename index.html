@@ -105,7 +105,34 @@
   </svg>
 </button>
 
+<!-- Werkzeugleiste unten rechts, nur ab 1010 px (wie im BayernAtlas). Die Knöpfe mit
+     data-messart laufen über dieselbe Bindung wie das Messmenü. -->
+<div id="werkzeuge" class="werkzeuge" role="toolbar" aria-label="Werkzeuge">
+  <button type="button" data-messart="profil"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 20h19"/><path d="M2.5 16.5 7 10l3.5 3.8 3.6-6.3 3.9 5.4 3.5-3.2"/></svg><span>Profil</span></button>
+  <button type="button" data-messart="mappe"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5h10.5L19 7v13.5H5z"/><path d="M8 16.5l2.5-3.2 2 1.8 3.5-4.6"/><path d="M8 8h5"/></svg><span>Mappe</span></button>
+  <button type="button" data-messart="polygon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 3 9.5 11.5 4 20.5 9 18 18.5z"/><circle class="voll" cx="5" cy="19" r="1.7"/><circle class="voll" cx="3" cy="9.5" r="1.7"/><circle class="voll" cx="11.5" cy="4" r="1.7"/><circle class="voll" cx="20.5" cy="9" r="1.7"/><circle class="voll" cx="18" cy="18.5" r="1.7"/></svg><span>Polygon</span></button>
+  <button type="button" data-messart="live"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="4.5" cy="19.5" r="1.9"/><path d="M6.5 17.5 13 11" stroke-dasharray="2 2.2"/><circle cx="17" cy="7" r="3.4"/><path d="M17 1.8v2.4M17 9.8v2.4M11.8 7h2.4M19.8 7h2.4"/></svg><span>Live</span></button>
+  <button type="button" data-werkzeug="radar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 15.5h10.5a3.6 3.6 0 0 0 .4-7.2 5 5 0 0 0-9.7-1.1A4.2 4.2 0 0 0 7 15.5z"/><path d="M8.5 18.5l-1 2M12.5 18.5l-1 2M16.5 18.5l-1 2"/></svg><span>Radar</span></button>
+  <button type="button" data-werkzeug="kml"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8.5L18 6.5V21H6zM14.5 3v3.5H18"/><path d="M12 10v7M9 14l3 3 3-3"/></svg><span>KML</span></button>
+</div>
+<!-- Zoom für die Maus, nur ab 1010 px -->
+<div class="zoom-knoepfe">
+  <button id="zoomRein" type="button" aria-label="Hineinzoomen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="zoomRaus" type="button" aria-label="Herauszoomen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+</div>
+
 <div class="ui">
+  <!-- Symbolspalte, nur ab 1010 px: je Bereich ein Knopf, der ihn in der Leiste daneben öffnet -->
+  <nav id="schiene" class="schiene" aria-label="Bereiche">
+    <button type="button" data-schiene="suche"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20"/></svg><span>Suche</span></button>
+    <button type="button" data-schiene="karte"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5zM9 4v13.5M15 6.5V20"/></svg><span>Karte</span></button>
+    <button type="button" data-schiene="wetter"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .4-8 5.5 5.5 0 0 0-10.6-1.3A4.7 4.7 0 0 0 7 18.5z"/></svg><span>Wetter</span></button>
+    <button type="button" data-schiene="kml"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8.5L18 6.5V21H6zM14.5 3v3.5H18"/><circle cx="12" cy="13.5" r="2.2"/></svg><span>KML</span></button>
+    <button type="button" data-schiene="ansicht"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path class="voll" d="M12 3.5a8.5 8.5 0 0 0 0 17z"/></svg><span>Ansicht</span></button>
+    <button type="button" data-schiene="wms"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9 4.5-9 4.5L3 8zM3 12l9 4.5 9-4.5M3 16l9 4.5 9-4.5"/></svg><span>WMS</span></button>
+    <button type="button" data-schiene="hinweise"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.8v5.7"/><circle class="voll" cx="12" cy="7.7" r="1.1"/></svg><span>Hinweise</span></button>
+  </nav>
+
 
   <!-- ---------- obere Leiste ---------- -->
   <div class="bar bar-top">

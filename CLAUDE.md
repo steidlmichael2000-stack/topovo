@@ -330,6 +330,22 @@ umbauen — das lieferte je nach Zellgröße verschieden viele Punkte (README).
 - Der Standortknopf ist aktiv in der Signalfarbe; der Standort auf der Karte (`.me-dot`, Kreis, Lot)
   bleibt **blau** — die Signalfarbe trägt schon der gefundene Punkt.
 
+## Desktop-Anordnung ab 1010 px (November 2026)
+
+Ab 1010 px Fensterbreite (Desktop, Tablet quer; nur nach Breite, nicht nach Maus oder Finger):
+Symbolspalte `#schiene` ganz links (wie BayernAtlas, 64 px), daneben `.ui` als feste Leiste aus Glas (320 px)
+(Glas als `.ui::before` — auf `.ui` selbst würde es die festen Anwendungen an der Leiste statt am
+Fenster ausrichten). In der Leiste: Suche, Ergebnis und der über die Spalte gewählte Menüabschnitt
+(`schieneWaehlen`, `#sheet[data-nur]`). Anwendungen (Profil, Polygon, Live, Mappe, Abstecken,
+Radar, Live-Zeile) stehen unten mittig über der Karte, gestapelt von `updateBH` über `--unten` — unten am Rand, nur bei schmalem Fenster über der Werkzeugleiste.
+`#bottom[data-art="werkzeug"]` unterscheidet Werkzeug von Ergebnis — wer eine neue Leiste in
+`#bottom` schreibt, setzt oder löscht das. Standort, Abstecken, Nord oben rechts; Zoom und
+`#werkzeuge` (Messen über `data-messart`, Radar, KML) unten rechts; Messknopf und Messmenü sind aus.
+
+Die Grenze steht zweimal: in `style.css` („Desktop und Tablet quer“) und als `SEITENLEISTE` in
+`app.js`. **Ausschnitte nur über `kartePassen` (statt `map.fitBounds`) und `sichtSetzen` (statt
+`setView`/`panTo`) setzen**, sonst landet das Gezeigte unter Leiste oder Anwendungen.
+
 ## Beim Deployen
 
 `VERSION` in `sw.js` hochzählen. Der Worker arbeitet zwar „erst Netz, dann

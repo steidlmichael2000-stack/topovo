@@ -1843,7 +1843,7 @@ async function refineOnTrack() {
     };
     drawPoint();
     renderBottom();
-    map.setView([pos.lat, pos.lon], Math.max(map.getZoom(), 16));
+    sichtSetzen([pos.lat, pos.lon], Math.max(map.getZoom(), 16));
     toast(`Auf das Gleis gerechnet — ${nfM.format(korrektur)} m verschoben`);
   } catch (err) {
     $('#bottom').innerHTML = zuvor;
@@ -5027,7 +5027,7 @@ function kmlListe() {
     if (!a.sichtbar) { kmlZeigen(a, true); kmlKopfMerken(a); kmlListe(); }
     if (!a.grenzen) { toast('Zu dieser Datei ist keine Lage bekannt.'); return; }
     closeSheet();
-    map.fitBounds(a.grenzen, { padding: [30, 30], maxZoom: 17 });
+    kartePassen(a.grenzen, { padding: [30, 30], maxZoom: 17 });
   }));
 
   box.querySelectorAll('[data-kdel]').forEach(btn => btn.addEventListener('click', async () => {
@@ -5096,7 +5096,7 @@ async function kmlOeffnen(dateien) {
   kmlLabels();
   if (!letzte) return;
 
-  if (letzte.grenzen) map.fitBounds(letzte.grenzen, { padding: [30, 30], maxZoom: 17 });
+  if (letzte.grenzen) kartePassen(letzte.grenzen, { padding: [30, 30], maxZoom: 17 });
   const viel = letzte.anzahl > KML_VIEL ? ' — bei so vielen kann die Karte träge werden' : '';
   toast(zahl > 1
     ? zahl + ' Dateien geladen.'
@@ -5881,7 +5881,7 @@ function reiheWaehlen(i) {
   renderBottom();
   updateHash();
   if (!map.getBounds().pad(-0.12).contains([r.punkt.lat, r.punkt.lon])) {
-    map.panTo([r.punkt.lat, r.punkt.lon]);
+    sichtSetzen([r.punkt.lat, r.punkt.lon]);
   }
 }
 
@@ -6335,6 +6335,7 @@ const hilfeKnopf = (art, was) => `<button type="button" class="bb-hilfe" data-hi
 
 function messLeiste() {
   const b = $('#bottom');
+  b.dataset.art = 'werkzeug';      // ab 1010 px unten mittig statt in der Leiste
   b.hidden = false;
   const n = messPunkte.length;
   const live = messArt === 'live';
@@ -7062,6 +7063,7 @@ function profNeigung(p) {
  * Wird ein Knopf zwischen Drücken und Loslassen ersetzt, gibt es keinen Klick. */
 function profLeiste() {
   const b = $('#bottom');
+  b.dataset.art = 'werkzeug';      // ab 1010 px unten mittig statt in der Leiste
   b.hidden = false;
   const g = profGleis;
   const n = profPunkte.length;
@@ -7421,7 +7423,7 @@ function gpKarteZeigen() {
   if (profPunkte.length < 2) return;
   // Rechts steht die Knopfsäule, darunter die Leiste — so hoch, wie sie mit Diagramm wird
   const unten = Math.min(Math.round(window.innerHeight * 0.6), Math.max($('#bottom').offsetHeight, 290) + 24);
-  map.fitBounds(L.latLngBounds(profPunkte), { paddingTopLeft: [40, 100], paddingBottomRight: [76, unten], maxZoom: 18 });
+  kartePassen(L.latLngBounds(profPunkte), { paddingTopLeft: [40, 100], paddingBottomRight: [76, unten], maxZoom: 18 });
 }
 
 /** Nach einem Sprung: nur nachschieben, wenn die Stelle aus dem freien Teil der Karte läuft. */
@@ -7429,9 +7431,9 @@ function gpNachfuehren() {
   const m = profGleis && profGleis.mitte;
   if (!m) return;
   const p = map.latLngToContainerPoint(m), gr = map.getSize();
-  const leiste = $('#bottom');
-  const unten = gr.y - (leiste.hidden ? 0 : leiste.getBoundingClientRect().height + 14);
-  if (p.x < 30 || p.x > gr.x - 30 || p.y < 90 || p.y > unten - 20) map.panTo(m);
+  const leiste = $('#bottom'), links = seitenBreite();
+  const unten = gr.y - (leiste.hidden || links ? 0 : leiste.getBoundingClientRect().height + 14);
+  if (p.x < links + 30 || p.x > gr.x - 30 || p.y < (links ? 30 : 90) || p.y > unten - 20) sichtSetzen(m);
 }
 
 /* ============================ Profil als PDF ============================
@@ -8088,6 +8090,7 @@ function mappeZaehlen() {
 
 function mappeLeiste() {
   const b = $('#bottom');
+  b.dataset.art = 'werkzeug';      // ab 1010 px unten mittig statt in der Leiste
   b.hidden = false;
   const W = mappeBreite(), u = mappeUeber();
   const ebene = (id, an, text, geb) => `<button type="button" class="prof-dom${geb ? ' prof-geb' : ''}${an ? ' is-on' : ''}" ` +
@@ -9010,6 +9013,7 @@ async function useLineAt(ref, seeds, lat, lon) {
 
 function showPicker(refs, seeds, lat, lon) {
   const b = $('#bottom');
+  delete b.dataset.art;
   b.hidden = false;
   b.innerHTML = `<p class="bb-title">Mehrere Strecken an dieser Stelle</p>
     <p class="bb-sub">Sortiert nach Abstand zum Tippen — die erste liegt am nächsten.</p>
@@ -9090,6 +9094,7 @@ function renderBottom() {
   if (profModus) profEnde(false);
   if (mappeOffen) { mappeOffen = false; mappeStand = ''; mappeFertig = null; syncButtons(); }
   const b = $('#bottom');
+  delete b.dataset.art;            // Ergebnis: steht ab 1010 px in der Leiste links
   const p = view.point;
   if (!p) { b.hidden = true; updateBH(); return; }
 
@@ -9401,6 +9406,7 @@ function bindBottom() {
 
 function showStatus(msg) {
   const b = $('#bottom');
+  delete b.dataset.art;
   b.hidden = false;
   b.innerHTML = `<p class="bb-sub">${esc(msg)}</p>`;
   updateBH();
@@ -9408,6 +9414,7 @@ function showStatus(msg) {
 
 function showError(msg) {
   const b = $('#bottom');
+  delete b.dataset.art;
   b.hidden = false;
   b.innerHTML = `<button type="button" id="bbClose" class="bb-close" aria-label="Anzeige schließen">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -9444,7 +9451,65 @@ function closeBottom() {
  * Summe: Die Leisten sind krumm hoch (gemessen 108,72 und 160,53 px), einzeln
  * gerundet lag der Standortknopf einen Pixel unter dem ©-Kasten. */
 const UNTEN_RAND = 6;
+/* ---- Seitenleiste (Desktop, Tablet quer) ----
+ * Ab 1010 px steht die Bedienung links in einer Spalte über der Karte
+ * (style.css, „Desktop und Tablet quer“). Was die Karte zeigen soll, gehört dann
+ * rechts daneben: kartePassen schiebt den linken Rand hinter die Spalte und den
+ * unteren über die Anwendungen unten mittig, sichtSetzen stellt einen Punkt in
+ * die Mitte der freien Fläche. */
+const SEITENLEISTE = matchMedia('(min-width: 1010px)');
+
+function seitenBreite() {
+  return SEITENLEISTE.matches ? Math.round($('.ui').getBoundingClientRect().right) : 0;
+}
+
+function kartePassen(grenzen, o = {}) {
+  const links = seitenBreite();
+  if (links) {
+    const tl = o.paddingTopLeft || o.padding || [30, 30], br = o.paddingBottomRight || o.padding || [30, 30];
+    o = { ...o, paddingTopLeft: [links + tl[0], 30], paddingBottomRight: [Math.max(br[0], 76), untenBelegt()] };
+    delete o.padding;
+  }
+  map.fitBounds(grenzen, o);
+}
+
+/** Wie viel unten von Anwendungen und Werkzeugleiste belegt ist (ab 1010 px). */
+function untenBelegt() {
+  let oben = window.innerHeight - 16 - 60;
+  for (const el of [$('#bottom'), $('#ziel'), $('#radar'), $('#live')]) {
+    if (el.hidden || getComputedStyle(el).position !== 'fixed') continue;
+    oben = Math.min(oben, el.getBoundingClientRect().top);
+  }
+  return Math.round(window.innerHeight - oben) + 20;
+}
+
+function sichtSetzen(ll, z = map.getZoom()) {
+  const links = seitenBreite();
+  if (!links) { map.setView(ll, z); return; }
+  // Erst mittig setzen, dann um die halbe Spalte versetzen — über Bildschirmpunkte,
+  // damit es auch bei gedrehter Karte stimmt
+  map.setView(ll, z, { animate: false });
+  const g = map.getSize();
+  map.setView(map.containerPointToLatLng([g.x / 2 - links / 2, g.y / 2]), z, { animate: false });
+}
+
 function updateBH() {
+  // Ab 1010 px: Anwendungen unten mittig übereinander, die zuletzt geöffnete
+  // (Profil, Polygon …) zuunterst, darüber Abstecken, Radar, Live
+  if (SEITENLEISTE.matches) {
+    const b = $('#bottom');
+    const stapel = [b.dataset.art === 'werkzeug' ? b : null, $('#ziel'), $('#radar'), $('#live')]
+      .filter(el => el && !el.hidden);
+    // Unten am Rand wie die Werkzeugleiste; nur wenn das Fenster so schmal ist,
+    // dass die Anwendungen bis an sie heranreichen, stehen sie über ihr
+    const wz = $('#werkzeuge').getBoundingClientRect();
+    const frei = !stapel.length || stapel[0].getBoundingClientRect().right + 12 <= wz.left;
+    let y = frei ? 16 : 16 + 60 + 12;    // 60: --werkzeug-h
+    for (const el of stapel) {
+      el.style.setProperty('--unten', y + 'px');
+      y += Math.round(el.getBoundingClientRect().height) + 8;
+    }
+  }
   let grundlinie = UNTEN_RAND;
   // Bei offenem Menü sind die Leisten ausgeblendet (openSheet) und zählen nicht
   if (!document.body.classList.contains('menue-offen')) {
@@ -9544,7 +9609,7 @@ async function search() {
     const res = await gleisGenau(ref, km, await resolvePoint(ref, km));
     applyPoint(ref, km, res);
     if (res.pfad) { const { pfad, ...rest } = res; view.point = rest; zeichneGleisweg(pfad); }
-    map.setView([res.lat, res.lon], Math.max(map.getZoom(), 15));
+    sichtSetzen([res.lat, res.lon], Math.max(map.getZoom(), 15));
   } catch (err) {
     showError(err.message || 'Abfrage fehlgeschlagen.');
   } finally {
@@ -9569,7 +9634,7 @@ async function streckeZeigen(ref) {
     for (const g of st.abschnitte) {
       s = Math.min(s, g.bb[0]); w = Math.min(w, g.bb[1]); n = Math.max(n, g.bb[2]); o = Math.max(o, g.bb[3]);
     }
-    map.fitBounds([[s, w], [n, o]], { paddingTopLeft: [30, 90], paddingBottomRight: [30, 130] });
+    kartePassen([[s, w], [n, o]], { paddingTopLeft: [30, 90], paddingBottomRight: [30, 130] });
     drawMilestones();
     const [von, bis] = ifgBereich(st);
     showStatus(`Strecke ${ref}: km ${fmtKm(von)} bis ${fmtKm(bis)} nach DB InfraGO. ` +
@@ -9657,9 +9722,9 @@ async function searchReihe(ref, tokens) {
   const pts = reihe.map(r => [r.punkt.lat, r.punkt.lon]);
   if (reihe.length > 1) {
     const unten = Math.min(300, ($('#bottom').offsetHeight || 140) + 30);
-    map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 100], paddingBottomRight: [40, unten], maxZoom: 16 });
+    kartePassen(L.latLngBounds(pts), { paddingTopLeft: [40, 100], paddingBottomRight: [40, unten], maxZoom: 16 });
   } else {
-    map.setView(pts[0], Math.max(map.getZoom(), 15));
+    sichtSetzen(pts[0], Math.max(map.getZoom(), 15));
   }
   if (fehler.length) toast(`${fehler.length} von ${kms.length} nicht bestimmbar — siehe unten.`);
 }
@@ -9745,8 +9810,8 @@ function suchZu() {
 function fitLine(e) {
   const pts = e.sorted.map(p => [p.lat, p.lon]);
   if (!pts.length) return;
-  if (pts.length === 1) map.setView(pts[0], 15);
-  else map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [30, 90], paddingBottomRight: [30, 130], maxZoom: 15 });
+  if (pts.length === 1) sichtSetzen(pts[0], 15);
+  else kartePassen(L.latLngBounds(pts), { paddingTopLeft: [30, 90], paddingBottomRight: [30, 130], maxZoom: 15 });
 }
 
 /* ============================ Betriebsstellen ============================ */
@@ -9776,7 +9841,7 @@ function locate() {
     if (ortLetzt) {
       const wo = map.latLngToContainerPoint([ortLetzt.lat, ortLetzt.lon]);
       if (wo.distanceTo(map.getSize().divideBy(2)) > 40) {
-        map.setView([ortLetzt.lat, ortLetzt.lon], Math.max(map.getZoom(), 17));
+        sichtSetzen([ortLetzt.lat, ortLetzt.lon], Math.max(map.getZoom(), 17));
         toast('Karte auf den Standort gesetzt.');
         return;
       }
@@ -9856,7 +9921,7 @@ function ortNeu(pos) {
    * gegen die eigene Zielbewegung, und auch sonst rutschte die Karte immer
    * wieder weg. Zurückholen tut der Standortknopf. */
   if (erste) {
-    if (!tippZiel()) map.setView([lat, lon], Math.max(map.getZoom(), 17));
+    if (!tippZiel()) sichtSetzen([lat, lon], Math.max(map.getZoom(), 17));
     toast(`Standort auf ±${nfM.format(accuracy || 0)} m genau.`);
   }
 
@@ -10467,11 +10532,11 @@ function abInsBild() {
   const k = abZiel.o.koord;
   if (map.getBounds().pad(-0.12).contains(k)) return;
   if (ortLetzt && abAbstand(k) < 3000) {
-    map.fitBounds(L.latLngBounds([k, [ortLetzt.lat, ortLetzt.lon]]), {
+    kartePassen(L.latLngBounds([k, [ortLetzt.lat, ortLetzt.lon]]), {
       paddingTopLeft: [50, 120], paddingBottomRight: [70, 220], maxZoom: 19
     });
   } else {
-    map.setView(k, Math.max(map.getZoom(), 17));
+    sichtSetzen(k, Math.max(map.getZoom(), 17));
   }
 }
 
@@ -10977,7 +11042,7 @@ function koordWaehlen(k) {
   closeSuggest();
   suchZu();
   $('#q').blur();
-  map.setView([k.lat, k.lon], Math.max(map.getZoom(), 17));
+  sichtSetzen([k.lat, k.lon], Math.max(map.getZoom(), 17));
   merkPunkt(k.lat, k.lon);
 }
 
@@ -11112,12 +11177,12 @@ function trefferWaehlen(t) {
   renderBottom();
 
   if (t.bbox) {
-    map.fitBounds(L.latLngBounds(t.bbox), { paddingTopLeft: [30, 90], paddingBottomRight: [30, 130], maxZoom: 16 });
+    kartePassen(L.latLngBounds(t.bbox), { paddingTopLeft: [30, 90], paddingBottomRight: [30, 130], maxZoom: 16 });
   } else {
     /* Ohne Ausdehnung entscheidet die Art: eine Stadt von oben, eine Adresse
      * so nah, dass man das Haus sieht. */
     const z = { city: 12, town: 13, village: 14, hamlet: 15, suburb: 14, quarter: 15 }[t.typ] || 16;
-    map.setView([t.lat, t.lon], z);
+    sichtSetzen([t.lat, t.lon], z);
   }
 }
 
@@ -11130,12 +11195,14 @@ function trefferWaehlen(t) {
 function openSheet() {
   suchZu();
   $('#sheet').hidden = false;
+  delete $('#sheet').dataset.nur;       // ganzes Menü; die Symbolspalte setzt danach einen Abschnitt
   document.body.classList.add('menue-offen');
   updateBH();
   quellenSetzen(false);   // der aufgeklappte Quellentext lag sonst über dem Menü
   $('#menuBtn').classList.add('is-on');
   $('#menuBtn').setAttribute('aria-expanded', 'true');
   closeSuggest();
+  schieneSync();
 }
 
 /* Beim Schließen klappen alle Abschnitte wieder zu: Das Menü öffnet jedes Mal
@@ -11151,6 +11218,33 @@ function closeSheet() {
   parzWahlZeigen(false);
   $('#menuBtn').classList.remove('is-on');
   $('#menuBtn').setAttribute('aria-expanded', 'false');
+  delete $('#sheet').dataset.nur;
+  schieneSync();
+}
+
+/* Symbolspalte (ab 1010 px): ein Knopf je Abschnitt des Menüs, der ihn allein
+ * in der Leiste öffnet; nochmal drücken oder „Suche“ schließt ihn. */
+function schieneWaehlen(sec) {
+  const sh = $('#sheet');
+  if (sec === 'suche' || (!sh.hidden && sh.dataset.nur === sec)) {
+    closeSheet();
+    if (sec === 'suche') $('#q').focus();
+    return;
+  }
+  openSheet();
+  sh.dataset.nur = sec;
+  document.querySelectorAll('#sheet [data-sec]').forEach(d => { d.open = d.dataset.sec === sec; });
+  sh.scrollTop = 0;
+  schieneSync();
+}
+
+function schieneSync() {
+  const sh = $('#sheet'), nur = !sh.hidden && sh.dataset.nur;
+  document.querySelectorAll('#schiene [data-schiene]').forEach(b => {
+    const an = nur ? b.dataset.schiene === nur : b.dataset.schiene === 'suche';
+    b.classList.toggle('is-on', an);
+    b.setAttribute('aria-pressed', String(an));
+  });
 }
 
 function applyTheme() {
@@ -11265,6 +11359,15 @@ function syncButtons() {
     mb.classList.toggle('is-on', aktiv);
     mb.setAttribute('aria-pressed', String(aktiv));
   }
+  // Werkzeugleiste (ab 1010 px): das laufende Werkzeug und das Radar markiert
+  document.querySelectorAll('#werkzeuge button').forEach(b => {
+    const w = b.dataset.messart || b.dataset.werkzeug;
+    const an = w === 'profil' ? profModus : w === 'mappe' ? mappeOffen
+      : w === 'radar' ? !!($('#radarBtn') && $('#radarBtn').classList.contains('is-on'))
+      : w === 'kml' ? false : messModus && messArt === w;
+    b.classList.toggle('is-on', !!an);
+    b.setAttribute('aria-pressed', String(!!an));
+  });
   abKnopf();
 
   const wl = $('#wegLinieBtn');
@@ -11536,6 +11639,30 @@ function bind() {
     if (mappeOffen) { mappeEnde(); return; }
     messMenueAuf($('#messMenue').hidden);
   });
+  /* Werkzeugleiste: In der Einfangphase, also vor der data-messart-Bindung unten —
+   * ein laufendes Werkzeug beendet der eigene Knopf, statt es neu zu starten. */
+  $('#werkzeuge').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (!$('#sheet').hidden) closeSheet();
+    const w = b.dataset.werkzeug;
+    if (w === 'radar') { ev.stopPropagation(); toggleOverlay('radar'); syncButtons(); return; }
+    if (w === 'kml') { ev.stopPropagation(); $('#kmlFile').click(); return; }
+    if (!b.classList.contains('is-on')) return;
+    ev.stopPropagation();
+    if (messModus) messEnde(); else if (profModus) profEnde(); else if (mappeOffen) mappeEnde();
+  }, true);
+  document.querySelectorAll('#schiene [data-schiene]').forEach(b =>
+    b.addEventListener('click', () => schieneWaehlen(b.dataset.schiene)));
+  on('#zoomRein', 'click', () => map.zoomIn());
+  on('#zoomRaus', 'click', () => map.zoomOut());
+  // Anwendungen unten mittig stapeln sich nach ihrer Höhe (updateBH)
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => updateBH());
+    for (const id of ['#bottom', '#ziel', '#radar', '#live']) ro.observe($(id));
+  }
+  SEITENLEISTE.addEventListener('change', () => { updateBH(); schieneSync(); });
+  schieneSync();
   document.querySelectorAll('[data-messart]').forEach(b => b.addEventListener('click', () => {
     messMenueAuf(false);
     if (b.dataset.messart === 'profil') profStart();
