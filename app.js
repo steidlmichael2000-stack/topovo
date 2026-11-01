@@ -9014,6 +9014,7 @@ async function useLineAt(ref, seeds, lat, lon) {
 function showPicker(refs, seeds, lat, lon) {
   const b = $('#bottom');
   delete b.dataset.art;
+  leisteZu(false);
   b.hidden = false;
   b.innerHTML = `<p class="bb-title">Mehrere Strecken an dieser Stelle</p>
     <p class="bb-sub">Sortiert nach Abstand zum Tippen — die erste liegt am nächsten.</p>
@@ -9097,6 +9098,7 @@ function renderBottom() {
   delete b.dataset.art;            // Ergebnis: steht ab 1010 px in der Leiste links
   const p = view.point;
   if (!p) { b.hidden = true; updateBH(); return; }
+  leisteZu(false);                 // das Ergebnis steht in der Leiste
 
   const tag = qualityTag(p);
   let title, sub;
@@ -9407,6 +9409,7 @@ function bindBottom() {
 function showStatus(msg) {
   const b = $('#bottom');
   delete b.dataset.art;
+  leisteZu(false);
   b.hidden = false;
   b.innerHTML = `<p class="bb-sub">${esc(msg)}</p>`;
   updateBH();
@@ -9415,6 +9418,7 @@ function showStatus(msg) {
 function showError(msg) {
   const b = $('#bottom');
   delete b.dataset.art;
+  leisteZu(false);
   b.hidden = false;
   b.innerHTML = `<button type="button" id="bbClose" class="bb-close" aria-label="Anzeige schließen">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -9503,7 +9507,8 @@ function updateBH() {
     // Unten am Rand wie die Werkzeugleiste; nur wenn das Fenster so schmal ist,
     // dass die Anwendungen bis an sie heranreichen, stehen sie über ihr
     const wz = $('#werkzeuge').getBoundingClientRect();
-    const frei = !stapel.length || stapel[0].getBoundingClientRect().right + 12 <= wz.left;
+    const frei = !stapel.length || document.body.classList.contains('werkzeuge-zu')
+      || stapel[0].getBoundingClientRect().right + 12 <= wz.left;
     let y = frei ? 16 : 16 + 60 + 12;    // 60: --werkzeug-h
     for (const el of stapel) {
       el.style.setProperty('--unten', y + 'px');
@@ -11193,6 +11198,7 @@ function trefferWaehlen(t) {
  * sie sind, und stehen nach dem Schließen wieder da (body.menue-offen in
  * style.css, updateBH rechnet sie solange nicht mit). */
 function openSheet() {
+  leisteZu(false);
   suchZu();
   $('#sheet').hidden = false;
   delete $('#sheet').dataset.nur;       // ganzes Menü; die Symbolspalte setzt danach einen Abschnitt
@@ -11223,12 +11229,16 @@ function closeSheet() {
 }
 
 /* Symbolspalte (ab 1010 px): ein Knopf je Abschnitt des Menüs, der ihn allein
- * in der Leiste öffnet; nochmal drücken oder „Suche“ schließt ihn. */
+ * in der Leiste öffnet; „Suche“ schließt ihn. Ein Tipp auf das gewählte Symbol
+ * klappt die ganze Leiste zu, ein Tipp auf irgendeines wieder auf. */
 function schieneWaehlen(sec) {
-  const sh = $('#sheet');
-  if (sec === 'suche' || (!sh.hidden && sh.dataset.nur === sec)) {
+  const sh = $('#sheet'), zu = document.body.classList.contains('leiste-zu');
+  const gewaehlt = sh.hidden ? sec === 'suche' : sh.dataset.nur === sec;
+  if (!zu && gewaehlt) { leisteZu(true); return; }
+  if (zu) leisteZu(false);
+  if (sec === 'suche') {
     closeSheet();
-    if (sec === 'suche') $('#q').focus();
+    $('#q').focus();
     return;
   }
   openSheet();
@@ -11240,11 +11250,32 @@ function schieneWaehlen(sec) {
 
 function schieneSync() {
   const sh = $('#sheet'), nur = !sh.hidden && sh.dataset.nur;
+  const zu = document.body.classList.contains('leiste-zu');
   document.querySelectorAll('#schiene [data-schiene]').forEach(b => {
-    const an = nur ? b.dataset.schiene === nur : b.dataset.schiene === 'suche';
+    const an = !zu && (nur ? b.dataset.schiene === nur : b.dataset.schiene === 'suche');
     b.classList.toggle('is-on', an);
     b.setAttribute('aria-pressed', String(an));
   });
+}
+
+/** Werkzeugleiste unten rechts ein- oder ausblenden (Knopf in der Symbolspalte, gemerkt) */
+function werkzeugeSync() {
+  const aus = !!prefs.werkzeugeAus;
+  document.body.classList.toggle('werkzeuge-zu', aus);
+  $('#werkzeugeBtn').classList.toggle('is-on', !aus);
+  $('#werkzeugeBtn').setAttribute('aria-pressed', String(!aus));
+  updateBH();
+}
+
+/** Leiste links zu- oder aufklappen (ab 1010 px; schmaler wirkt die Klasse nicht). */
+function leisteZu(zu) {
+  if (document.body.classList.contains('leiste-zu') === zu) return;
+  document.body.classList.toggle('leiste-zu', zu);
+  const g = $('#leisteGriff'), text = zu ? 'Leiste aufklappen' : 'Leiste zuklappen';
+  g.setAttribute('aria-label', text); g.title = text; g.setAttribute('aria-expanded', String(!zu));
+  if (zu) closeSuggest();
+  updateBH();
+  schieneSync();
 }
 
 function applyTheme() {
@@ -11360,7 +11391,7 @@ function syncButtons() {
     mb.setAttribute('aria-pressed', String(aktiv));
   }
   // Werkzeugleiste (ab 1010 px): das laufende Werkzeug und das Radar markiert
-  document.querySelectorAll('#werkzeuge button').forEach(b => {
+  document.querySelectorAll('#werkzeuge :is([data-messart], [data-werkzeug])').forEach(b => {
     const w = b.dataset.messart || b.dataset.werkzeug;
     const an = w === 'profil' ? profModus : w === 'mappe' ? mappeOffen
       : w === 'radar' ? !!($('#radarBtn') && $('#radarBtn').classList.contains('is-on'))
@@ -11654,8 +11685,9 @@ function bind() {
   }, true);
   document.querySelectorAll('#schiene [data-schiene]').forEach(b =>
     b.addEventListener('click', () => schieneWaehlen(b.dataset.schiene)));
-  on('#zoomRein', 'click', () => map.zoomIn());
-  on('#zoomRaus', 'click', () => map.zoomOut());
+  on('#leisteGriff', 'click', () => leisteZu(!document.body.classList.contains('leiste-zu')));
+  on('#werkzeugeBtn', 'click', () => { prefs.werkzeugeAus = !prefs.werkzeugeAus; saveStore(); werkzeugeSync(); });
+  werkzeugeSync();
   // Anwendungen unten mittig stapeln sich nach ihrer Höhe (updateBH)
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => updateBH());

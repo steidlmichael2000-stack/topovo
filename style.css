@@ -10,6 +10,11 @@
   /* Glas: durchscheinend und unscharf, die Karte bleibt darunter sichtbar.
      Bis November 2026 deckend (.94) — seitdem gewünscht wie Apples Glas. */
   --glass: rgba(18, 20, 28, .62);
+  /* Feste Leiste links (ab 1010 px): dichter als das schwebende Glas, damit
+     Leiste und Werkzeuge über der Karte sich voneinander abheben */
+  --glass-dicht: rgba(18, 20, 28, .88);
+  /* Symbolspalte daneben: eigener, dunklerer Grund, damit sie sich von der Leiste abhebt */
+  --schiene-grund: rgba(6, 7, 11, .96);
   --blur: blur(28px) saturate(170%);
   /* Schieberknopf: runder weißer Knauf wie bei iOS, statt des blauen Klotzes */
   --knauf: #ffffff;
@@ -49,7 +54,9 @@
 
 html[data-theme="light"] {
   --bg: #eef1f5;
-  --glass: rgba(250, 251, 253, .74);
+  --glass: rgba(250, 251, 253, .5);
+  --glass-dicht: rgba(250, 251, 253, .8);
+  --schiene-grund: rgba(222, 226, 233, .97);
   --panel-2: rgba(118, 118, 128, .12);
   --line: #d5dbe3;
   --text: #17202a;
@@ -67,7 +74,9 @@ html[data-theme="light"] {
 @media (prefers-color-scheme: light) {
   html:not([data-theme="dark"]) {
     --bg: #eef1f5;
-    --glass: rgba(250, 251, 253, .74);
+    --glass: rgba(250, 251, 253, .5);
+    --glass-dicht: rgba(250, 251, 253, .8);
+    --schiene-grund: rgba(222, 226, 233, .97);
     --panel-2: rgba(118, 118, 128, .12);
     --line: #d5dbe3;
     --text: #17202a;
@@ -1695,9 +1704,10 @@ body {
      Ergebnis und — über die Spalte gewählt — ein Abschnitt des Menüs;
    - Anwendungen (Profil, Polygon, Live, Mappe, Abstecken, Radar) unten mittig
      über der Karte, übereinander gestapelt (Lage aus updateBH: --unten);
-   - Standort, Abstecken und Nord oben rechts, Zoom und Werkzeuge unten rechts.
+   - Standort, Abstecken und Nord oben rechts, Werkzeuge unten rechts (kein
+     Plus/Minus — gezoomt wird mit Rad und Fingern, ausdrücklich so gewünscht).
    Dieselbe Grenze steht in app.js (SEITENLEISTE). */
-.schiene, .werkzeuge, .zoom-knoepfe { display: none; }
+.schiene, .werkzeuge, .leiste-griff { display: none; }
 
 @media (min-width: 1010px) {
   :root { --schiene: 64px; --seite: 320px; --links: calc(var(--schiene) + var(--seite)); --werkzeug-h: 60px; }
@@ -1706,7 +1716,7 @@ body {
   .schiene {
     position: fixed; left: 0; top: 0; bottom: 0; width: var(--schiene);
     display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
-    background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+    background: var(--schiene-grund); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
     box-shadow: inset -.5px 0 0 var(--line);
   }
   .schiene button {
@@ -1718,6 +1728,11 @@ body {
   .schiene .sec-ikon .voll { fill: currentColor; }
   .schiene button:hover { background: var(--panel-2); color: var(--text); }
   .schiene button.is-on { background: var(--accent); color: var(--accent-ink); }
+  /* Werkzeuge: ein Schalter, kein Bereich — abgesetzt durch einen Strich, an nur in der Signalfarbe */
+  .schiene .schiene-werkzeuge { margin-top: 6px; position: relative; }
+  .schiene .schiene-werkzeuge::before { content: ""; position: absolute; left: 10px; right: 10px; top: -6px; height: 1px; background: var(--line); }
+  .schiene .schiene-werkzeuge.is-on { background: none; color: var(--accent); }
+  .schiene .schiene-werkzeuge.is-on:hover { background: var(--panel-2); }
 
   /* Feste Leiste: .ui ist die Spalte, ihr Glas liegt als ::before dahinter —
      nicht auf .ui selbst, sonst würden die festen Anwendungen darin an der
@@ -1725,10 +1740,34 @@ body {
   .ui { left: var(--schiene); right: auto; width: var(--seite); padding-bottom: 40px; }
   .ui::before {
     content: ""; position: fixed; z-index: -1; top: 0; bottom: 0; left: var(--schiene); width: var(--seite);
-    background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+    background: var(--glass-dicht); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
     box-shadow: inset -.5px 0 0 var(--line), 8px 0 24px rgba(0, 0, 0, .18);
     pointer-events: none;
+    transition: transform .3s var(--auf), opacity .3s var(--auf);
   }
+  /* Zugeklappt (Tipp aufs gewählte Symbol der Spalte): nur die Spalte bleibt,
+     das Glas gleitet hinter sie, die Anwendungen rücken in die Mitte */
+  .leiste-zu { --links: var(--schiene); }
+  .leiste-zu .ui { width: 0; padding-left: 0; padding-right: 0; }
+  .leiste-zu .ui::before { transform: translateX(-100%); opacity: 0; }
+  .leiste-zu .ui > :is(.bar-top, .suggest, .sheet, .bar-bottom:not([data-art="werkzeug"])) { display: none; }
+  .ui > .bar-top { animation: einblenden .3s var(--auf); }
+  /* Griff mittig an der Kante: offen innen in der Leiste, zugeklappt außen an
+     der Spalte (innen läge er bei niedrigen Fenstern auf ihren Symbolen) */
+  .leiste-griff {
+    position: fixed; top: 50%; left: calc(var(--links) - 20px); z-index: 1; display: grid; place-items: center;
+    width: 20px; height: 48px; margin-top: -24px; padding: 0;
+    border: 0; border-radius: var(--r-knopf) 0 0 var(--r-knopf); cursor: pointer;
+    background: var(--panel-2); color: var(--muted);
+    transition: left .3s var(--auf);
+  }
+  .leiste-zu .leiste-griff {
+    left: var(--schiene); border-radius: 0 var(--r-knopf) var(--r-knopf) 0;
+    background: var(--schiene-grund); box-shadow: 4px 0 12px rgba(0, 0, 0, .15);
+  }
+  .leiste-griff:hover { color: var(--text); }
+  .leiste-griff svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s var(--auf); }
+  .leiste-zu .leiste-griff svg { transform: rotate(180deg); }
   /* In der Leiste kein Glas auf Glas: Suche als gefülltes Feld, Menü und Ergebnis flach */
   .bar-top, .sheet, .bar-bottom:not([data-art="werkzeug"]) {
     background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
@@ -1740,8 +1779,19 @@ body {
   .bar-bottom:not([hidden]):not([data-art="werkzeug"]) { animation-name: von-oben; }
   /* Die Quellenzeile ist nur noch Abstandhalter, ihr Inhalt steht unten in der Leiste */
   .quellen, #ziel[hidden] + #bottom[hidden] + .quellen, .menue-offen .quellen { order: 3; height: 0; margin: 0; }
-  .quellen-kasten { left: calc(var(--schiene) + var(--gap)); }
-  .quellen-text { left: calc(var(--schiene) + var(--gap)); max-width: calc(var(--seite) - 2 * var(--gap)); }
+  /* Unten in der Leiste so breit wie die Suche und gefüllt wie sie — kein Glas auf Glas;
+     zugeklappt wieder als kleiner Kasten aus Glas über der Karte */
+  .quellen-kasten {
+    left: calc(var(--schiene) + var(--gap)); bottom: var(--gap); width: calc(var(--seite) - 2 * var(--gap));
+    height: 28px; align-items: center; background: var(--panel-2);
+  }
+  .quellen-kasten .quellen-mass { margin-left: auto; }
+  .quellen-kasten .quellen-knopf { width: 32px; height: 28px; }
+  .leiste-zu .quellen-kasten .quellen-knopf { width: 21px; height: 20px; }
+  .leiste-zu .quellen-kasten { width: auto; height: 22px; bottom: 6px; background: var(--glass); }
+  .leiste-zu .quellen-kasten .quellen-mass { margin-left: 0; }
+  .quellen-text { left: calc(var(--schiene) + var(--gap)); bottom: calc(var(--gap) + 28px + 4px); max-width: calc(var(--seite) - 2 * var(--gap)); }
+  .leiste-zu .quellen-text { bottom: calc(6px + 22px + 4px); }
 
   /* Ein über die Symbolspalte gewählter Abschnitt steht allein, seine Kopfzeile ist Titel */
   .sheet[data-nur] > .sheet-sec:not([open]) { display: none; }
@@ -1766,21 +1816,6 @@ body {
   /* Messen läuft über die Werkzeugleiste */
   .mapmess, .mess-menue { display: none; }
 
-  /* Zoom über den Werkzeugen, rechts */
-  .zoom-knoepfe {
-    position: fixed; z-index: 450; right: 16px; bottom: calc(16px + var(--werkzeug-h) + 12px);
-    display: flex; flex-direction: column; overflow: hidden;
-    border-radius: 22px; background: var(--glass); box-shadow: var(--shadow);
-    backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-  }
-  .zoom-knoepfe button {
-    display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
-    border: 0; background: none; color: var(--text); cursor: pointer;
-  }
-  .zoom-knoepfe button + button { box-shadow: inset 0 1px 0 var(--line); }
-  .zoom-knoepfe button:hover { background: var(--panel-2); }
-  .zoom-knoepfe svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-
   /* Werkzeugleiste unten rechts */
   .werkzeuge {
     position: fixed; z-index: 450; right: 16px; bottom: 16px; height: var(--werkzeug-h);
@@ -1799,6 +1834,8 @@ body {
   .werkzeuge button:hover { background: var(--panel-2); color: var(--text); }
   .werkzeuge button.is-on { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
   .werkzeuge button[data-werkzeug="radar"].is-on { background: var(--accent); color: var(--accent-ink); }
+  /* Über den Knopf „Werkzeuge“ der Symbolspalte ausgeblendet */
+  .werkzeuge-zu .werkzeuge { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

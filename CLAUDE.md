@@ -339,8 +339,14 @@ Fenster ausrichten). In der Leiste: Suche, Ergebnis und der über die Spalte gew
 (`schieneWaehlen`, `#sheet[data-nur]`). Anwendungen (Profil, Polygon, Live, Mappe, Abstecken,
 Radar, Live-Zeile) stehen unten mittig über der Karte, gestapelt von `updateBH` über `--unten` — unten am Rand, nur bei schmalem Fenster über der Werkzeugleiste.
 `#bottom[data-art="werkzeug"]` unterscheidet Werkzeug von Ergebnis — wer eine neue Leiste in
-`#bottom` schreibt, setzt oder löscht das. Standort, Abstecken, Nord oben rechts; Zoom und
-`#werkzeuge` (Messen über `data-messart`, Radar, KML) unten rechts; Messknopf und Messmenü sind aus.
+`#bottom` schreibt, setzt oder löscht das. Standort, Abstecken, Nord oben rechts;
+`#werkzeuge` (Messen über `data-messart`, Radar, KML; Knopf `#werkzeugeBtn` unten in der Spalte blendet sie aus, `body.werkzeuge-zu`, gemerkt in `prefs.werkzeugeAus`) unten rechts; Messknopf und Messmenü sind aus.
+
+Der Griff `#leisteGriff` mittig an der Kante oder ein Tipp aufs gewählte Symbol klappt die Leiste zu (`leisteZu`, `body.leiste-zu`), jedes Symbol
+und jedes neue Ergebnis (`renderBottom`, `showStatus`, `showError`, `showPicker`, `openSheet`) wieder auf.
+Glasstufen: Werkzeuge über der Karte `--glass`, Leiste `--glass-dicht`, Spalte `--schiene-grund` — drei
+Stufen, damit sich die Flächen voneinander abheben (so gewünscht). Kein Plus/Minus zum Zoomen,
+ebenfalls ausdrücklich gewünscht.
 
 Die Grenze steht zweimal: in `style.css` („Desktop und Tablet quer“) und als `SEITENLEISTE` in
 `app.js`. **Ausschnitte nur über `kartePassen` (statt `map.fitBounds`) und `sichtSetzen` (statt
