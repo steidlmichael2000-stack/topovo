@@ -6073,7 +6073,7 @@ function svBinden() {
  *
  * Die Linien liegen in der normalen Vektorebene von Leaflet und nicht in einer
  * eigenen Pane: Eigene Panes rechnet leaflet-rotate falsch, siehe kmlPane. */
-const MESS_FARBE = '#f59e0b';        // Amber, damit es sich von Steinen (blau) und Gleisweg (grün) abhebt
+const MESS_FARBE = '#ff9f0a';        // Amber, damit es sich von Steinen (blau) und Gleisweg (grün) abhebt
 const MESS_TOL = 60;                 // bis zu so viel Abstand gilt ein Punkt als auf der Strecke
 
 const MESS_FANG_PX = 26;             // Umkreis, in dem Fangpunkte angeboten werden
@@ -8464,6 +8464,9 @@ function profBildSetzen(el, ausRegler = false) {
   const geb = profGeb ? profGeb.map(b => 'M' + b.umriss.map(([st, z]) => `${X(st).toFixed(1)} ${Y(z).toFixed(1)}`).join('L') + 'Z').join('') : '';
 
   el.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${achse.name}">` +
+    // Verlauf für die Fläche: über deren eigene Höhe, oben kräftig, unten durchsichtig
+    '<defs><linearGradient id="profVerlauf" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" class="v-oben"/><stop offset="1" class="v-unten"/></linearGradient></defs>' +
     `<path class="gitter" d="${gitter}"/>` +
     (ecken ? `<path class="ecken" d="${ecken}"/>` : '') +
     `<path class="flaeche" d="${flaeche}"/>` +
@@ -8471,7 +8474,7 @@ function profBildSetzen(el, ausRegler = false) {
     `<path class="dgm" d="${dgm.map(t => t.d).join('')}"/>` +
     (dom ? `<path class="dom" d="${dom}"/>` : '') +
     `<g class="beschr">${beschr}</g>` +
-    '<g class="zeiger" hidden><path class="senk" d=""/><path class="waag" d=""/><circle r="3.5"/><text></text></g></svg>';
+    '<g class="zeiger" hidden><path class="senk" d=""/><path class="waag" d=""/><circle r="3.5"/><rect class="schild" rx="6"/><text></text></g></svg>';
 
   profAbbild = { X, Y, li, pw, ob, ph, L, kMax, zeiger: achse.zeiger };
   profUeberReglerSetzen(wahl, kMax, ausRegler);
@@ -8519,18 +8522,24 @@ function profZeigerSetzen() {
   const text = g.querySelector('text');
   text.textContent = t;
   const rechts = x < a.li + a.pw / 2;
-  text.setAttribute('x', rechts ? x + 6 : x - 6);
+  text.setAttribute('x', rechts ? x + 10 : x - 10);
   text.setAttribute('y', a.ob + 12);
   text.setAttribute('text-anchor', rechts ? 'start' : 'end');
   // Steht der Finger auf einem Gebäude: was es ist, in einer zweiten Zeile
   const b = profGeb && profGeb.find(x2 => s >= x2.s0 && s <= x2.s1);
   if (b) {
     const zweite = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
-    zweite.setAttribute('x', rechts ? x + 6 : x - 6);
+    zweite.setAttribute('x', rechts ? x + 10 : x - 10);
     zweite.setAttribute('dy', '13');
     zweite.textContent = [b.fn, b.dachform, b.hoehe ? `${nfH.format(b.hoehe)} m hoch` : '', b.adr].filter(Boolean).join(' · ');
     text.appendChild(zweite);
   }
+  // Schild hinter der Zahl, 6 px Luft links und rechts
+  const k = text.getBBox(), schild = g.querySelector('.schild');
+  schild.setAttribute('x', Math.round(k.x - 6));
+  schild.setAttribute('y', Math.round(k.y - 2));
+  schild.setAttribute('width', Math.round(k.width + 12));
+  schild.setAttribute('height', Math.round(k.height + 4));
 
   const ll = utm32Zurueck(profDgm.ost[i], profDgm.nord[i]);
   /* Der Ring lag als dünner Kreis in derselben Farbe auf der gestrichelten

@@ -437,6 +437,8 @@ function tourOeffnen(schritte, hilfe) {
   $('#tour').hidden = false;
   document.addEventListener('keydown', tourTaste);
   window.addEventListener('resize', tourLage);
+  // Fenster gleiten beim Aufklappen herein (style.css, „Aufklappen“): danach neu messen
+  document.addEventListener('animationend', tourLage);
   tourZeigen(0);
 }
 
@@ -468,6 +470,7 @@ function tourEnde() {
   $('#tour').hidden = true;
   document.removeEventListener('keydown', tourTaste);
   window.removeEventListener('resize', tourLage);
+  document.removeEventListener('animationend', tourLage);
   // Zurück auf das ?, das die Tour gestartet hat — die Leiste ist inzwischen womöglich neu gebaut
   const zurueck = tourHilfe && document.querySelector(`[data-hilfe="${tourHilfe}"]`);
   (zurueck || $('#tourBtn')).focus();

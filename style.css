@@ -7,26 +7,35 @@
      weil sie je Thema einen eigenen Ton braucht und umschaltbar ist.
      Standard ist Lapis, der Blauton des Logos. */
   --bg: #06070b;
-  --glass: rgba(13, 15, 21, .94);
-  --panel-2: #12151d;
-  --line: rgba(255, 255, 255, .22);
+  /* Glas: durchscheinend und unscharf, die Karte bleibt darunter sichtbar.
+     Bis November 2026 deckend (.94) — seitdem gewünscht wie Apples Glas. */
+  --glass: rgba(18, 20, 28, .62);
+  --blur: blur(28px) saturate(170%);
+  /* Schieberknopf: runder weißer Knauf wie bei iOS, statt des blauen Klotzes */
+  --knauf: #ffffff;
+  --knauf-schatten: 0 1px 4px rgba(0, 0, 0, .4), 0 0 0 .5px rgba(0, 0, 0, .1);
+  /* Füllfläche der Knöpfe. Seit November 2026 tragen Knöpfe keinen Rahmen mehr,
+     nur diese Fläche — umrandet sah jeder Knopf wie ein Eingabefeld aus. */
+  --panel-2: rgba(255, 255, 255, .08);
+  --line: rgba(255, 255, 255, .12);     /* nur noch Trennstriche, keine Rahmen */
   --text: #e9ebf1;
   --muted: #8a90a3;
   --muted-2: rgba(255, 255, 255, .52);
   --accent: #55a5e7;
   --accent-ink: #06070b;
   --ok: #34d399;
-  --warn: #f5a524;
+  --warn: #ff9f0a;
   --bad: #fb7185;
-  /* Harte Kante statt weichem Schein: über einem hellen Luftbild muss sich
-     die schwebende Bedienung abgrenzen, ohne zu leuchten. */
-  --shadow: 0 0 0 1px rgba(0, 0, 0, .45), 0 2px 0 rgba(0, 0, 0, .35);
-  /* Leicht abgerundet, in drei Stufen: große Flächen (Leisten, Menüs,
+  /* Glaskante: Licht an der Oberkante, feine Kontur ringsum, darunter ein
+     weicher Schatten, der das Glas vom Luftbild abhebt */
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, .12), inset 0 0 0 .5px rgba(255, 255, 255, .08),
+            0 8px 24px rgba(0, 0, 0, .35);
+  /* Rund wie bei Apple, in drei Stufen: große Flächen (Leisten, Menüs,
      Sprechblasen), Knöpfe und Felder darin, kleine Schilder. Bis Oktober 2026
-     waren es überall 2 px — das wirkte hart; die runden Kartenknöpfe bleiben rund. */
-  --r: 10px;
-  --r-knopf: 6px;
-  --r-klein: 4px;
+     überall 2 px, bis November 10/6/4 px; die runden Kartenknöpfe bleiben rund. */
+  --r: 20px;
+  --r-knopf: 12px;
+  --r-klein: 7px;
   --bh: 6px;              /* Grundlinie der Knöpfe rechts, von JS gesetzt (updateBH) */
   --gap: 10px;
   /* Rechte Kante der Knopfsäule. Bis 1010 px die Kante der Bedienspalte (Leisten
@@ -40,8 +49,8 @@
 
 html[data-theme="light"] {
   --bg: #eef1f5;
-  --glass: rgba(255, 255, 255, .94);
-  --panel-2: #eef1f5;
+  --glass: rgba(250, 251, 253, .74);
+  --panel-2: rgba(118, 118, 128, .12);
   --line: #d5dbe3;
   --text: #17202a;
   --muted: #58636f;
@@ -49,16 +58,17 @@ html[data-theme="light"] {
   --accent: #1761a3;
   --accent-ink: #ffffff;
   --ok: #15803d;
-  --warn: #b45309;
+  --warn: #d96400;
   --bad: #c62828;
-  --shadow: 0 6px 22px rgba(25, 35, 50, .16), 0 1px 2px rgba(25, 35, 50, .1);
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 0 0 .5px rgba(25, 35, 50, .06),
+            0 8px 26px rgba(25, 35, 50, .16);
 }
 
 @media (prefers-color-scheme: light) {
   html:not([data-theme="dark"]) {
     --bg: #eef1f5;
-    --glass: rgba(255, 255, 255, .94);
-    --panel-2: #eef1f5;
+    --glass: rgba(250, 251, 253, .74);
+    --panel-2: rgba(118, 118, 128, .12);
     --line: #d5dbe3;
     --text: #17202a;
     --muted: #58636f;
@@ -66,9 +76,10 @@ html[data-theme="light"] {
     --accent: #1761a3;
     --accent-ink: #ffffff;
     --ok: #15803d;
-    --warn: #b45309;
+    --warn: #d96400;
     --bad: #c62828;
-    --shadow: 0 6px 22px rgba(25, 35, 50, .16), 0 1px 2px rgba(25, 35, 50, .1);
+    --shadow: inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 0 0 .5px rgba(25, 35, 50, .06),
+              0 8px 26px rgba(25, 35, 50, .16);
   }
 }
 
@@ -167,7 +178,7 @@ body {
 .quellen-kasten, .quellen-text { pointer-events: auto; }
 .quellen-kasten {
   display: flex; height: 22px; box-sizing: border-box;
-  background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-knopf);
+  background: var(--glass); border: 1px solid transparent; border-radius: var(--r-knopf);
 }
 .quellen-text { position: absolute; left: 0; right: 50px; bottom: calc(100% + 4px); display: flex; }
 .quellen.zu .quellen-text { display: none; }
@@ -175,7 +186,7 @@ body {
    was von .leaflet-control bleibt, wird hier festgelegt. */
 .quellen .leaflet-control-attribution {
   float: none; margin: 0; padding: 3px 7px;
-  background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-knopf);
+  background: var(--glass); border: 1px solid transparent; border-radius: var(--r-knopf);
   color: var(--muted); font-size: .62rem; line-height: 1.45; text-align: left;
 }
 .quellen .leaflet-control-attribution a { color: var(--muted); text-decoration: none; }
@@ -190,7 +201,7 @@ body {
 /* Aufgeklappt wie ein eingeschalteter Knopf; padding-box, damit die Tönung
    nicht auch unter dem Trennstrich liegt und der doppelt deckt */
 .quellen-knopf[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   background-clip: padding-box;
 }
 
@@ -206,10 +217,10 @@ body {
   z-index: 450;
   width: 42px; height: 42px;
   display: grid; place-items: center; gap: 0;
-  border-radius: 50%; border: 1px solid var(--line);
+  border-radius: 50%; border: 1px solid transparent;
   background: var(--glass); color: var(--text);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   cursor: pointer;
 }
 .north svg { width: 27px; height: 27px; }
@@ -227,10 +238,10 @@ body {
   z-index: 450;
   width: 42px; height: 42px;
   display: grid; place-items: center;
-  border-radius: 50%; border: 1px solid var(--line);
+  border-radius: 50%; border: 1px solid transparent;
   background: var(--glass); color: var(--muted);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   cursor: pointer;
 }
 .maploc svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
@@ -238,7 +249,10 @@ body {
 /* Der Knopf in der Signalfarbe wie alle übrigen Knöpfe. Der Standort selbst auf
    der Karte (.me-dot, Kreis, Lot) bleibt blau — die Signalfarbe trägt schon der
    gefundene Punkt, und beide sollen sich unterscheiden lassen. */
-.maploc.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+/* Eingeschaltet bleibt der Knopf aus Glas, nur leicht getönt, das Zeichen in der
+   Farbe — wie der Standortknopf bei Apple Karten. Als volle Fläche stand die
+   Lichtkante des Glases als heller Ring auf dem dunklen Blau. */
+.maploc.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--glass)); }
 .maploc.busy { opacity: .6; }
 .maploc.busy svg .ring { stroke-dasharray: 6 5; }
 
@@ -250,14 +264,14 @@ body {
   z-index: 450;
   width: 42px; height: 42px;
   display: grid; place-items: center;
-  border-radius: 50%; border: 1px solid var(--line);
+  border-radius: 50%; border: 1px solid transparent;
   background: var(--glass); color: var(--muted-2);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   cursor: pointer;
 }
 .mapmess svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
-.mapmess.is-on, .mapmess[aria-expanded="true"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.mapmess.is-on, .mapmess[aria-expanded="true"] { color: var(--warn); background: color-mix(in srgb, var(--warn) 22%, var(--glass)); }
 
 /* Messmenü — links neben dem Messknopf, Unterkante auf dessen Unterkante */
 .mess-menue {
@@ -266,10 +280,10 @@ body {
   bottom: calc(var(--grund) + 48px + env(safe-area-inset-bottom));
   z-index: 460;
   width: min(250px, calc(100vw - 2 * var(--gap) - 48px));
-  background: var(--glass); border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--glass); border: 1px solid transparent; border-radius: var(--r);
   overflow: hidden;      /* die Tönung beim Antippen bleibt in den runden Ecken */
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 .mess-menue button {
   display: flex; align-items: center; gap: 11px; width: 100%;
@@ -293,14 +307,14 @@ body {
   z-index: 450;
   width: 42px; height: 42px;
   display: grid; place-items: center;
-  border-radius: 50%; border: 1px solid var(--line);
+  border-radius: 50%; border: 1px solid transparent;
   background: var(--glass); color: var(--muted-2);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   cursor: pointer;
 }
 .mapziel svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
-.mapziel.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.mapziel.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--glass)); }
 .mapziel:not([hidden]) ~ .north { bottom: calc(var(--grund) + 144px + env(safe-area-inset-bottom)); }
 
 /* ---------- Große Bildschirme: ©-Kasten und Knöpfe in die Ecken ----------
@@ -341,11 +355,11 @@ body {
   width: min(640px, calc(100% - 2 * var(--gap)));
   margin: 0 auto;
   background: var(--glass);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--r);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
 }
 
 .bar-top { margin-top: calc(var(--gap) + env(safe-area-inset-top)); flex: none; }
@@ -490,10 +504,10 @@ body {
   padding: 7px 12px;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-knopf);
+  border: 1px solid transparent;
+  border-radius: var(--r);          /* wie die Leisten */
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   font-size: .8rem;
 }
 .live .tag { flex: none; }
@@ -521,10 +535,10 @@ body {
   margin: 8px auto 0;
   padding: 6px 8px 7px;
   background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-knopf);
+  border: 1px solid transparent;
+  border-radius: var(--r);          /* wie die Leisten */
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 /* Bei offenem Menü steht sie nicht zwischen Suchzeile und Menü */
 .ui:has(> .sheet:not([hidden])) > .radar { display: none; }
@@ -533,15 +547,15 @@ body {
 .radar-knopf {
   flex: none; width: 30px; height: 30px; padding: 0;
   display: grid; place-items: center;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--muted); cursor: pointer;
 }
 .radar-knopf svg { width: 14px; height: 14px; fill: currentColor; }
 .radar-knopf .strich { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .radar-knopf .pause { display: none; }
 .radar-knopf.is-on {
-  border-color: var(--accent); color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: transparent; color: var(--accent-ink);
+  background: var(--accent);
   background-clip: padding-box;
 }
 .radar-knopf.is-on .spiel { display: none; }
@@ -560,7 +574,7 @@ body {
    steht dort, wo die Mitte des Läufers bei 0 steht: Der Läufer (10 px) läuft
    von 5 px bis Breite − 5 px, nicht über die ganze Breite. */
 .radar-zeit {
-  --jetzt: calc(5px + (100% - 10px) / 3);
+  --jetzt: calc(10px + (100% - 20px) / 3);   /* Mitte des 20-px-Knopfs bei „jetzt“ */
   flex: 1; min-width: 0; height: 26px; margin: 0;
   -webkit-appearance: none; appearance: none; cursor: pointer;
   background: linear-gradient(90deg, transparent calc(var(--jetzt) - 1px), var(--muted) calc(var(--jetzt) - 1px)
@@ -570,7 +584,7 @@ body {
    halb durchsichtig, und über der Strichelung deckte die Fläche doppelt — die
    Striche schienen links durch. */
 .radar-zeit::-webkit-slider-runnable-track {
-  height: 4px;
+  height: 4px; border-radius: 2px;
   background:
     linear-gradient(var(--muted-2), var(--muted-2)) left / var(--jetzt) 100% no-repeat,
     repeating-linear-gradient(90deg, var(--muted-2) 0 5px, transparent 5px 8px) right / calc(100% - var(--jetzt)) 100% no-repeat;
@@ -583,13 +597,12 @@ body {
 }
 .radar-zeit::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 10px; height: 20px; margin-top: -8px;
-  border: 0; border-radius: 0; background: var(--accent);
-  box-shadow: 0 0 0 1px var(--bg);
+  width: 20px; height: 20px; margin-top: -8px;
+  border: 0; border-radius: 50%; background: var(--knauf); box-shadow: var(--knauf-schatten);
 }
 .radar-zeit::-moz-range-thumb {
-  width: 10px; height: 20px; border: 0; border-radius: 0;
-  background: var(--accent); box-shadow: 0 0 0 1px var(--bg);
+  width: 20px; height: 20px; border: 0; border-radius: 50%;
+  background: var(--knauf); box-shadow: var(--knauf-schatten);
 }
 .radar-zeit:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
@@ -679,11 +692,11 @@ body {
   margin: 8px auto 0;
   padding: 4px 16px 16px;
   background: var(--glass);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--r);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   overflow-y: auto;
   max-height: calc(100dvh - 150px);
 }
@@ -692,7 +705,7 @@ body {
 .sheet-sec + .sheet-sec { border-top: 1px solid var(--line); }
 .sheet-sec h2 {
   font-size: .68rem; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
-  color: var(--muted-2); margin: 0;
+  color: var(--muted); margin: 0;
 }
 
 /* Jeder Abschnitt klappt zu: Das Menü ist sonst eine sehr lange Rolle, und die
@@ -716,25 +729,25 @@ body {
 }
 .sheet-sec[open] > summary::after { transform: translateY(3px) rotate(-135deg); }
 .sheet-sec[open] > summary { margin-bottom: 9px; }
-.sheet-sec[open] > summary h2 { color: var(--muted); }
+.sheet-sec[open] > summary h2 { color: var(--text); }
 .sheet-sec > summary:hover h2 { color: var(--text); }
 
 /* Symbol je Abschnitt, in derselben Farbe wie die Überschrift daneben */
 .sec-ikon {
   flex: none; width: 16px; height: 16px;
-  fill: none; stroke: var(--muted-2); stroke-width: 1.8;
+  fill: none; stroke: var(--muted); stroke-width: 1.8;
   stroke-linecap: round; stroke-linejoin: round;
 }
-.sec-ikon .voll { fill: var(--muted-2); stroke: none; }
-.sheet-sec[open] > summary .sec-ikon { stroke: var(--muted); }
-.sheet-sec[open] > summary .sec-ikon .voll { fill: var(--muted); }
+.sec-ikon .voll { fill: var(--muted); stroke: none; }
+.sheet-sec[open] > summary .sec-ikon { stroke: var(--text); }
+.sheet-sec[open] > summary .sec-ikon .voll { fill: var(--text); }
 .sheet-sec > summary:hover .sec-ikon { stroke: var(--text); }
 .sheet-sec > summary:hover .sec-ikon .voll { fill: var(--text); }
 
 .stack { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 .stack input {
   width: 100%; padding: 11px 13px; font: inherit; font-size: .92rem;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--text); outline: none;
 }
 .stack input:focus { border-color: var(--accent); }
@@ -748,7 +761,7 @@ body {
 
 .stack textarea {
   width: 100%; padding: 11px 13px; font: inherit; font-size: .82rem;
-  border: 1px solid var(--line); border-radius: var(--r-knopf); resize: vertical;
+  border: 1px solid transparent; border-radius: var(--r-knopf); resize: vertical;
   background: var(--panel-2); color: var(--text); outline: none;
 }
 .stack textarea:focus { border-color: var(--accent); }
@@ -758,35 +771,36 @@ body {
 .seg-btn {
   flex: 1 1 auto; padding: 9px 12px;
   font: inherit; font-size: .84rem; font-weight: 500;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
-  background: var(--panel-2); color: var(--muted); cursor: pointer;
+  border: 1px solid transparent; border-radius: var(--r-knopf);
+  background: var(--panel-2); color: var(--text); cursor: pointer;
   white-space: nowrap;
 }
 /* Zwei gleich breite Knöpfe je Reihe (Auswahl der Festpunkte) */
 .seg-paar .seg-btn { flex: 1 1 0; }
 /* Rückmeldung beim Tippen — vor allem für die Aktionsknöpfe (Layer laden, Aktualisieren) */
 .seg-btn:active { filter: brightness(1.12); }
+/* Gewählt: volle Signalfarbe. Ohne Rahmen ging eine bloße Tönung auf dem Glas unter. */
 .seg-btn.is-on {
-  border-color: var(--accent); color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: transparent; color: var(--accent-ink);
+  background: var(--accent);
 }
 
 /* Signalfarbe. Jedes Feld zeigt beide Töne der Farbe — links den fürs
- * Dunkle, rechts den fürs Helle. Quadratisch wie alles hier. */
+ * Dunkle, rechts den fürs Helle. Rund wie die Farbwahl bei iOS. */
 .pal-label {
   margin: 14px 0 7px; font-size: .78rem; font-weight: 600; color: var(--muted);
 }
 /* Steht die Gruppenzeile gleich unter der Überschrift, reicht deren Abstand */
 .sheet-sec > summary + .pal-label { margin-top: 0; }
 /* Zehn Farben in zwei gleichen Reihen statt einer, die irgendwo umbricht */
-.pal { display: grid; grid-template-columns: repeat(5, 40px); gap: 7px; }
+.pal { display: grid; grid-template-columns: repeat(5, 32px); gap: 12px; padding: 4px; }
 .pal-btn {
-  width: 40px; height: 30px; padding: 0;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
-  background: linear-gradient(100deg, var(--pal-dark) 0 50%, var(--pal-light) 50% 100%);
+  width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 50%;
+  background: linear-gradient(90deg, var(--pal-dark) 0 50%, var(--pal-light) 50% 100%);
   cursor: pointer;
 }
-.pal-btn.is-on { box-shadow: inset 0 0 0 2px var(--bg), inset 0 0 0 3px var(--text); }
+.pal-btn.is-on { outline: 2px solid var(--text); outline-offset: 2px; }
 .pal-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
 /* Überall, wo ein langer Druck etwas tut, darf das Handy weder Text markieren
@@ -815,10 +829,10 @@ body {
 .parz-wahl .pal-label { margin-top: 10px; }
 .parz-btn {
   position: relative; width: 30px; height: 30px; padding: 0;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 0; border-radius: 50%;
   background: var(--parz); cursor: pointer;
 }
-.parz-btn.is-on { box-shadow: inset 0 0 0 2px var(--bg), inset 0 0 0 3px var(--text); }
+.parz-btn.is-on { outline: 2px solid var(--text); outline-offset: 2px; }
 .parz-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 /* Auto ist ein Wort, kein Farbfeld — eingeschaltet wie die Knöpfe darüber */
 .parz-auto {
@@ -827,8 +841,8 @@ body {
   font: inherit; font-size: .76rem; font-weight: 600;
 }
 .parz-auto.is-on {
-  border-color: var(--accent); color: var(--accent); box-shadow: none;
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: transparent; color: var(--accent-ink); box-shadow: none;
+  background: var(--accent);
   background-clip: padding-box;
 }
 /* Eigene Farbe: das Farbfeld des Systems liegt unsichtbar über dem Plus */
@@ -846,7 +860,7 @@ body {
 .fac-out:not(:empty) { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .fac-item {
   width: 100%; text-align: left; padding: 10px 12px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--text); font: inherit; font-size: .88rem; cursor: pointer;
 }
 .fac-item small { display: block; color: var(--muted); font-size: .76rem; margin-top: 1px; }
@@ -854,6 +868,8 @@ body {
 /* ---------- Liste der geladenen KML-Dateien ---------- */
 
 .kml-list:not(:empty) { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+/* Ohne Dateien stünden „öffnen“ und „Namen auf der Karte“ ohne Luft untereinander */
+.kml-list:empty + .seg { margin-top: 8px; }
 
 .kml-zeile { display: flex; flex-direction: column; gap: 6px; }
 .kml-item { display: flex; gap: 6px; }
@@ -862,19 +878,19 @@ body {
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 10px;
   padding: 9px 12px; text-align: left;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--muted); font: inherit; font-size: .88rem; cursor: pointer;
 }
 .kml-tog.is-on {
-  border-color: var(--accent); color: var(--text);
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  border-color: transparent; color: var(--accent-ink);
+  background: var(--accent);
 }
 
 /* Zeigt Farbe und Form, mit denen die Datei auf der Karte liegt — und öffnet die Wahl */
 .kml-dot {
   flex: none; width: 38px;
   display: grid; place-items: center;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); cursor: pointer;
 }
 .kml-dot:active { filter: brightness(1.15); }
@@ -883,7 +899,7 @@ body {
 .kml-edit-kopf .kml-lab { flex: 1; }
 .kml-zu {
   flex: none; padding: 3px 9px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--glass); color: var(--muted);
   font: inherit; font-size: .74rem; font-weight: 600; cursor: pointer;
 }
@@ -891,7 +907,7 @@ body {
 .kml-edit {
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 10px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2);
 }
 .kml-wahl { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -903,19 +919,19 @@ body {
 .kml-form {
   width: 34px; height: 30px;
   display: grid; place-items: center;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--glass); color: var(--muted); cursor: pointer;
 }
 .kml-form.is-on, .kml-feld.is-on {
-  border-color: var(--accent); color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: transparent; color: var(--accent-ink);
+  background: var(--accent);
 }
 .kml-auto { width: auto; padding: 0 10px; font: inherit; font-size: .76rem; font-weight: 600; }
 
 /* Merkmalsknoepfe: welches Feld unterscheidet, was in der Beschriftung steht */
 .kml-feld {
   padding: 6px 10px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--glass); color: var(--muted);
   font: inherit; font-size: .76rem; cursor: pointer;
 }
@@ -950,7 +966,7 @@ body {
 .prof-griff.leaflet-drag-target, .prof-griff:active { cursor: grabbing; }
 .prof-griff i {
   position: absolute; left: 7px; top: 7px; width: 12px; height: 12px; box-sizing: border-box;
-  border: 2px solid #fff; border-radius: 50%; background: #f59e0b;
+  border: 2px solid #fff; border-radius: 50%; background: #ff9f0a;
 }
 .prof-griff .mess-lbl { position: absolute; left: 20px; top: 6px; }
 
@@ -986,7 +1002,7 @@ body {
 .kml-ic {
   flex: none; width: 40px;
   display: grid; place-items: center;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--muted); cursor: pointer;
 }
 .kml-ic svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
@@ -998,9 +1014,9 @@ body {
 .leaflet-popup-content-wrapper, .leaflet-popup-tip {
   background: var(--glass); color: var(--text);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
-.leaflet-popup-content-wrapper { border: 1px solid var(--line); border-radius: var(--r); }
+.leaflet-popup-content-wrapper { border: 1px solid transparent; border-radius: var(--r); }
 .leaflet-popup-content { margin: 11px 13px; font-size: .82rem; line-height: 1.5; }
 .leaflet-popup-close-button { color: var(--muted-2) !important; }
 
@@ -1023,8 +1039,8 @@ body {
   display: block; width: 100%; margin-top: 9px;
   padding: 7px 10px; border-radius: var(--r-knopf); text-align: left; cursor: pointer;
   font: inherit; font-size: .8rem; font-weight: 650;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   background-clip: padding-box;
   color: var(--accent);
 }
@@ -1043,7 +1059,7 @@ body {
 /* Wetter: drei Werte nebeneinander, groß und mit gleich breiten Ziffern */
 .wetter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .wetter-wert {
-  padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--r-knopf); background: var(--panel-2);
+  padding: 7px 9px; border: 1px solid transparent; border-radius: var(--r-knopf); background: var(--panel-2);
 }
 .wetter-wert small { display: block; font-size: .66rem; color: var(--muted); }
 .wetter-wert b { display: block; margin-top: 2px; font-size: 1rem; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1101,16 +1117,16 @@ body {
 .tag {
   padding: 2px 8px; border-radius: var(--r-klein);
   font-size: .68rem; font-weight: 600; white-space: nowrap;
-  border: 1px solid var(--line); color: var(--muted); background: var(--panel-2);
+  border: 1px solid transparent; color: var(--muted); background: var(--panel-2);
   /* Die farbigen Schilder tragen halbdurchsichtige Fläche und Rahmen: ohne
      padding-box läge die Fläche auch unter dem Rahmen, der dann doppelt deckt */
   background-clip: padding-box;
 }
 /* background-color, nicht background: Die Kurzform setzt background-clip
    stillschweigend auf border-box zurück, und der Rahmen deckte wieder doppelt. */
-.tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background-color: color-mix(in srgb, var(--ok) 14%, transparent); }
-.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background-color: color-mix(in srgb, var(--warn) 14%, transparent); }
-.tag.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background-color: color-mix(in srgb, var(--bad) 14%, transparent); }
+.tag.ok { color: var(--ok); border-color: transparent; background-color: color-mix(in srgb, var(--ok) 14%, transparent); }
+.tag.warn { color: var(--warn); border-color: transparent; background-color: color-mix(in srgb, var(--warn) 14%, transparent); }
+.tag.bad { color: var(--bad); border-color: transparent; background-color: color-mix(in srgb, var(--bad) 14%, transparent); }
 
 .bb-coord {
   font-size: .94rem; font-weight: 600; font-variant-numeric: tabular-nums;
@@ -1128,8 +1144,8 @@ body {
   display: block; width: 100%; margin-top: 10px;
   padding: 10px 13px; border-radius: var(--r-knopf); text-align: left; cursor: pointer;
   font: inherit; font-size: .88rem; font-weight: 650;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   background-clip: padding-box;
   color: var(--accent);
 }
@@ -1151,7 +1167,7 @@ body {
   padding: 12px 8px; border-radius: var(--r-knopf);
   font: inherit; font-size: .86rem; font-weight: 600;
   text-decoration: none; cursor: pointer;
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  border: 1px solid transparent; background: var(--panel-2); color: var(--text);
 }
 /* In der Signalfarbe aus den Einstellungen. Die Schrift darauf (--accent-ink)
    setzt applyPalette je Ton auf Schwarz oder Weiß — Grün ist hier nicht mehr
@@ -1165,11 +1181,11 @@ body {
 .bb-ikon svg .voll { fill: currentColor; stroke: none; }
 /* Offenes Info-Feld: wie ein eingeschalteter Knopf im Menü (.seg-btn.is-on) */
 .bb-actions .bb-ikon.is-on {
-  border-color: var(--accent); color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: transparent; color: var(--accent-ink);
+  background: var(--accent);
 }
 /* Profil am Gleis: orange wie Messen und Profil auf der Karte */
-.bb-actions .bb-ikon.gp { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.bb-actions .bb-ikon.gp { color: var(--warn); border-color: transparent; }
 
 /* Geländehöhe unter dem Ergebnis, in den Sprechblasen und beim Abstecken.
    Steht als Platzhalter da, bis der Wert kommt — die Leiste springt nicht. */
@@ -1185,7 +1201,7 @@ body {
 .pick { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
 .pick button {
   flex: 1 1 auto; padding: 8px 14px; border-radius: var(--r-knopf);
-  border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid transparent; background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: var(--accent); font: inherit; font-size: .92rem; font-weight: 650; cursor: pointer;
   font-variant-numeric: tabular-nums;
 }
@@ -1199,7 +1215,7 @@ body {
 }
 .bb-chip {
   padding: 4px 10px; border-radius: var(--r-knopf);
-  border: 1px solid var(--line); background: var(--panel-2);
+  border: 1px solid transparent; background: var(--panel-2);
   color: var(--muted); font: inherit; font-size: .84rem; font-weight: 650;
   font-variant-numeric: tabular-nums; cursor: pointer; white-space: nowrap;
 }
@@ -1213,7 +1229,7 @@ body {
    Tönung soll nicht unter dem Trennstrich liegen, der sonst doppelt deckte. */
 .tour-start {
   font-weight: 700;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   background-clip: padding-box;
 }
 
@@ -1233,9 +1249,9 @@ body {
 .tour-blase {
   position: absolute; width: min(340px, calc(100vw - 20px));
   padding: 12px 13px 11px;
-  background: var(--glass); border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--glass); border: 1px solid transparent; border-radius: var(--r);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   transition: left .25s ease, top .25s ease;
 }
 .tour-kopf { display: flex; align-items: baseline; gap: 8px; }
@@ -1258,7 +1274,7 @@ body {
 .tour-knopf-2, .tour-weiter {
   padding: 8px 14px; border-radius: var(--r-knopf);
   font: inherit; font-size: .84rem; font-weight: 600; cursor: pointer;
-  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  border: 1px solid transparent; background: var(--panel-2); color: var(--text);
 }
 .tour-weiter { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
 .tour-knopf-2:disabled { color: var(--muted-2); cursor: default; }
@@ -1269,13 +1285,13 @@ body {
   padding: 11px 12px;
   background: var(--glass); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
   border-radius: var(--r); box-shadow: var(--shadow);
-  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 .tour-angebot p { margin: 0 0 10px; font-size: .84rem; line-height: 1.5; }
 .tour-angebot-zeichen {
   display: inline-grid; place-items: center; width: 17px; height: 17px;
   border-radius: var(--r-klein); font-weight: 700; color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .tour-angebot .tour-fuss { justify-content: flex-end; }
 
@@ -1288,7 +1304,7 @@ body {
 /* Quer | Längs im Kopf, rechts vor dem Schließkreuz */
 .prof-art {
   margin-left: auto; align-self: center; display: inline-flex;
-  border: 1px solid var(--line); border-radius: var(--r-knopf); overflow: hidden;
+  border: 1px solid transparent; border-radius: var(--r-knopf); overflow: hidden;
 }
 .prof-art button {
   padding: 3px 9px; border: 0; background: var(--panel-2); color: var(--muted);
@@ -1300,7 +1316,7 @@ body {
 .prof-teilen {
   flex: none; align-self: center; margin-left: auto; width: 30px; height: 26px;
   display: grid; place-items: center; padding: 0; cursor: pointer;
-  border: 1px solid var(--line); border-radius: var(--r-knopf); background: var(--panel-2); color: var(--text);
+  border: 1px solid transparent; border-radius: var(--r-knopf); background: var(--panel-2); color: var(--text);
 }
 .prof-art + .prof-teilen { margin-left: 6px; }
 .prof-teilen svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
@@ -1310,11 +1326,11 @@ body {
   font-size: .78rem; color: var(--muted);
 }
 .prof-pdf button {
-  padding: 5px 10px; border: 1px solid var(--accent); border-radius: var(--r-knopf);
-  background: color-mix(in srgb, var(--accent) 13%, transparent); background-clip: padding-box;
+  padding: 5px 10px; border: 1px solid transparent; border-radius: var(--r-knopf);
+  background: color-mix(in srgb, var(--accent) 20%, transparent); background-clip: padding-box;
   color: var(--accent); font: inherit; font-weight: 600; cursor: pointer;
 }
-.prof-pdf .prof-pdf-zu { margin-left: auto; border-color: var(--line); background: var(--panel-2); color: var(--muted); }
+.prof-pdf .prof-pdf-zu { margin-left: auto; border-color: transparent; background: var(--panel-2); color: var(--muted); }
 /* Die Mappe in einer eigenen Zeile darunter */
 .prof-pdf-umbruch { flex-basis: 100%; height: 0; }
 
@@ -1322,7 +1338,7 @@ body {
 
 .mappe-text {
   display: block; width: 100%; box-sizing: border-box; margin-top: 9px; padding: 8px 10px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf); background: var(--panel-2); color: var(--text);
+  border: 1px solid transparent; border-radius: var(--r-knopf); background: var(--panel-2); color: var(--text);
   font: inherit; font-size: .9rem; line-height: 1.45; font-variant-numeric: tabular-nums; resize: vertical;
 }
 .mappe-text:focus { outline: none; border-color: var(--accent); }
@@ -1333,7 +1349,7 @@ body {
 /* Überhöhung als Block wie Quer | Längs: im PDF ist jede Stufe möglich, zu steil wird gestaucht und vermerkt */
 .mappe-ueber {
   grid-column: 2 / 4; display: grid; grid-template-columns: repeat(4, 1fr);
-  border: 1px solid var(--line); border-radius: var(--r-knopf); overflow: hidden;
+  border: 1px solid transparent; border-radius: var(--r-knopf); overflow: hidden;
 }
 .mappe-ueber button {
   padding: 5px 0; border: 0; background: var(--panel-2); color: var(--text); cursor: pointer;
@@ -1342,12 +1358,12 @@ body {
 .mappe-ueber button + button { border-left: 1px solid var(--line); }
 .mappe-ueber button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .bb-actions .primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
-.bb-actions .primary:disabled { background: var(--panel-2); border-color: var(--line); color: var(--muted-2); }
+.bb-actions .primary:disabled { background: var(--panel-2); border-color: transparent; color: var(--muted-2); }
 /* Der Versatz im freien Profil: Angabe und Rücksetzer in einem */
 .tag.prof-versatz {
   font-family: inherit; cursor: pointer; font-variant-numeric: tabular-nums;
-  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background-color: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent); border-color: transparent;
+  background-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 /* −10 −5 −1 +1 +5 +10: sechs gleich breite Knöpfe, mittig ein Spalt zwischen zurück und vor */
 .prof-sprung {
@@ -1355,7 +1371,7 @@ body {
 }
 .prof-sprung button:nth-child(4) { grid-column: 5; }
 .prof-sprung button {
-  padding: 8px 0; border: 1px solid var(--line); border-radius: var(--r-knopf);
+  padding: 8px 0; border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--text); cursor: pointer;
   font: inherit; font-size: .84rem; font-weight: 650; font-variant-numeric: tabular-nums;
   touch-action: manipulation;          /* zwei schnelle Tipps sind zwei Sprünge, kein Zoom */
@@ -1367,7 +1383,11 @@ body {
 .prof-bild svg { display: block; overflow: visible; font-size: 11px; font-variant-numeric: tabular-nums; cursor: crosshair; }
 .prof-bild .gitter { fill: none; stroke: var(--line); }
 .prof-bild .ecken { fill: none; stroke: var(--muted); stroke-dasharray: 2 3; }
-.prof-bild .flaeche { fill: color-mix(in srgb, var(--warn) 14%, transparent); }
+/* Fläche unter dem Gelände blendet nach unten aus (Verlauf #profVerlauf in profBildSetzen).
+   Nur in der App — das PDF füllt weiter flach. */
+.prof-bild .flaeche { fill: url(#profVerlauf); }
+.prof-bild .v-oben { stop-color: var(--warn); stop-opacity: .5; }
+.prof-bild .v-unten { stop-color: var(--warn); stop-opacity: 0; }
 .prof-bild .dgm { fill: none; stroke: var(--warn); stroke-width: 1.6; stroke-linejoin: round; }
 /* Gebäude (LoD2): deckende graue Blöcke, Gelände und Oberfläche laufen darüber */
 .prof-bild .geb { fill: color-mix(in srgb, var(--muted) 45%, var(--bg)); stroke: var(--text); stroke-width: .8; stroke-linejoin: miter; }
@@ -1379,9 +1399,10 @@ body {
 .prof-bild .zeiger path { fill: none; stroke: var(--text); stroke-width: 1; }
 .prof-bild .zeiger .waag { stroke-dasharray: 3 2; }
 .prof-bild .zeiger circle { fill: var(--warn); stroke: var(--bg); stroke-width: 1.5; }
-/* Freistellung wie bei den Beschriftungen auf der Karte, damit die Zahl über
-   den Gitterlinien lesbar bleibt */
-.prof-bild .zeiger text { fill: var(--text); font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+/* Die Zahl steht auf einem kleinen Schild (Maße aus profZeigerSetzen), damit sie
+   über Gitter und Fläche lesbar bleibt — bis November 2026 mit dunkler Kontur */
+.prof-bild .zeiger .schild { fill: color-mix(in srgb, var(--text) 16%, var(--bg)); }
+.prof-bild .zeiger text { fill: var(--text); font-weight: 600; }
 
 /* Unter dem Bild: feste Zeilen, Name links, Bedienung rechts — Ebenen, Breite
    bzw. Länge, Überhöhung. Bricht auf keinem Handy halb um. */
@@ -1399,7 +1420,7 @@ body {
 /* Der Legendeneintrag ist zugleich der Schalter der Ebene */
 .prof-dom {
   display: flex; align-items: center; min-width: 0; padding: 5px 8px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); background-clip: padding-box; color: var(--muted);
   font: inherit; font-size: .76rem; text-align: left; white-space: nowrap; cursor: pointer;
   overflow: hidden;
@@ -1409,29 +1430,29 @@ body {
 }
 .prof-dom small { margin-left: auto; padding-left: 6px; font-size: .68rem; color: var(--muted-2); font-variant-numeric: tabular-nums; }
 .prof-dom.is-on {
-  color: var(--text); border-color: var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
+  color: var(--text); border-color: transparent;
+  background-color: color-mix(in srgb, var(--accent) 30%, var(--panel-2));
 }
-/* Regler über die festen Stufen: Striche wie auf einem Maßstab, eckiger Schieber */
-.prof-weite { --d: 12px; grid-column: 2; position: relative; display: block; height: 26px; }
+/* Regler über die festen Stufen: Striche wie auf einem Maßstab, runder Knauf */
+.prof-weite { --d: 20px; grid-column: 2; position: relative; display: block; height: 26px; }
 .prof-striche { position: absolute; inset: 0; pointer-events: none; }
 .prof-striche i {
-  position: absolute; top: 9px; width: 1px; height: 8px; background: var(--muted);
+  position: absolute; top: 8px; width: 1px; height: 10px; background: var(--muted-2);
   left: calc(var(--d) / 2 - .5px + (100% - var(--d)) * var(--p));
 }
 .prof-weite input {
   position: relative; display: block; width: 100%; height: 26px; margin: 0;
   -webkit-appearance: none; appearance: none; background: none; cursor: pointer;
 }
-.prof-weite input::-webkit-slider-runnable-track { height: 2px; background: var(--line); }
-.prof-weite input::-moz-range-track { height: 2px; background: var(--line); }
+.prof-weite input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--panel-2); }
+.prof-weite input::-moz-range-track { height: 4px; border-radius: 2px; background: var(--panel-2); }
 .prof-weite input::-webkit-slider-thumb {
-  -webkit-appearance: none; width: var(--d); height: 20px; margin-top: -9px;
-  border: 1px solid var(--bg); border-radius: 2px; background: var(--accent);
+  -webkit-appearance: none; width: var(--d); height: var(--d); margin-top: -8px;
+  border: 0; border-radius: 50%; background: var(--knauf); box-shadow: var(--knauf-schatten);
 }
 .prof-weite input::-moz-range-thumb {
-  width: var(--d); height: 20px; box-sizing: border-box;
-  border: 1px solid var(--bg); border-radius: 2px; background: var(--accent);
+  width: var(--d); height: var(--d); box-sizing: border-box;
+  border: 0; border-radius: 50%; background: var(--knauf); box-shadow: var(--knauf-schatten);
 }
 .prof-weite input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .prof-wert {
@@ -1444,12 +1465,12 @@ body {
 .prof-weite input:disabled::-moz-range-thumb { background: var(--muted-2); }
 /* Die Stelle unter dem Finger auf der Karte: Ring mit dunklem Rand und Mittelpunkt */
 .prof-ring i {
-  position: absolute; inset: 0; border: 3px solid #f59e0b; border-radius: 50%;
+  position: absolute; inset: 0; border: 3px solid #ff9f0a; border-radius: 50%;
   box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .8), inset 0 0 0 1.5px rgba(0, 0, 0, .8);
 }
 .prof-ring i::after {
   content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
-  border-radius: 50%; background: #f59e0b; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .8);
+  border-radius: 50%; background: #ff9f0a; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .8);
 }
 .prof-quelle { margin: 7px 0 0; font-size: .68rem; line-height: 1.45; color: var(--muted-2); }
 .prof-quelle a { color: inherit; }
@@ -1467,7 +1488,7 @@ body {
 .ab-richtung {
   flex: none; width: 50px; padding: 4px 0 3px;
   display: flex; flex-direction: column; align-items: center; gap: 1px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--muted-2); cursor: pointer;
   font: inherit;
 }
@@ -1476,8 +1497,8 @@ body {
   font-size: .56rem; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; line-height: 1.2;
 }
 .ab-richtung.is-on {
-  border-color: var(--accent); color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: transparent; color: var(--accent-ink);
+  background: var(--accent);
   background-clip: padding-box;
 }
 .ab-kopf-txt { flex: 1; min-width: 0; }
@@ -1495,7 +1516,7 @@ body {
 /* Zurück aus der Liste zur Anzeige, ohne neu zu wählen — wie „Fertig" an der Farbwahl */
 .ab-zur {
   flex: none; margin-left: auto; padding: 3px 9px;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--muted);
   font: inherit; font-size: .74rem; font-weight: 600; cursor: pointer;
 }
@@ -1503,7 +1524,7 @@ body {
 .ab-filter {
   display: block; width: 100%; margin-top: 10px; padding: 9px 12px;
   font: inherit; font-size: .92rem;
-  border: 1px solid var(--line); border-radius: var(--r-knopf);
+  border: 1px solid transparent; border-radius: var(--r-knopf);
   background: var(--panel-2); color: var(--text); outline: none;
 }
 .ab-filter:focus { border-color: var(--accent); }
@@ -1522,7 +1543,7 @@ body {
 }
 .ab-zeile:hover, .ab-zeile:focus-visible { background: var(--panel-2); }
 .ab-zeile.is-on {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .ab-zeile.war .ab-txt b { color: var(--muted); font-weight: 600; }
@@ -1647,9 +1668,31 @@ body {
   .more { width: 34px; }
 }
 
+/* ---------- Aufklappen ----------
+   Fenster und Werkzeugleisten gleiten beim Erscheinen kurz herein. Als Animation
+   statt Übergang: Sie startet jedes Mal neu, wenn hidden wegfällt. Nur Lage und
+   Deckkraft — die Höhe bleibt, sonst rechnete updateBH die Knopfsäule falsch.
+   Zu geht es ohne Animation: Wer schließt, will die Karte gleich sehen.
+   Die Kurve läuft schnell los und setzt weich auf (ease-out nach Emil Kowalski). */
+:root { --auf: cubic-bezier(.23, 1, .32, 1); }
+@keyframes von-oben  { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes von-unten { from { opacity: 0; transform: translateY(14px); } }
+@keyframes vom-knopf { from { opacity: 0; transform: translateX(8px) scale(.96); } }
+@keyframes einblenden { from { opacity: 0; } }
+.sheet:not([hidden]), .radar:not([hidden]), .live:not([hidden]) { animation: von-oben .26s var(--auf); }
+.bar-bottom:not([hidden]), .bar-ziel:not([hidden]) { animation: von-unten .3s var(--auf); }
+/* Das Messmenü wächst aus seinem Knopf rechts unten */
+.mess-menue:not([hidden]) { transform-origin: right bottom; animation: vom-knopf .22s var(--auf); }
+.suggest:not([hidden]) { animation: einblenden .18s ease-out; }
+/* Inhalt eines aufgeklappten Menüabschnitts */
+.sheet-sec[open] > :not(summary) { animation: von-oben .24s var(--auf); }
+.tour-angebot { animation: von-unten .3s var(--auf); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
   .progress::after { animation: none; width: 100%; }
+  .sheet, .radar, .live, .bar-bottom, .bar-ziel, .mess-menue, .suggest,
+  .sheet-sec > *, .tour-angebot { animation: none !important; }
 }
 
 
