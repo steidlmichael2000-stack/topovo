@@ -1,7 +1,22 @@
-# TrackPilot
+# Topovo
 
 Streckennummer und Kilometer eingeben, Position auf der Karte sehen.
-Live unter <https://steidlmichael2000-stack.github.io/trackpilot/>.
+Live unter <https://steidlmichael2000-stack.github.io/topovo/>.
+
+## Die App hieß bis November 2026 „TrackPilot"
+
+Umbenannt im November 2026: Beim DPMA sind „PLT TrackPilot" (PLT GmbH, Software zur Ortung und
+Tourenplanung, Klassen 9/39/42) und „TRACKPILOT platinum" (Wärtsilä, Navigation und Vermessung,
+Klasse 9) eingetragen, beide bis 2030 — für eine spätere Nutzung in der Firma zu nah. Als
+Produktname darf „TrackPilot" nicht wieder auftauchen. Der neue Name ist ein Kunstwort (Topo =
+Gelände), weil die App längst mehr ist als ein Gleiswerkzeug; Domain topovo.com gehört einem
+Domainhändler, topovo.de war frei. Kontakt: kontakt.topovo@gmail.com.
+
+Wie beim ersten Wechsel tragen die Speicher den alten Namen nur noch im Umzug: `STORE_KEYS_ALT`
+(`app.js`), `KML_DBS_ALT` (`kmlUmziehen`), `HOEHEN_DB_ALT` (`hoehenUmziehen` in `hoehen.js`, kopiert
+den DGM-Vorrat je Kachel nebenher) und `ALT_PRAEFIXE` (`sw.js`). Unter `/trackpilot/` bleibt eine
+Weiterleitung. Den alten Namen behalten absichtlich: der Cloudflare-Worker `trackpilot-hoehen`
+(Umbenennen hieße neue Adresse im Dashboard) und der lokale Ordner samt Server `trackpilot-5192`.
 
 ## Die App hieß bis September 2026 „Railnav"
 
@@ -21,9 +36,9 @@ Origin, nicht am Pfad. Ein neuer Name würde sie verwaisen lassen:
 
 | Stelle | Datei | Warum |
 |---|---|---|
-| `STORE_KEY_ALT = 'railnav.v3'` | `app.js` | Einstellungen und Verlauf werden beim ersten Start übernommen und danach unter dem neuen Schlüssel gespeichert. |
-| `KML_DB_ALT = 'railnav-kml'` | `app.js` | Die Datenbank mit den importierten KML-Dateien. Sie heißt seit dem 16.09.2026 `trackpilot-kml`; der alte Name steht nur noch im einmaligen Umzug (`kmlUmziehen`), der den Bestand herüberkopiert und die alte Datenbank danach löscht. |
-| `ALT_PRAEFIX = 'railnav-'` | `sw.js` | Räumt die Caches der alten Fassung weg, die sonst dauerhaft auf dem Gerät lägen. |
+| `STORE_KEYS_ALT` (`'railnav.v3'`) | `app.js` | Einstellungen und Verlauf werden beim ersten Start übernommen und danach unter dem neuen Schlüssel gespeichert. |
+| `KML_DBS_ALT` (`'railnav-kml'`) | `app.js` | Die Datenbank mit den importierten KML-Dateien. Sie heißt seit November 2026 `topovo-kml`; die alten Namen stehen nur noch im einmaligen Umzug (`kmlUmziehen`), der den Bestand herüberkopiert und die alte Datenbank danach löscht. |
+| `ALT_PRAEFIXE` (`'railnav-'`) | `sw.js` | Räumt die Caches der alten Fassung weg, die sonst dauerhaft auf dem Gerät lägen. |
 
 Diese drei Migrationspfade dürfen frühestens weg, wenn sicher ist, dass niemand
 mehr eine Fassung von vor der Umbenennung installiert hat. Sie sind **nicht**
@@ -49,18 +64,23 @@ Bei `theme: 'auto'` hängt die Wahl am Betriebssystem — dafür liegt ein
 `matchMedia`-Zuhörer in `bind()`. Ohne ihn bliebe der Ton beim Umschalten des
 Geräts stehen.
 
-`icon.svg`, die PNGs und die Kachel `.card-rail` auf MS Tools sind seit
-September 2026 ebenfalls Lapis. Die Icon-Adressen tragen `?v=lapis`, damit
-installierte Apps das alte violette Icon nicht aus dem Zwischenspeicher weiter
-zeigen — bei einem neuen Motiv den Wert ändern.
+`icon.svg`, die PNGs und die Kachel `.card-rail` auf MS Tools sind Lapis. Die
+Icon-Adressen tragen `?v=topovo` (vorher `?v=lapis`), damit installierte Apps das
+alte Icon nicht aus dem Zwischenspeicher weiter zeigen — bei einem neuen Motiv
+den Wert ändern, an allen drei Stellen: `index.html`, Manifest, `SHELL_FILES`.
 
 ## Icons
 
-`icon.svg` ist die Vorlage, `make-icons.ps1` rasterisiert daraus die PNGs in
-`icons/`. Motiv und Strichführung sind **dieselben wie beim Kachel-Icon auf der
-Übersichtsseite** (`steidlmichael2000-stack.github.io`, `index.html`, Karte
-`.card-rail`) — wer das eine ändert, ändert auch das andere, sonst fällt die
-Icon-Familie wieder auseinander.
+Seit November 2026 ein **gefülltes** Icon (Motiv D aus `../_design/topovo-icons/v2/`): drei
+Geländekämme in Lapis-Tönen, darüber die weiße Ortsmarke mit weichem Schatten. Der Nutzer wollte
+es kräftig und mit Tiefe wie Noteshelf 3, Proton VPN und Bitwarden — Strichzeichnungen holten ihn
+nicht ab. `icon.svg` ist die Vorlage, `node werkzeug/icons-bauen.mjs` rastert daraus die PNGs in
+`icons/` (kopfloser Firefox, eigenes Profil; ersetzt das Windows-Skript `make-icons.ps1`). Für
+maskable und iOS (180) nimmt das Werkzeug die randlose Fassung (clipPath ohne rx).
+
+Die Kachel auf der Übersichtsseite (`start/index.html`, `.card-rail`) bleibt eine **Strichfassung**
+desselben Motivs (Kämme + Marke), weil dort alle Kacheln Strich-Symbole im MESSWERK-Stil tragen.
+Wer das Motiv ändert, zieht beide nach.
 
 ## Dunkle Karte, Straßen und Ortsnamen: OpenFreeMap über MapLibre
 
@@ -162,7 +182,7 @@ Messwerte stehen in der README, hier nur, was beim Weiterbauen nicht übersehen 
 - **Teilabfragen im Worker mit `cache: 'no-store'`.** Sonst holt Cloudflare beim ersten Bereich die
   ganze DOM-Kachel (bis 64 MB) in seinen Zwischenspeicher: 4,8 s statt 0,19 s.
 - **Den Worker nicht in `TILE_HOSTS` von `sw.js` aufnehmen.** Teilantworten (206) kann Cache Storage
-  nicht ablegen, und die DGM-Kacheln liegen bewusst in IndexedDB (`trackpilot-hoehen`, Stores
+  nicht ablegen, und die DGM-Kacheln liegen bewusst in IndexedDB (`topovo-hoehen`, Stores
   `dateien` und `genutzt`): Der Service Worker löscht beim Aktivieren die Caches alter Versionen, der
   Offline-Vorrat wäre bei jedem Deploy weg.
 - **Auch auf localhost nimmt die App den Worker auf Cloudflare.** Die CSP lässt nur `https` zu;
@@ -353,6 +373,14 @@ Glasstufen: Werkzeuge über der Karte `--glass`, Leiste `--glass-dicht`, Spalte 
 Stufen, damit sich die Flächen voneinander abheben (so gewünscht). Kein Plus/Minus zum Zoomen,
 ebenfalls ausdrücklich gewünscht.
 
+**Kopfzeile oben links** (`.marke`, November 2026, wie BayernAtlas/Apple Karten): App-Icon 52 × 52 über
+der Spalte (links 6, Mitte 32, Ecken 12 px wie die Knöpfe), daneben „Topovo“ als **Umriss** aus Comfortaa 700
+(SIL OFL, mit Unterschneidung, per Kontur etwas kräftiger) — keine Schriftdatei; als HTML-Text hing die Lage
+an der Systemschrift (Firefox 3 px tiefer als Chromium). Icon und Name sind ein Zeichen: 16 px Abstand, Name
+bündig mit der Außenkante des Suchfelds (74), optisch mittig (Mitte zwischen Versal- und Kleinbuchstabenmitte
+auf 32). Darunter 16 px, dann Suche und Spaltenknöpfe (alle 52 × 52) ab `--marke-h` 74. Zugeklappt bleibt der
+Name stehen, mit Hof in `--bg`. Nachgemessen per Bildschirmfoto im kopflosen Firefox.
+
 Die Grenze steht zweimal: in `style.css` („Desktop und Tablet quer“) und als `SEITENLEISTE` in
 `app.js`. **Ausschnitte nur über `kartePassen` (statt `map.fitBounds`) und `sichtSetzen` (statt
 `setView`/`panTo`) setzen**, sonst landet das Gezeigte unter Leiste oder Anwendungen.
@@ -399,6 +427,20 @@ durchgeklickt. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfe
   nur bei 5 min Abstand. Regler: Positionen −60…120 = Minuten, dahinter `MODELL_BREITE` Einheiten
   (`radarPosZuVersatz`). Abspielen steht, solange ein Satz lädt (`radarSatzFertig`), auch nach dem Zoomen.
 - Gleisweg und Streckenlinie werden nicht mehr gezeichnet (`zeichneGleiswegNeu` räumt nur noch weg).
+- **Radarleiste, Aussehen (01.11.2026 abgestimmt):** Abspielknopf rund und in `--accent` gefüllt. Zeitspur
+  ein Verlauf mit harten Stufen (`--spur`) in drei Grautönen — Messung, Radarvorhersage, Modell; **kein
+  Orange** (abgelehnt). Darunter Marken −1 h / jetzt / +2 h / Ende (`radarMarken`). Legende in den **vollen**
+  DWD-Farben; eine Fassung in den blassen Kartenfarben (45 % auf dem Kartenton) gefiel schlechter.
+  Mehrere Hintergründe nebeneinander nicht mit Prozent in `background-position` setzen — die rechnet vom
+  Rest (Fläche − Bild), die Teile saßen versetzt.
+- **DB-Netz** zeigt nur noch Anlagen; Signaturen siehe Abschnitt InfraGO. Lag bis dahin unter den Kacheln.
+- **Firefox:** Schieberegler haben dort gut 130 px Mindestbreite — `input[type="range"] { min-width: 0 }`
+  steht global, sonst drückt ein Regler in einer Flex-Zeile seine Nachbarn hinaus (die Prozentzahl lag
+  unter dem Griff der Leiste). Der Nutzer arbeitet am Rechner mit Firefox (seit 01.11.2026 das deb-Paket
+  von Mozilla, kein Flatpak mehr — das Flatpak-Dateiportal konnte keine Dateien aus dem rclone-Laufwerk
+  „Google Drive“ lesen). Prüfen ohne seinen Firefox anzufassen: `firefox --headless --no-remote --profile
+  <leerer Ordner> --remote-debugging-port 9333` und über WebDriver BiDi (`ws://127.0.0.1:9333/session`,
+  `session.new`, `browsingContext.navigate`, `script.evaluate`) messen; danach Prozess beenden, Profil löschen.
 
 ## Service Worker: nichts vor dem Ausliefern abwarten (November 2026)
 
@@ -410,6 +452,10 @@ gemessen 0,8–1,8 s statt 0,3–0,45 s je neuer Ansicht, in Firefox schlimmer (
 `/planet` von OpenFreeMap aus dem Vorrat und nebenher erneuert (`vorratDannNetz`).
 
 ## Beim Deployen
+
+**Seit 01.11.2026 erst lokal:** Änderungen nicht gleich pushen. Der Nutzer sieht sie in seinem Firefox
+unter <http://localhost:5192/trackpilot/> (Server: `trackpilot-5192` aus `../.claude/launch.json`, muss
+laufen) und gibt den Push frei. Erst dann `VERSION` hochzählen, committen, pushen.
 
 `VERSION` in `sw.js` hochzählen. Der Worker arbeitet zwar „erst Netz, dann
 Cache", aber die Kachel- und Netzdaten-Caches hängen an der Version.

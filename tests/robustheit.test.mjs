@@ -20,13 +20,13 @@ function worker({ fetcher = async () => new Response('neu'), cache = {}, openFai
   const storage = { match: async () => undefined, put: async () => {}, keys: async () => [], ...cache };
   const context = vm.createContext({ URL, Request, Response, AbortController, setTimeout, clearTimeout,
     fetch: fetcher, caches: { open: async () => { if (openFails) throw new Error('gesperrt'); return storage; } },
-    self: { location: { origin:'https://example.org' }, registration:{ scope:'https://example.org/trackpilot/' },
+    self: { location: { origin:'https://example.org' }, registration:{ scope:'https://example.org/topovo/' },
       addEventListener:(name, fn) => events[name] = fn, skipWaiting: () => { context.skipped = true; } }
   });
   vm.runInContext(sw, context);
   return { context, events };
 }
-const request = new Request('https://example.org/trackpilot/app.js');
+const request = new Request('https://example.org/topovo/app.js');
 // Das Ablegen läuft nebenher über event.waitUntil — hier gesammelt, damit Fehler darin auffallen würden
 const nebenher = [];
 const ev = { waitUntil: p => nebenher.push(p) };
@@ -65,12 +65,12 @@ test('InfraGO-Strecken kommen aus dem eigenen Vorrat zuerst, ohne zweite Netzabf
     cache:{match:async()=>calls?new Response('{"g":[]}'):undefined}});
   const open=c.caches.open;c.caches.open=async n=>{geoeffnet.push(n);return open(n);};
   let antwort;
-  events.fetch({request:new Request('https://example.org/trackpilot/infrago/s/5100.json'),respondWith:p=>antwort=p,waitUntil:p=>nebenher.push(p)});
+  events.fetch({request:new Request('https://example.org/topovo/infrago/s/5100.json'),respondWith:p=>antwort=p,waitUntil:p=>nebenher.push(p)});
   assert.equal(await (await antwort).text(),'{"g":[]}');
-  events.fetch({request:new Request('https://example.org/trackpilot/infrago/s/5100.json'),respondWith:p=>antwort=p,waitUntil:p=>nebenher.push(p)});
+  events.fetch({request:new Request('https://example.org/topovo/infrago/s/5100.json'),respondWith:p=>antwort=p,waitUntil:p=>nebenher.push(p)});
   await antwort;
   assert.equal(calls,1);
-  assert.ok(geoeffnet.every(n=>n.startsWith('trackpilot-infrago-')),geoeffnet.join());
+  assert.ok(geoeffnet.every(n=>n.startsWith('topovo-infrago-')),geoeffnet.join());
 });
 test('Geschwister-App, Range und Authorization werden nicht abgefangen', () => {
   const {events}=worker();let handled=0;
@@ -82,7 +82,7 @@ test('Geschwister-App, Range und Authorization werden nicht abgefangen', () => {
 test('Unvollständige Shell wird nicht aktiviert', async () => {
   const {context:c,events}=worker({cache:{addAll:async()=>{throw new Error('fehlende Datei');}}});
   // Browser-Request erlaubt relative URLs; Node benötigt eine Basis.
-  c.Request=class extends Request {constructor(url,options){super(new URL(url,'https://example.org/trackpilot/'),options);}};
+  c.Request=class extends Request {constructor(url,options){super(new URL(url,'https://example.org/topovo/'),options);}};
   let installation;events.install({waitUntil:p=>installation=p});
   await assert.rejects(installation);assert.equal(c.skipped,undefined);
 });

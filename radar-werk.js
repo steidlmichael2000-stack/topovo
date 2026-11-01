@@ -1,4 +1,4 @@
-/* TrackPilot — Regenradar im Hintergrund
+/* Topovo — Regenradar im Hintergrund
  *
  * Läuft als Modul-Worker (app.js, radarWerk). Zwei Aufgaben, beide zu schwer
  * für den Hauptfaden, solange der Nutzer am Zeitregler zieht:

@@ -8,17 +8,17 @@
      Speicher und Caches, deshalb gilt die CSP als zweite Verteidigungslinie hinter esc(). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>TrackPilot — Streckenkilometer auf der Karte</title>
+<title>Topovo — Streckenkilometer auf der Karte</title>
 <meta name="description" content="Streckennummer und Kilometer eingeben, Position auf der Karte sehen, per Klick auf die Karte den Kilometer ablesen und in Google Maps öffnen.">
 <meta name="theme-color" content="#14181d">
 <meta name="color-scheme" content="dark light">
 <link rel="manifest" href="manifest.webmanifest">
-<!-- ?v=lapis: Neue Adresse, damit Browser und Startbildschirm das violette
+<!-- ?v=topovo: Neue Adresse, damit Browser und Startbildschirm das violette
      Icon aus dem Zwischenspeicher nicht weiter zeigen -->
-<link rel="icon" href="icon.svg?v=lapis" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icons/icon-180.png?v=lapis">
+<link rel="icon" href="icon.svg?v=topovo" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png?v=topovo">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="TrackPilot">
+<meta name="apple-mobile-web-app-title" content="Topovo">
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -129,6 +129,11 @@
     <!-- Blendet die Werkzeugleiste unten rechts ein und aus; Signalfarbe = sichtbar -->
     <button type="button" id="werkzeugeBtn" class="schiene-werkzeuge" aria-pressed="true" title="Werkzeugleiste ein/aus"><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0z"/><path d="M14.5 12.5l2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/></svg><span>Werkzeuge</span></button>
   </nav>
+  <!-- Icon und Name oben links (nur ab 1010 px), wie BayernAtlas und Apple Karten:
+       das Icon über der Symbolspalte, der Name auf gleicher Höhe in der Leiste.
+       Der Name ist ein Umriss aus Comfortaa 700 (SIL OFL 1.1, mit Unterschneidung),
+       keine Schriftdatei: sieht überall gleich aus und lädt nichts nach. -->
+  <div class="marke"><img src="icon.svg?v=topovo" alt="" width="52" height="52"><svg class="marke-name" width="95.16" height="64" viewBox="0 0 95.16 64" role="img" aria-label="Topovo"><path stroke-width="56" stroke-linejoin="round" transform="translate(0.333 40.5) scale(0.025608)" d="M330.5272727272727 0.0Q309 0 294.0 -15.0Q279 -30 279 -52V-781H383V-52Q383 -30 368.2 -15.0Q353.4 0.0 330.5272727272727 0.0ZM63 -685Q41.666666666666664 -685.0 28.333333333333332 -698.7142857142858Q15.0 -712.4285714285714 15 -733Q15.0 -754.3333333333334 28.333333333333332 -767.6666666666667Q41.666666666666664 -781.0 63 -781H598Q619.3333333333334 -781.0 632.6666666666667 -767.6666666666667Q646.0 -754.3333333333334 646 -733Q646.0 -712.4285714285714 632.6666666666667 -698.7142857142858Q619.3333333333334 -685.0 598 -685ZM849 4Q768 4 705.9545454545455 -31.636363636363633Q643.9090909090909 -67.27272727272727 608.4545454545455 -129.63636363636363Q573 -192 573.0 -272.99378881987576Q573 -355 608.4545454545455 -417.3636363636364Q643.9090909090909 -479.72727272727275 705.9545454545455 -515.3636363636364Q768 -551 848.5 -551.0Q929 -551 990.8654822335025 -515.3636363636364Q1052.730964467005 -479.72727272727275 1088.3654822335025 -417.3636363636364Q1124 -355 1124.0 -272.99378881987576Q1124 -192 1089.0 -129.5Q1054 -67 992.0 -31.5Q930 4 849 4ZM849 -86Q901 -86 940.9305555555555 -110.08108108108108Q980.8611111111111 -134.16216216216216 1003.4305555555555 -176.0810810810811Q1026 -218 1026 -273Q1026 -328 1003.4305555555555 -370.3993288590604Q980.8611111111111 -412.7986577181208 940.9305555555555 -436.8993288590604Q901 -461 849 -461Q797 -461 757.0275862068966 -436.8993288590604Q717.0551724137931 -412.7986577181208 694.0275862068966 -370.3993288590604Q671 -328 671 -273Q671 -218 694.0275862068966 -176.0810810810811Q717.0551724137931 -134.16216216216216 757.0275862068966 -110.08108108108108Q797 -86 849 -86ZM1327 234Q1305 234 1290.5 219.5Q1276 205 1276 183V-273Q1276.9915966386554 -351.8509090909091 1313.18487394958 -415.03272727272724Q1349.3781512605042 -478.21454545454543 1411.3529411764707 -514.6072727272727Q1473.327731092437 -551.0 1550.672268907563 -551.0Q1630 -551 1692.0 -514.5Q1754 -478 1790.5 -415.2210526315789Q1827.0 -352.4421052631579 1827.0 -272.72280701754386Q1827 -194 1793.3407407407408 -131.31658291457285Q1759.6814814814816 -68.63316582914572 1701.8444444444444 -32.31658291457286Q1644.0074074074073 4.0 1571 4Q1512 4 1462.5 -20.5Q1413 -45 1378 -87V183Q1378 205 1363.907894736842 219.5Q1349.8157894736842 234.0 1327 234ZM1550.9420849420849 -86.0Q1602 -86 1642.0 -110.5Q1682 -135 1705.5 -177.61682242990656Q1729.0 -220.2336448598131 1729.0 -273.1682242990654Q1729 -327 1705.5 -369.5Q1682 -412 1641.7777777777778 -436.5Q1601.5555555555557 -461.0 1550.840579710145 -461.0Q1501 -461 1460.4305555555557 -436.2705223880597Q1419.861111111111 -411.5410447761194 1396.9305555555557 -369.27611940298505Q1374.0 -327.01119402985074 1374.0 -273.0559701492537Q1374 -220 1396.888030888031 -177.28187919463087Q1419.7760617760619 -134.56375838926175 1460.2702702702704 -110.28187919463087Q1500.7644787644788 -86.0 1550.9420849420849 -86.0ZM2227 4Q2146 4 2083.9545454545455 -31.636363636363633Q2021.909090909091 -67.27272727272727 1986.4545454545455 -129.63636363636363Q1951 -192 1951.0 -272.99378881987576Q1951 -355 1986.4545454545455 -417.3636363636364Q2021.909090909091 -479.72727272727275 2083.9545454545455 -515.3636363636364Q2146 -551 2226.5 -551.0Q2307 -551 2368.8654822335025 -515.3636363636364Q2430.730964467005 -479.72727272727275 2466.3654822335025 -417.3636363636364Q2502 -355 2502.0 -272.99378881987576Q2502 -192 2467.0 -129.5Q2432 -67 2370.0 -31.5Q2308 4 2227 4ZM2227 -86Q2279 -86 2318.9305555555557 -110.08108108108108Q2358.8611111111113 -134.16216216216216 2381.4305555555557 -176.0810810810811Q2404 -218 2404 -273Q2404 -328 2381.4305555555557 -370.3993288590604Q2358.8611111111113 -412.7986577181208 2318.9305555555557 -436.8993288590604Q2279 -461 2227 -461Q2175 -461 2135.0275862068966 -436.8993288590604Q2095.055172413793 -412.7986577181208 2072.0275862068966 -370.3993288590604Q2049 -328 2049 -273Q2049 -218 2072.0275862068966 -176.0810810810811Q2095.055172413793 -134.16216216216216 2135.0275862068966 -110.08108108108108Q2175 -86 2227 -86ZM2809 -1Q2778 -1 2761 -34L2549 -481Q2541 -498 2547.5 -514.5Q2554 -531 2573 -540Q2590 -549 2607.5 -543.0Q2625 -537 2634 -520L2832 -93H2784L2980 -520Q2989 -537 3007.5 -543.0Q3026 -549 3045 -540Q3063 -532 3069.0 -515.0Q3075 -498 3067 -481L2855 -34Q2840 -1 2809 -1ZM3400 4Q3319 4 3256.9545454545455 -31.636363636363633Q3194.909090909091 -67.27272727272727 3159.4545454545455 -129.63636363636363Q3124 -192 3124.0 -272.99378881987576Q3124 -355 3159.4545454545455 -417.3636363636364Q3194.909090909091 -479.72727272727275 3256.9545454545455 -515.3636363636364Q3319 -551 3399.5 -551.0Q3480 -551 3541.8654822335025 -515.3636363636364Q3603.730964467005 -479.72727272727275 3639.3654822335025 -417.3636363636364Q3675 -355 3675.0 -272.99378881987576Q3675 -192 3640.0 -129.5Q3605 -67 3543.0 -31.5Q3481 4 3400 4ZM3400 -86Q3452 -86 3491.9305555555557 -110.08108108108108Q3531.8611111111113 -134.16216216216216 3554.4305555555557 -176.0810810810811Q3577 -218 3577 -273Q3577 -328 3554.4305555555557 -370.3993288590604Q3531.8611111111113 -412.7986577181208 3491.9305555555557 -436.8993288590604Q3452 -461 3400 -461Q3348 -461 3308.0275862068966 -436.8993288590604Q3268.055172413793 -412.7986577181208 3245.0275862068966 -370.3993288590604Q3222 -328 3222 -273Q3222 -218 3245.0275862068966 -176.0810810810811Q3268.055172413793 -134.16216216216216 3308.0275862068966 -110.08108108108108Q3348 -86 3400 -86Z"/></svg></div>
   <!-- Griff an der Kante der Leiste: zu- und aufklappen (nur ab 1010 px) -->
   <button id="leisteGriff" type="button" class="leiste-griff" aria-label="Leiste zuklappen" title="Leiste zuklappen" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 8.5 12l6 6"/></svg></button>
 
@@ -545,8 +550,10 @@
       Bayerische Vermessungsverwaltung – www.geodaten.bayern.de (CC BY 4.0) · DOP20, Relief, Flurstücke, Gebäude, Festpunkte, DGM1, DOM1 und LoD2 in
       Baden-Württemberg: LGL-BW (2026), Datenlizenz Deutschland – Namensnennung – Version 2.0,
       www.lgl-bw.de, bearbeitet · Regenradar: Quelle
-      Deutscher Wetterdienst</p>
-      <p class="fine"><a href="https://github.com/steidlmichael2000-stack/trackpilot" target="_blank" rel="noopener">Quellcode auf GitHub</a></p>
+      Deutscher Wetterdienst · Schriftzug Topovo aus Comfortaa (The Comfortaa Project Authors,
+      SIL Open Font License 1.1)</p>
+      <p class="fine"><a href="impressum.html">Impressum &amp; Datenschutz</a> ·
+      <a href="https://github.com/steidlmichael2000-stack/topovo" target="_blank" rel="noopener">Quellcode auf GitHub</a></p>
     </details>
 
   </div>
@@ -605,11 +612,24 @@
 
 <!-- Beim allerersten Start einmal: das Angebot, die Tour zu machen -->
 <div id="tourAngebot" class="tour-angebot" role="dialog" aria-labelledby="tourAngebotText" hidden>
-  <p id="tourAngebotText"><b>Neu hier?</b> Die Tour zeigt in zwei Minuten, was TrackPilot kann —
+  <p id="tourAngebotText"><b>Neu hier?</b> Die Tour zeigt in zwei Minuten, was Topovo kann —
   das <span class="tour-angebot-zeichen">?</span> unten links startet sie jederzeit wieder.</p>
+  <p class="tour-angebot-daten">Gespeichert wird nur auf diesem Gerät — keine Cookies, kein Tracking.
+  <a href="impressum.html#datenschutz">Datenschutz</a></p>
   <div class="tour-fuss">
     <button id="tourAngebotNein" class="tour-knopf-2" type="button">Nein, danke</button>
     <button id="tourAngebotJa" class="tour-weiter" type="button">Tour starten</button>
+  </div>
+</div>
+
+<!-- Einmal für alle, die das Tour-Angebot nicht (mehr) sehen: wie die App mit Daten umgeht.
+     Kein Einwilligungsbanner — es gibt nichts einzuwilligen (keine Cookies, kein Tracking). -->
+<div id="datenHinweis" class="tour-angebot" role="dialog" aria-labelledby="datenHinweisText" hidden>
+  <p id="datenHinweisText"><b>Deine Daten bleiben hier.</b> Topovo speichert Einstellungen, KML-Dateien
+  und Geländekacheln nur auf diesem Gerät — keine Cookies, kein Tracking, keine Konten.</p>
+  <div class="tour-fuss">
+    <a class="tour-knopf-2" href="impressum.html#datenschutz">Datenschutz</a>
+    <button id="datenHinweisOk" class="tour-weiter" type="button">Verstanden</button>
   </div>
 </div>
 

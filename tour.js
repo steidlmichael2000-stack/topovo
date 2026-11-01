@@ -1,4 +1,4 @@
-/* TrackPilot — Tour durch die App
+/* Topovo — Tour durch die App
  *
  * Das „?" im ©-Kasten unten links startet sie; beim allerersten Start bietet die
  * App sie einmal an (prefs.tourAngeboten). Die Ebene #tour dunkelt alles ab bis
@@ -575,7 +575,10 @@ function tourLage() {
  * geteilten Link öffnet, will zuerst sein Ergebnis sehen: dann kein Angebot. */
 
 function tourAngebotLage() {
-  const el = $('#tourAngebot');
+  for (const el of [$('#tourAngebot'), $('#datenHinweis')]) angebotSetzen(el);
+}
+
+function angebotSetzen(el) {
   if (el.hidden) return;
   const k = $('.quellen-kasten').getBoundingClientRect();
   el.style.left = Math.round(Math.min(k.left, window.innerWidth - el.offsetWidth - 10)) + 'px';
@@ -584,7 +587,26 @@ function tourAngebotLage() {
 
 function tourAngebotZu() {
   $('#tourAngebot').hidden = true;
-  window.removeEventListener('resize', tourAngebotLage);
+  if ($('#datenHinweis').hidden) window.removeEventListener('resize', tourAngebotLage);
+}
+
+/* Wie die App mit Daten umgeht — einmal für alle, auch wer die Tour schon kennt
+ * oder über einen Link kommt. Steht das Tour-Angebot gerade da, trägt es den
+ * Satz schon mit (.tour-angebot-daten), dann kein zweites Kästchen. */
+function datenHinweis() {
+  if (prefs.datenHinweis) return;
+  prefs.datenHinweis = true;
+  saveStore();
+  if (!$('#tourAngebot').hidden) return;
+  $('#datenHinweis').hidden = false;
+  angebotSetzen($('#datenHinweis'));
+  window.addEventListener('resize', tourAngebotLage);
+  map.getContainer().addEventListener('pointerdown', datenHinweisZu, { once: true, passive: true });
+}
+
+function datenHinweisZu() {
+  $('#datenHinweis').hidden = true;
+  if ($('#tourAngebot').hidden) window.removeEventListener('resize', tourAngebotLage);
 }
 
 function tourAngebot() {
@@ -605,13 +627,14 @@ function tourEinrichten() {
   $('#tourZurueck').addEventListener('click', () => tourZeigen(tourIndex - 1));
   $('#tourAngebotJa').addEventListener('click', tourStart);
   $('#tourAngebotNein').addEventListener('click', tourAngebotZu);
+  $('#datenHinweisOk').addEventListener('click', datenHinweisZu);
   // Die ? der Werkzeugleisten: Die Leisten werden ständig neu gebaut, also ein Zuhörer am Dokument
   document.addEventListener('click', ev => {
     const k = ev.target.closest && ev.target.closest('[data-hilfe]');
     if (k) hilfeStart(k.dataset.hilfe);
   });
   // Erst wenn die Karte steht, sonst springt das Angebot beim Aufbau umher
-  setTimeout(tourAngebot, 1500);
+  setTimeout(() => { tourAngebot(); datenHinweis(); }, 1500);
 }
 
 // Nach boot() aus app.js: der Zuhörer dort ist zuerst eingetragen

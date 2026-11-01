@@ -1,18 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="TrackPilot">
-  <!-- Dieselbe Zeichnung wie das Kachel-Icon auf der Uebersicht, nur gross und
-       auf dunklem Grund. Diese Datei ist die Vorlage fuer die PNG-Icons,
-       siehe make-icons.ps1 - wer das Motiv aendert, aendert es hier.
-       Farbe: Lapis, der Blauton des Firmenlogos, im aufgehellten Ton fuers
-       Dunkle (#55A5E7) - der Logoton selbst stuende auf diesem Grund nur
-       bei 3:1. -->
-  <rect width="512" height="512" rx="112" fill="#07080d"/>
-  <g transform="translate(58.23 57.41) scale(16.5495)"
-     fill="none" stroke="#55a5e7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-       <!-- Strecke mit Kilometersteinen -->
-       <path d="M6.4 3v18"/>
-       <path d="M3.6 7.4h2.8M3.6 12h2.8M3.6 16.6h2.8"/>
-       <!-- Markierter Punkt -->
-       <path d="M16 21s4.3-4.8 4.3-7.9a4.3 4.3 0 1 0-8.6 0C11.7 16.2 16 21 16 21z"/>
-       <circle cx="16" cy="13.1" r="1.5" fill="#55a5e7" stroke="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Topovo">
+  <!-- Topovo, seit November 2026: drei Geländestufen als Bänder in Lapis (hell
+       hinten, dunkel vorn), darüber die weiße Ortsmarke mit weichem Schatten.
+       Gewählt aus zwei Entwurfsrunden (../_design/topovo-icons/, Motiv D) —
+       gefüllt mit Tiefe wie Noteshelf 3, Proton VPN und Bitwarden, die der
+       Nutzer mag. Vorlage für die PNGs: node werkzeug/icons-bauen.mjs.
+       Die Ecken rundet clipPath (rx 112); für maskable und iOS setzt das
+       Werkzeug rx auf 0, die Bänder laufen dann bis an den Rand. -->
+  <defs>
+    <clipPath id="rund"><rect width="512" height="512" rx="112"/></clipPath>
+    <linearGradient id="himmel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a7cc6"/><stop offset="1" stop-color="#1761a3"/></linearGradient>
+    <linearGradient id="marke" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d6e6f5"/></linearGradient>
+    <filter id="schatten" x="-30%" y="-30%" width="160%" height="170%"><feGaussianBlur in="SourceAlpha" stdDeviation="14"/><feOffset dx="8" dy="18"/><feComponentTransfer><feFuncA type="linear" slope=".38"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g clip-path="url(#rund)">
+    <rect width="512" height="512" fill="url(#himmel)"/>
+    <path d="M0 252 82 206q18-10 36 0l52 28 92-84q18-16 36 0l92 80 48-30q16-10 32 0l42 26V512H0z" fill="#7fbbec"/>
+    <path d="M0 334 112 284q18-8 36 2l80 42 104-64q18-11 36 0L512 348V512H0z" fill="#3b8bd2"/>
+    <path d="M0 424 142 384q18-5 36 0l124 34 120-32q18-5 36 1L512 404V512H0z" fill="#0d3c6c"/>
+  </g>
+  <g filter="url(#schatten)">
+    <path d="M256 352C214 300 178 256 178 200a78 78 0 1 1 156 0c0 56-36 100-78 152z" fill="url(#marke)"/>
+    <circle cx="256" cy="200" r="28" fill="#1761a3"/>
   </g>
 </svg>

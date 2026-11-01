@@ -1,4 +1,4 @@
-/* TrackPilot — Kilometrierung nach DB InfraGO
+/* Topovo — Kilometrierung nach DB InfraGO
  *
  * Quelle: „Infrastrukturdaten der DB InfraGO" aus der Mobilithek, Datenstand
  * Mai 2026, CC BY 4.0, Quellenvermerk „DB InfraGO".

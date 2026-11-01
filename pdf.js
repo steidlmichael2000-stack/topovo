@@ -1,4 +1,4 @@
-/* TrackPilot — ein kleiner PDF-Schreiber für den Profil-Export
+/* Topovo — ein kleiner PDF-Schreiber für den Profil-Export
  *
  * Genug für eine Seite mit Vektorgrafik, Text und einem Luftbild: Linienzüge,
  * Flächen, Strichelung, Text in Helvetica (eine der 14 Grundschriften, die
@@ -162,7 +162,7 @@ class PdfSeite {
 }
 
 class PdfDokument {
-  constructor({ titel = '', autor = 'TrackPilot' } = {}) {
+  constructor({ titel = '', autor = 'Topovo' } = {}) {
     this.titel = titel;
     this.autor = autor;
     this.seiten = [];
@@ -217,7 +217,7 @@ class PdfDokument {
     objekt(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
     const jetzt = new Date(), zz = n => String(n).padStart(2, '0');
     const datum = `D:${jetzt.getFullYear()}${zz(jetzt.getMonth() + 1)}${zz(jetzt.getDate())}${zz(jetzt.getHours())}${zz(jetzt.getMinutes())}${zz(jetzt.getSeconds())}`;
-    objekt(5, `<< /Title ${pdfText(this.titel)} /Author ${pdfText(this.autor)} /Producer (TrackPilot) /CreationDate (${datum}) >>`);
+    objekt(5, `<< /Title ${pdfText(this.titel)} /Author ${pdfText(this.autor)} /Producer (Topovo) /CreationDate (${datum}) >>`);
     this.bilder.forEach((b, i) => {
       const farbraum = b.kanaele === 1 ? '/DeviceGray' : b.kanaele === 4 ? '/DeviceCMYK' : '/DeviceRGB';
       objekt(ersteBild + i, `<< /Type /XObject /Subtype /Image /Width ${b.breite} /Height ${b.hoehe} ` +

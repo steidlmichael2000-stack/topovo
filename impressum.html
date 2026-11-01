@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Dieselbe CSP wie index.html, nur ohne Skript: Die Seite muss auch ohne
+     JavaScript lesbar sein (Impressum und Datenschutz sind Pflichtangaben). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="color-scheme" content="dark light">
+<title>Impressum &amp; Datenschutz · Topovo</title>
+<link rel="icon" href="icon.svg?v=topovo" type="image/svg+xml">
+<style>
+  /* Farben wie in style.css (dunkel/hell nach Gerät). Ohne Glas: Hier liegt
+     keine Karte darunter, die durchscheinen könnte. */
+  :root {
+    --bg: #06070b; --flaeche: #12141c; --text: #e9ebf1; --muted: #8a90a3;
+    --line: rgba(255, 255, 255, .12); --accent: #55a5e7; --r: 20px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #eef1f5; --flaeche: #ffffff; --text: #17202a; --muted: #58636f; --line: #d5dbe3; --accent: #1761a3; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--text);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  .zurueck { display: inline-block; margin-bottom: 18px; color: var(--accent); text-decoration: none; font-weight: 600; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -.01em; }
+  .stand { color: var(--muted); margin: 0 0 24px; font-size: .85rem; }
+  section { background: var(--flaeche); border-radius: var(--r); padding: 18px 20px; margin: 0 0 16px; }
+  h2 { font-size: 1.1rem; margin: 0 0 10px; }
+  h3 { font-size: .95rem; margin: 18px 0 6px; }
+  p, li { margin: 0 0 10px; }
+  ul { padding-left: 20px; margin: 0 0 10px; }
+  li { margin-bottom: 6px; }
+  .klein { color: var(--muted); font-size: .85rem; }
+  a { color: var(--accent); }
+  address { font-style: normal; }
+</style>
+</head>
+<body>
+<main>
+<a class="zurueck" href="./">← Zurück zu Topovo</a>
+<h1>Impressum &amp; Datenschutz</h1>
+<p class="stand">Stand: November 2026</p>
+
+<section id="impressum">
+  <h2>Impressum</h2>
+  <p>Topovo ist ein privates, nicht kommerzielles Projekt.</p>
+  <address>
+    <!-- Ohne Anschrift: Solange Topovo privat und nicht geschäftsmäßig ist, verlangt
+         § 5 DDG kein Impressum — der Nutzer will sie erst bei Firmennutzung nennen. -->
+    Michael Steidl<br>
+    E-Mail: <a href="mailto:kontakt.topovo@gmail.com">kontakt.topovo@gmail.com</a>
+  </address>
+  <h3>Keine amtliche Auskunft</h3>
+  <p>Kilometer, Lagen, Höhen und Profile sind aus offenen Daten abgeleitet. Sie taugen zur
+  Orientierung im Gelände, nicht für Vermessung, Disposition oder sicherheitsrelevante
+  Entscheidungen. Für Inhalte verlinkter fremder Seiten sind deren Betreiber verantwortlich.</p>
+  <p class="klein">Quellen und Lizenzen der Karten und Daten stehen in der App unter dem ©-Knopf
+  und unter <em>Hinweise</em>. Der Quellcode liegt auf
+  <a href="https://github.com/steidlmichael2000-stack/topovo" target="_blank" rel="noopener">GitHub</a> (GPL-3.0).</p>
+</section>
+
+<section id="datenschutz">
+  <h2>Datenschutz</h2>
+
+  <h3>Verantwortlich</h3>
+  <p>Michael Steidl, <a href="mailto:kontakt.topovo@gmail.com">kontakt.topovo@gmail.com</a>.</p>
+  <p>Topovo verwendet keine Cookies, keine Benutzerkonten, keine Reichweitenmessung und keine
+  Werbung. Eingaben, Einstellungen und importierte Dateien bleiben auf deinem Gerät und werden
+  nicht an mich übermittelt.</p>
+
+  <h3>Speicher auf deinem Gerät</h3>
+  <p>Topovo legt im Browser ab: Einstellungen und zuletzt gesuchte Strecken (localStorage),
+  importierte KML-Dateien und geladene Geländekacheln (IndexedDB) sowie die App-Dateien und
+  Kartenkacheln für den Offline-Betrieb (Service Worker). Das ist für die Funktion nötig, die du
+  aufrufst (§ 25 Abs. 2 Nr. 2 TDDDG), und verlässt das Gerät nicht. Löschen kannst du alles über
+  die Website-Daten in den Einstellungen deines Browsers bzw. durch Deinstallieren der App.</p>
+
+  <h3>Hosting</h3>
+  <p>Die App liegt auf <strong>GitHub Pages</strong> (GitHub, Inc., USA). Beim Abruf verarbeitet
+  GitHub technisch nötige Angaben wie IP-Adresse, Zeitpunkt und Browserkennung, um die Seite
+  auszuliefern und abzusichern. Näheres in der
+  <a href="https://docs.github.com/de/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">Datenschutzerklärung von GitHub</a>.</p>
+
+  <h3>Dienste, die dein Browser direkt abfragt</h3>
+  <p>Bei jeder Anfrage erhält der jeweilige Dienst deine IP-Adresse, die Browserkennung, als
+  Herkunft nur die Adresse der App (ohne Pfad) und den Inhalt der Anfrage, etwa den
+  Kartenausschnitt, die Koordinate oder den Suchbegriff. Abgefragt wird nur, was du gerade
+  benutzt:</p>
+  <ul>
+    <li><strong>Karten:</strong> OpenStreetMap Foundation (Kartenkacheln), OpenFreeMap (dunkle
+    Karte, Straßen, Ortsnamen), Esri (Luftbild, USA), OpenRailwayMap (Bahn-Layer).</li>
+    <li><strong>Amtliche Geodaten:</strong> Bayerische Vermessungsverwaltung und Landesamt für
+    Geoinformation und Landentwicklung Baden-Württemberg (Orthophotos, Relief, Flurstücke,
+    Festpunkte, Höhen, Gebäude).</li>
+    <li><strong>Höhen und Gebäude über einen Vermittler:</strong> Weil die Server der
+    Vermessungsverwaltungen keine Abrufe aus fremden Web-Apps zulassen, laufen diese Anfragen über
+    einen kleinen Cloudflare Worker (Cloudflare, Inc., USA). Der Worker reicht sie nur weiter und
+    speichert selbst nichts.</li>
+    <li><strong>Suche:</strong> Nominatim (OpenStreetMap Foundation), Photon (komoot GmbH),
+    Overpass-API (FOSSGIS e.V. sowie die Ausweichserver overpass.kumi.systems und
+    overpass.private.coffee), OpenRailwayMap-API.</li>
+    <li><strong>Wetter:</strong> Open-Meteo, mit der Koordinate des Punkts.</li>
+    <li><strong>Regenradar:</strong> Deutscher Wetterdienst.</li>
+    <li><strong>Eigener WMS-Layer:</strong> der Dienst, dessen Adresse du selbst einträgst.</li>
+  </ul>
+  <p>Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO: Ohne diese Abrufe kann die App Karten,
+  Höhen und Suchergebnisse nicht anzeigen. Bei GitHub, Cloudflare und Esri können Daten in die
+  USA übermittelt werden.</p>
+
+  <h3>Google Maps und Street View</h3>
+  <p>Erst wenn du auf <em>In Google Maps öffnen</em> oder <em>Street View</em> tippst, öffnet
+  sich Google Maps mit der Koordinate des Punkts. Ab dann gilt die
+  <a href="https://policies.google.com/privacy?hl=de" target="_blank" rel="noopener">Datenschutzerklärung von Google</a>.
+  Vorher erfährt Google nichts.</p>
+
+  <h3>E-Mail</h3>
+  <p>Schreibst du mir, verwende ich Adresse und Inhalt nur, um zu antworten, und lösche sie,
+  wenn sie dafür nicht mehr gebraucht werden.</p>
+
+  <h3>Deine Rechte</h3>
+  <p>Du hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
+  Datenübertragbarkeit und Widerspruch (Art. 15 bis 21 DSGVO) sowie das Recht, dich bei einer
+  Datenschutz-Aufsichtsbehörde zu beschweren, etwa beim
+  <a href="https://www.lda.bayern.de/" target="_blank" rel="noopener">Bayerischen Landesamt für Datenschutzaufsicht</a>.
+  Für die Abrufe bei den genannten Diensten wende dich an deren Betreiber.</p>
+</section>
+</main>
+</body>
+</html>

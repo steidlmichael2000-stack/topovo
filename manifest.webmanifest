@@ -1,9 +1,9 @@
 {
-  "name": "TrackPilot — Streckenkilometer verorten",
-  "short_name": "TrackPilot",
+  "name": "Topovo — Streckenkilometer verorten",
+  "short_name": "Topovo",
   "description": "Streckennummer und Kilometer eingeben, Position auf der Karte sehen und in Google Maps öffnen.",
   "lang": "de",
-  "id": "/trackpilot/",
+  "id": "/topovo/",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
@@ -11,9 +11,9 @@
   "background_color": "#14181d",
   "theme_color": "#14181d",
   "icons": [
-    { "src": "icon.svg?v=lapis", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
-    { "src": "icons/icon-192.png?v=lapis", "type": "image/png", "sizes": "192x192", "purpose": "any" },
-    { "src": "icons/icon-512.png?v=lapis", "type": "image/png", "sizes": "512x512", "purpose": "any" },
-    { "src": "icons/icon-512-maskable.png?v=lapis", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+    { "src": "icon.svg?v=topovo", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "icons/icon-192.png?v=topovo", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "icons/icon-512.png?v=topovo", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "icons/icon-512-maskable.png?v=topovo", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
   ]
 }

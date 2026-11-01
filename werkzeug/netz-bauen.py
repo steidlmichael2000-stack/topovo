@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Baut die mitgelieferten Netzkacheln aus OpenStreetMap.
 
-TrackPilot brauchte fuer zwei Fragen den fremden Dienst Overpass: "welche Strecke
+Topovo brauchte fuer zwei Fragen den fremden Dienst Overpass: "welche Strecke
 liegt hier" und "wie verlaeuft das Gleis zwischen diesen beiden Steinen".
 Overpass ist haeufig ueberlastet -- gemessen bis zu 92 s, bis alle drei
 Instanzen aufgegeben hatten. Beide Fragen beantwortet die App jetzt aus
@@ -67,7 +67,7 @@ ZEITGRENZE = 90        # Sekunden je Abruf; laenger heisst nur laenger warten
 # Werkzeugs reicht dafuer; eine Adresse mit Kontoname stand hier vorher und
 # hat den Betreiber nichts angegangen. Wer eine Kontaktmoeglichkeit angeben
 # will, traegt sie hier ein.
-KENNUNG = 'trackpilot-netz-bauen/1.0'
+KENNUNG = 'topovo-netz-bauen/1.0'
 
 # Zwei Durchgaenge, und zwar getrennt, damit eine Aenderung am zweiten nicht
 # den ganzen ersten neu holen muss.

@@ -1,4 +1,4 @@
-# TrackPilot
+# Topovo
 
 Streckennummer und Kilometer eingeben — Position auf der Karte sehen und in Google Maps öffnen.
 Oder umgekehrt: auf eine Stelle der Karte lange drücken und ablesen, welcher Kilometer das ist.
@@ -6,7 +6,7 @@ Oder umgekehrt: auf eine Stelle der Karte lange drücken und ablesen, welcher Ki
 Eine einzelne statische Webseite, kein Server, keine Anmeldung. Läuft auf dem Handy genauso wie
 am Rechner und lässt sich als App auf den Startbildschirm legen.
 
-**→ [steidlmichael2000-stack.github.io/trackpilot](https://steidlmichael2000-stack.github.io/trackpilot/)**
+**→ [steidlmichael2000-stack.github.io/topovo](https://steidlmichael2000-stack.github.io/topovo/)**
 
 ## Was es kann
 
@@ -266,7 +266,7 @@ die zweite entfernt ist.
 **Ohne Netz.** Die Daten liegen unter `infrago/`: ein Index (welche Strecken in welcher
 0,1-Grad-Zelle liegen, 64 kB), je Strecke eine Datei (zusammen 3 MB) und die Betriebsstellen
 (0,9 MB). Geladen wird nur, was gebraucht wird; der Service Worker legt es in einen eigenen Vorrat
-(`trackpilot-infrago-…`). Eine Strecke, die einmal gesucht oder angetippt war, geht danach ohne
+(`topovo-infrago-…`). Eine Strecke, die einmal gesucht oder angetippt war, geht danach ohne
 Netz. Scheitert ein Abruf, fragt die App dieselbe Datei erst nach einer Minute wieder — die
 Live-Anzeige rechnet im Sekundentakt.
 
@@ -475,7 +475,7 @@ danebenlag und wie weit der jeweils nächstgelegene Stein entfernt war:
 
 *Median über 1128 Fälle; insgesamt schneidet die Interpolation in 95 % besser ab (23 m gegenüber
 176 m).* Interpolieren ist also praktisch immer die bessere Wahl — nur wo ohnehin alle 100 m ein
-Stein steht, ist es fast egal. Deshalb interpoliert TrackPilot grundsätzlich und fällt nur dann auf
+Stein steht, ist es fast egal. Deshalb interpoliert Topovo grundsätzlich und fällt nur dann auf
 den nächstgelegenen Stein zurück, wenn es kein brauchbares Steinpaar gibt.
 
 ### Und umgekehrt: Wie genau ist ein Tipp auf die Karte?
@@ -766,11 +766,11 @@ Verbindungslinie zwischen den Angaben bei km 10,759 und 12,6.
 
 1. **Die API antwortet unsortiert.** Sie liefert Steine im Umkreis von 10 km um die angefragte
    Position und kappt bei `limit`. Mit `limit=1` bekommt man deshalb einen quasi beliebigen Stein
-   aus diesem Fenster — für Strecke 5100 km 12,5 etwa den bei km 20,8. TrackPilot lädt bis zu 200
+   aus diesem Fenster — für Strecke 5100 km 12,5 etwa den bei km 20,8. Topovo lädt bis zu 200
    Steine und sucht das passende Paar selbst.
 2. **Streckennummern tauchen mehrfach auf.** Auf Strecke 4201 liegen Steine, deren Kilometerwerte
    nur 165 m auseinanderliegen, geografisch aber 28 km. Ohne Prüfung würde quer durchs Land
-   interpoliert. TrackPilot verwirft Paare, deren Luftlinie länger ist als die Kilometerdifferenz
+   interpoliert. Topovo verwirft Paare, deren Luftlinie länger ist als die Kilometerdifferenz
    zulässt.
 
 ## Amtliche bayerische Dienste

@@ -1,9 +1,9 @@
-/* TrackPilot — Höhendaten-Proxy als Cloudflare Worker
+/* Topovo — Höhendaten-Proxy als Cloudflare Worker
  *
  * Die GeoTIFF-Kacheln der Bayerischen Vermessungsverwaltung (DGM1 und DOM20)
  * liegen auf download1.bayernwolke.de ohne CORS-Freigabe: Der Browser lädt sie
  * zwar, gibt die Bytes aber nicht an die App heraus. Dieser Worker holt sie
- * serverseitig und hängt die Freigabe für TrackPilot an. Die Daten stehen unter
+ * serverseitig und hängt die Freigabe für Topovo an. Die Daten stehen unter
  * CC BY 4.0; eine Anfrage oder Vereinbarung ist laut Nutzungsbedingungen nicht
  * nötig.
  *

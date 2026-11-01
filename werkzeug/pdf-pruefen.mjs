@@ -49,7 +49,7 @@ s.text(40, 570, 'Gelände DGM1, Luftbild DOP20: Bayerische Vermessungsverwaltung
 dok.seite().text(40, 60, 'Seite 2', { groesse: 12 });
 
 const bytes = await dok.bytes();
-const datei = process.argv[2] || join(tmpdir(), 'trackpilot-pdf-pruefung.pdf');
+const datei = process.argv[2] || join(tmpdir(), 'topovo-pdf-pruefung.pdf');
 writeFileSync(datei, bytes);
 
 const text = Buffer.from(bytes).toString('latin1');

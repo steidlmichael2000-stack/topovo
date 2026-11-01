@@ -1,4 +1,4 @@
-/* TrackPilot — Streckenkilometer auf der Karte
+/* Topovo — Streckenkilometer auf der Karte
  *
  * Zwei Richtungen:
  *   Strecke + km  → Position   (OpenRailwayMap-API, dazwischen wird interpoliert)
@@ -91,10 +91,11 @@ const LIVE_MIN_WEG = 5;
  * Aus den Kacheln lassen sich die Punkte ohnehin der Strecke zuordnen, auf der
  * sie stehen; damit ist der weite Radius unbedenklich. */
 const SEED_RADIUS = 12000;
-const STORE_KEY = 'trackpilot.v3';
-/* Vorgaengername der App. Wird beim ersten Start uebernommen, damit
- * Einstellungen und Verlauf die Umbenennung ueberleben. */
-const STORE_KEY_ALT = 'railnav.v3';
+const STORE_KEY = 'topovo.v3';
+/* Frühere Namen der App (TrackPilot bis November 2026, davor Railnav), neuester
+ * zuerst. Beim ersten Start übernommen, damit Einstellungen und Verlauf die
+ * Umbenennungen überleben, und danach gelöscht. */
+const STORE_KEYS_ALT = ['trackpilot.v3', 'railnav.v3'];
 
 /* Mehrere Instanzen, weil einzelne zeitweise ausfallen: Die Hauptinstanz war
  * zwischenzeitlich aus dem Testnetz gar nicht erreichbar (HTTP 406), kumi hat
@@ -4272,13 +4273,13 @@ function radarBinden() {
  *
  * Die Dateien bleiben auf dem Gerät, es wird nichts hochgeladen. */
 
-const KML_DB = 'trackpilot-kml';
-/* Bis zur Umbenennung hieß die Datenbank anders. Sie hängt am Origin und
- * enthält die vom Nutzer importierten Dateien — deshalb wird sie beim ersten
- * Start einmalig herüberkopiert und danach gelöscht, statt sie verwaisen zu
- * lassen. Diese Zeile darf verschwinden, wenn kein Gerät mehr eine Fassung von
- * vor dem 15.09.2026 hat. */
-const KML_DB_ALT = 'railnav-kml';
+const KML_DB = 'topovo-kml';
+/* Bis zu den Umbenennungen hieß die Datenbank anders (TrackPilot bis November
+ * 2026, Railnav bis 15.09.2026). Sie hängt am Origin und enthält die vom Nutzer
+ * importierten Dateien — deshalb wird sie beim ersten Start einmalig
+ * herüberkopiert und danach gelöscht, statt sie verwaisen zu lassen. Ein Name
+ * darf erst verschwinden, wenn kein Gerät mehr eine Fassung von davor hat. */
+const KML_DBS_ALT = ['trackpilot-kml', 'railnav-kml'];
 /* Reihum vergeben, damit sich mehrere Dateien ohne eigene Farbangabe
  * voneinander unterscheiden. */
 const KML_FARBEN = ['#e6484b', '#f59e0b', '#22c55e', '#4b93e6', '#a855f7', '#14b8a6', '#ec4899', '#84cc16'];
@@ -4466,20 +4467,24 @@ function kmlDbOeffnen(name) {
  * nach einem Abbruch beim nächsten Start einfach noch einmal laufen. Erst wenn
  * er ganz durch ist, wird die alte Datenbank entfernt. */
 async function kmlUmziehen(neu) {
-  let alt = null;
-  try {
-    alt = await kmlDbOeffnen(KML_DB_ALT);
-    const akten = await kmlLaden(alt);
-    for (const a of akten) await kmlAblegen(a, neu);
-    alt.close();
-    alt = null;
-    indexedDB.deleteDatabase(KML_DB_ALT);
-    if (akten.length) toast(`${akten.length} gespeicherte KML-Datei${akten.length === 1 ? '' : 'en'} übernommen.`);
-  } catch {
-    /* Geht der Umzug schief, bleibt der alte Bestand liegen und der nächste
-     * Start versucht es erneut — verloren ist dabei nichts. */
-    if (alt) { try { alt.close(); } catch { /* egal */ } }
+  let zahl = 0;
+  for (const name of KML_DBS_ALT) {
+    let alt = null;
+    try {
+      alt = await kmlDbOeffnen(name);
+      const akten = await kmlLaden(alt);
+      for (const a of akten) await kmlAblegen(a, neu);
+      alt.close();
+      alt = null;
+      indexedDB.deleteDatabase(name);
+      zahl += akten.length;
+    } catch {
+      /* Geht der Umzug schief, bleibt der alte Bestand liegen und der nächste
+       * Start versucht es erneut — verloren ist dabei nichts. */
+      if (alt) { try { alt.close(); } catch { /* egal */ } }
+    }
   }
+  if (zahl) toast(`${zahl} gespeicherte KML-Datei${zahl === 1 ? '' : 'en'} übernommen.`);
 }
 
 function kmlKopf(akte) {
@@ -8115,7 +8120,7 @@ function pdfFuss(s, nr, gesamt, quellen) {
   s.linie([[PDF_RAND, y - 10], [s.breite - PDF_RAND, y - 10]], { farbe: F.rahmen, breite: 0.5 });
   s.text(PDF_RAND, y, teile.join(' '), { groesse: 6.5, farbe: F.fein });
   s.text(PDF_RAND, y + 9, 'Keine amtliche Quelle — zur Übersicht, nicht für Vermessung oder sicherheitsrelevante ' +
-    'Entscheidungen. Erstellt mit TrackPilot.', { groesse: 6.5, farbe: F.fein });
+    'Entscheidungen. Erstellt mit Topovo.', { groesse: 6.5, farbe: F.fein });
   if (gesamt > 1) s.text(s.breite - PDF_RAND, y + 9, `Seite ${nr} von ${gesamt}`, { groesse: 7, farbe: F.fein, anker: 'end' });
 }
 
@@ -9810,7 +9815,8 @@ function quellenSetzen(offen) {
 }
 
 function quellenEinrichten() {
-  map.attributionControl.setPrefix(false);
+  // Statt der Leaflet-Fahne: Impressum und Datenschutz, mit einem Griff am ©
+  map.attributionControl.setPrefix('<a href="impressum.html">Impressum &amp; Datenschutz</a>');
   $('#quellenText').appendChild(map.attributionControl.getContainer());
   $('#quellenBtn').addEventListener('click', () => quellenSetzen($('#quellen').classList.contains('zu')));
   const zuBeimGriff = () => { if (!$('#quellen').classList.contains('zu')) quellenSetzen(false); };
@@ -11075,7 +11081,7 @@ function abNachziehen() {
 
 function loadStore() {
   try {
-    const roh = localStorage.getItem(STORE_KEY) || localStorage.getItem(STORE_KEY_ALT);
+    const roh = [STORE_KEY, ...STORE_KEYS_ALT].map(k => localStorage.getItem(k)).find(Boolean);
     const raw = JSON.parse(roh || '{}');
     const wms = { ...prefs.wms, ...((raw.prefs && raw.prefs.wms) || {}) };
     prefs = { ...prefs, ...(raw.prefs || {}), wms };
@@ -11086,7 +11092,7 @@ function loadStore() {
 function saveStore() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({ prefs, recent }));
-    localStorage.removeItem(STORE_KEY_ALT);   // ab jetzt nur noch der neue Schluessel
+    for (const k of STORE_KEYS_ALT) localStorage.removeItem(k);   // ab jetzt nur noch der neue Schlüssel
   } catch { /* voll oder gesperrt */ }
 }
 
@@ -11713,7 +11719,7 @@ async function share() {
     ? `Strecke ${view.ref} · ${reihe.length} Kilometer`
     : view.point && view.km != null
       ? `Strecke ${view.ref} km ${fmtKm(view.km)}`
-      : 'TrackPilot';
+      : 'Topovo';
   if (navigator.share) {
     try { await navigator.share({ title, text: title, url }); return; }
     // Wer den Teilen-Dialog abbricht, will auch keinen kopierten Link

@@ -1,4 +1,4 @@
-/* TrackPilot — Vollflächenkarte mit schwebender Bedienung
+/* Topovo — Vollflächenkarte mit schwebender Bedienung
    Farben laufen über Custom Properties, damit Hell/Dunkel an einer Stelle sitzt. */
 
 :root {
@@ -1324,6 +1324,10 @@ input[type="range"] { min-width: 0; }
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .tour-angebot .tour-fuss { justify-content: flex-end; }
+/* Der Datensatz im Tour-Angebot: kleiner und gedämpft, er ist Beigabe, nicht Frage */
+.tour-angebot p.tour-angebot-daten { margin-top: -4px; font-size: .76rem; color: var(--muted); }
+.tour-angebot a { color: var(--accent); }
+.tour-angebot .tour-fuss a { display: inline-grid; place-items: center; text-decoration: none; color: var(--text); }
 
 @media (prefers-reduced-motion: reduce) {
   .tour-loch, .tour-blase { transition: none; }
@@ -1741,20 +1745,46 @@ input[type="range"] { min-width: 0; }
    - Standort, Abstecken und Nord oben rechts, Werkzeuge unten rechts (kein
      Plus/Minus — gezoomt wird mit Rad und Fingern, ausdrücklich so gewünscht).
    Dieselbe Grenze steht in app.js (SEITENLEISTE). */
-.schiene, .werkzeuge, .leiste-griff { display: none; }
+.schiene, .werkzeuge, .leiste-griff, .marke { display: none; }
 
 @media (min-width: 1010px) {
   :root { --schiene: 64px; --seite: 320px; --links: calc(var(--schiene) + var(--seite)); --werkzeug-h: 60px; }
 
+  /* Icon und Name oben links: eine Kopfzeile über Spalte und Leiste. Das Icon ist so
+     groß wie die Knöpfe der Spalte (52 × 52, links 6 = Spaltenrand), Mitte 32 auf 32;
+     der Name daneben (siehe .marke-name). Knöpfe und
+     Suche beginnen bei --marke-h = 6 + 52 + 16 — mit 4 px wie zwischen den Knöpfen
+     klebte die Kopfzeile an der Suche. Zugeklappt bleiben beide stehen. */
+  :root { --marke-h: 74px; }
+  .marke {
+    position: fixed; z-index: 1; left: 0; top: 0; height: 64px;
+    display: flex; align-items: center; pointer-events: none;
+  }
+  /* Ecken wie die Knöpfe (12 px) — das Icon selbst rundet auf 52 px nur mit 11,4 px */
+  .marke img { display: block; width: 52px; height: 52px; margin: 0 0 0 6px; border-radius: var(--r-knopf); }
+  /* Icon und Name bilden ein Zeichen wie bei Apple: Der Name beginnt an der Außenkante
+     des Suchfelds (74 = Icon-Ende 58 + 16), derselbe Abstand wie senkrecht zur Suche.
+     Umriss aus Comfortaa 700 (25,6 px), per Kontur etwas kräftiger. Grundlinie 40,5:
+     „Topovo“ ist fast nur Kleinschrift — die Mitte zwischen Versalmitte (30,5) und
+     Mitte der Kleinbuchstaben (33,5) liegt auf der Icon-Mitte 32 (optisch statt rechnerisch). */
+  .marke-name { display: block; margin-left: 16px; overflow: visible; fill: var(--text); stroke: var(--text); transition: opacity .3s var(--auf); }
+  /* Zugeklappt bleibt der Name stehen (so gewünscht), dann direkt über der Karte —
+     mit einem Hof in der Grundfarbe wie die Maßzahlen (.mess-lbl), damit er auf Luftbild
+     und Karte lesbar bleibt */
+  .leiste-zu .marke-name { filter: drop-shadow(0 0 1.5px var(--bg)) drop-shadow(0 0 3px var(--bg)); }
+  .ui { padding-top: calc(var(--marke-h) - var(--gap)); }
+
   /* Symbolspalte */
   .schiene {
     position: fixed; left: 0; top: 0; bottom: 0; width: var(--schiene);
-    display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
+    display: flex; flex-direction: column; gap: 4px; padding: var(--marke-h) 6px 10px;
     background: var(--schiene-grund); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
     box-shadow: inset -.5px 0 0 var(--line);
   }
+  /* Quadratisch 52 × 52 wie das Icon darüber */
   .schiene button {
-    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 0 7px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    height: 52px; flex: none; padding: 0;
     border: 0; border-radius: var(--r-knopf); background: none; color: var(--muted); cursor: pointer;
     font: inherit; font-size: .64rem; font-weight: 600;
   }

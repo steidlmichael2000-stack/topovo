@@ -1,4 +1,4 @@
-/* TrackPilot — Gebäude im Profil (3D-Gebäudemodell LoD2)
+/* Topovo — Gebäude im Profil (3D-Gebäudemodell LoD2)
  *
  * LoD2 der Bayerischen Vermessungsverwaltung, OpenData unter CC BY 4.0:
  * CityGML 1.0 in Kacheln von 2 × 2 km auf download1.bayernwolke.de, im selben

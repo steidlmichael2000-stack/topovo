@@ -1,4 +1,4 @@
-/* TrackPilot — Höhendaten für das Querprofil
+/* Topovo — Höhendaten für das Querprofil
  *
  * Gelände (DGM1, 1 m Gitter) und Oberfläche mit Gebäuden und Bewuchs (DOM20,
  * 20 cm) der Bayerischen Vermessungsverwaltung, OpenData unter CC BY 4.0. Beide
@@ -521,7 +521,11 @@ async function lglRaster(art, e, n) {
  * Nutzung schreibt ein paar Byte statt wieder die ganze Kachel. Die am längsten
  * unbenutzten gehen zuerst. Vom DOM wird nichts abgelegt: 13–64 MB je Kachel.
  * Ohne IndexedDB (privates Fenster, gesperrt) geht es eben ohne Vorrat. */
-const HOEHEN_DB = 'trackpilot-hoehen';
+const HOEHEN_DB = 'topovo-hoehen';
+/* Hieß bis November 2026 nach dem alten App-Namen. Der Vorrat wird beim ersten
+ * Öffnen nebenher herüberkopiert (hoehenUmziehen) und die alte Datenbank danach
+ * gelöscht — rund 80–150 MB lädt sonst niemand gern ein zweites Mal. */
+const HOEHEN_DB_ALT = 'trackpilot-hoehen';
 const HOEHEN_VORRAT_MAX = 40;            // rund 80–150 MB
 let hoehenDbVersprechen = null;
 
@@ -535,12 +539,54 @@ function hoehenDb() {
         anfrage.result.createObjectStore('dateien');
         anfrage.result.createObjectStore('genutzt');
       };
-      anfrage.onsuccess = () => ok(anfrage.result);
+      anfrage.onsuccess = () => { ok(anfrage.result); hoehenUmziehen(anfrage.result); };
       anfrage.onerror = () => ok(null);
       anfrage.onblocked = () => ok(null);
     });
   }
   return hoehenDbVersprechen;
+}
+
+/* Einmaliger Umzug aus der Datenbank unter dem alten Namen, nebenher: Was noch
+ * nicht kopiert ist, wird bis dahin eben neu geladen. Je Kachel eine eigene
+ * Transaktion, damit nie der ganze Vorrat auf einmal im Speicher liegt. Wie
+ * beim KML-Umzug ohne indexedDB.databases(): Gab es die alte Datenbank nicht,
+ * entsteht hier eine leere, die gleich wieder gelöscht wird. Bricht der Umzug
+ * ab, bleibt der alte Bestand liegen und der nächste Start macht weiter. */
+async function hoehenUmziehen(neu) {
+  let alt = null;
+  const rq = (r) => new Promise((ok, fehl) => { r.onsuccess = () => ok(r.result); r.onerror = () => fehl(r.error); });
+  try {
+    const anfrage = indexedDB.open(HOEHEN_DB_ALT, 1);
+    anfrage.onupgradeneeded = () => {
+      anfrage.result.createObjectStore('dateien');
+      anfrage.result.createObjectStore('genutzt');
+    };
+    alt = await rq(anfrage);
+    const schluessel = await rq(alt.transaction('dateien').objectStore('dateien').getAllKeys());
+    for (const s of schluessel) {
+      const lesen = alt.transaction(['dateien', 'genutzt']);
+      const [daten, zeit] = await Promise.all([rq(lesen.objectStore('dateien').get(s)), rq(lesen.objectStore('genutzt').get(s))]);
+      if (daten === undefined) continue;
+      await new Promise((ok, fehl) => {
+        const tx = neu.transaction(['dateien', 'genutzt'], 'readwrite');
+        // Schon im neuen Vorrat (inzwischen frisch geladen)? Dann gilt der neue.
+        const da = tx.objectStore('dateien').getKey(s);
+        da.onsuccess = () => {
+          if (da.result !== undefined) return;
+          tx.objectStore('dateien').put(daten, s);
+          tx.objectStore('genutzt').put(zeit || Date.now(), s);
+        };
+        tx.oncomplete = ok;
+        tx.onerror = tx.onabort = () => fehl(tx.error);
+      });
+    }
+    alt.close();
+    alt = null;
+    indexedDB.deleteDatabase(HOEHEN_DB_ALT);
+  } catch {
+    if (alt) { try { alt.close(); } catch { /* egal */ } }
+  }
 }
 
 async function vorratLesen(schluessel) {

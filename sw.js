@@ -1,30 +1,30 @@
-/* TrackPilot — Service Worker
+/* Topovo — Service Worker
  *
  * Ziel: Die App startet auch ohne Netz, und bereits angesehene Kartenkacheln
  * bleiben sichtbar. Für alles Eigene gilt "erst Netz, dann Cache", damit eine
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v82';
-const SHELL = `trackpilot-shell-${VERSION}`;
-const TILES = `trackpilot-tiles-${VERSION}`;
-const DATA = `trackpilot-data-${VERSION}`;
-const NETZ = `trackpilot-netz-${VERSION}`;
-const IFG = `trackpilot-infrago-${VERSION}`;
+const VERSION = 'v83';
+const SHELL = `topovo-shell-${VERSION}`;
+const TILES = `topovo-tiles-${VERSION}`;
+const DATA = `topovo-data-${VERSION}`;
+const NETZ = `topovo-netz-${VERSION}`;
+const IFG = `topovo-infrago-${VERSION}`;
 const KEEP = [SHELL, TILES, DATA, NETZ, IFG];
 
-/* Die App hiess bis zur Umbenennung "Railnav" und lag unter /railnav/. Die
- * Caches von damals liegen auf derselben Herkunft und wuerden sonst ewig
- * liegenbleiben - deshalb wird der alte Praefix hier mit aufgeraeumt. */
-const ALT_PRAEFIX = 'railnav-';
+/* Die App hieß bis November 2026 „TrackPilot“ (/trackpilot/), davor „Railnav“
+ * (/railnav/). Die Caches von damals liegen auf derselben Herkunft und würden
+ * sonst ewig liegenbleiben — deshalb werden die alten Präfixe mit aufgeräumt. */
+const ALT_PRAEFIXE = ['trackpilot-', 'railnav-'];
 
 const SHELL_FILES = [
   './', 'index.html', 'style.css', 'app.js', 'hoehen.js', 'pdf.js', 'gebaeude.js', 'tour.js', 'radar-werk.js',
-  'infrago.js', 'bw-grenze.json',
+  'infrago.js', 'bw-grenze.json', 'impressum.html',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet-rotate.js',
-  // Mit ?v=lapis, genau wie index.html und das Manifest es anfordern: Der Cache
+  // Mit ?v=topovo, genau wie index.html und das Manifest es anfordern: Der Cache
   // vergleicht die volle Adresse, ohne den Zusatz fände er offline nichts.
-  'manifest.webmanifest', 'icon.svg?v=lapis'
+  'manifest.webmanifest', 'icon.svg?v=topovo'
 ];
 
 const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openrailwaymap.org', 'server.arcgisonline.com',
@@ -60,7 +60,7 @@ self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const names = await caches.keys();
     await Promise.all(names
-      .filter(n => (n.startsWith('trackpilot-') || n.startsWith(ALT_PRAEFIX)) && !KEEP.includes(n))
+      .filter(n => [`topovo-`, ...ALT_PRAEFIXE].some(p => n.startsWith(p)) && !KEEP.includes(n))
       .map(n => caches.delete(n)));
     await self.clients.claim();
   })());
@@ -193,7 +193,7 @@ self.addEventListener('fetch', event => {
 
   if (url.origin === self.location.origin) {
     /* Die Nachbar-Apps teilen die Herkunft, nicht diesen Vorrat: Was außerhalb
-     * von /trackpilot/ liegt, reicht der Worker unverändert durch. */
+     * von /topovo/ liegt, reicht der Worker unverändert durch. */
     if (!url.pathname.startsWith(new URL(self.registration.scope).pathname)) return;
     /* vendor/: fremde Bibliotheken (Leaflet, MapLibre 1,1 MB), die sich nur mit
      * einer neuen VERSION ändern — "erst Cache". Vorher holte jeder Start
