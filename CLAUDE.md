@@ -456,6 +456,16 @@ durchgeklickt. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfe
   <leerer Ordner> --remote-debugging-port 9333` und über WebDriver BiDi (`ws://127.0.0.1:9333/session`,
   `session.new`, `browsingContext.navigate`, `script.evaluate`) messen; danach Prozess beenden, Profil löschen.
 
+## Route mit dem Auto (`route…`, November 2026)
+
+Auto-Symbol in der Ergebnisleiste und „Route mit dem Auto" in den Sprechblasen → `routeOeffnen`. Gerechnet
+von Valhalla beim FOSSGIS (`ROUTE_DIENST`, höchstens eine Anfrage je Sekunde, `ROUTE_ABSTAND_MS`); der
+Service Worker lässt den Dienst durch. Start: Standort, Tipp auf die Karte, Ziehen oder eine Adresse im
+Startfeld (`routeSuchen` über `searchOrt`, Treffer in `#routeVorschlag`). `routeLeiste` zeichnet die
+Leiste neu und gibt dem Feld Fokus und Cursor zurück — wer sie umbaut, erhält das, sonst springt beim
+Tippen die Tastatur weg. Navigation übergibt der Knopf „Google Maps" (kurz, damit die Ergebnisleiste mit
+vier Knöpfen auf 375 px bei 152 px bleibt; „In Google Maps öffnen" brach dreizeilig um).
+
 ## Service Worker: nichts vor dem Ausliefern abwarten (November 2026)
 
 Kacheln und Dateien gehen sofort an die Seite; abgelegt wird nebenher (`nebenbeiAblegen`,

@@ -1000,6 +1000,18 @@ input[type="range"] { min-width: 0; }
 }
 .prof-griff .mess-lbl { position: absolute; left: 20px; top: 6px; }
 
+/* Route mit dem Auto: Start weiß mit Ring, Endpunkt (Zufahrt) gefüllt in der
+   Signalfarbe und 2 px größer, damit man ihn zum Ziehen findet. Beide Mitten
+   liegen rechnerisch auf 13/13 wie der Anker. */
+.route-griff.start i { background: #fff; border-color: var(--accent); }
+.route-griff.zufahrt i { left: 6px; top: 6px; width: 14px; height: 14px; background: var(--accent); }
+.route-lbl {
+  position: absolute; left: 20px; top: 6px;
+  font-size: .72rem; font-weight: 700; line-height: 1; white-space: nowrap; pointer-events: none;
+  color: var(--accent);
+  text-shadow: 0 0 3px var(--bg), 0 0 3px var(--bg), 0 0 5px var(--bg);
+}
+
 /* Maßzahl an der gemessenen Strecke */
 .mess-lbl {
   display: block;
@@ -1216,6 +1228,8 @@ input[type="range"] { min-width: 0; }
 }
 /* Profil am Gleis: orange wie Messen und Profil auf der Karte */
 .bb-actions .bb-ikon.gp { color: var(--warn); border-color: transparent; }
+/* „Vom Standort" neben Google Maps in der Routenleiste: so breit wie nötig */
+.bb-actions .route-ort { flex: none; padding-left: 14px; padding-right: 14px; }
 
 /* Geländehöhe unter dem Ergebnis, in den Sprechblasen und beim Abstecken.
    Steht als Platzhalter da, bis der Wert kommt — die Leiste springt nicht. */
@@ -1934,3 +1948,17 @@ body { font-variant-numeric: tabular-nums; }
   background-position: 0 0, 0 0;
   background-repeat: no-repeat, no-repeat;
 }
+
+/* Start der Route als Adresse: Feld wie die Suchzeile, Treffer klappen darunter auf */
+.route-start { margin-top: 9px; }
+#routeStartFeld {
+  width: 100%; box-sizing: border-box;
+  padding: 10px 12px; border: 1px solid transparent; border-radius: var(--r-knopf);
+  background: var(--panel-2); color: var(--text); outline: none;
+  font: inherit; font-size: .92rem; font-weight: 500;
+}
+#routeStartFeld::placeholder { color: var(--muted-2); opacity: 1; }
+#routeStartFeld:focus { border-color: var(--accent); }
+.route-vorschlag { border-top: none; padding: 4px 0 0; max-height: 34vh; }
+/* Unter 16 px zoomt Safari auf dem iPhone beim Antippen ins Feld */
+@media (pointer: coarse) { #routeStartFeld { font-size: 1rem; } }

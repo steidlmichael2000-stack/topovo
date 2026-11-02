@@ -388,6 +388,28 @@ const HILFE = {
     }
   ],
 
+  route: () => [
+    {
+      titel: 'Dauer und Länge',
+      text: 'Mit dem Auto, gerechnet von Valhalla beim FOSSGIS e.V. auf Daten von OpenStreetMap — ohne ' +
+        'Verkehrslage. Gepunktet ist, was das Auto nicht schafft: von der Straße zum Punkt an der Strecke.',
+      ziel: () => tourSichtbar('#bottom .mess-zahl')
+    },
+    {
+      titel: 'Start und Zufahrt',
+      text: 'Den Start als Adresse oder Ort ins Feld schreiben — oder auf die Karte tippen. Start und ' +
+        'Endpunkt lassen sich ziehen. Liegt die Straße auf der falschen Seite der Gleise, den Endpunkt auf ' +
+        'eine andere Zufahrt ziehen.',
+      ziel: () => tourSichtbar('#routeStartFeld')
+    },
+    {
+      titel: 'Navigation',
+      text: 'Google Maps übernimmt die Fahrt bis zum Endpunkt — vom eigenen Standort aus, oder vom ' +
+        'gewählten Start.',
+      ziel: () => tourSichtbar('#routeMaps')
+    }
+  ],
+
   abstecken: () => [
     {
       titel: 'Punkt suchen',

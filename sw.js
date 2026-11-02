@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v87';
+const VERSION = 'v88';
 const SHELL = `topovo-shell-${VERSION}`;
 const TILES = `topovo-tiles-${VERSION}`;
 const DATA = `topovo-data-${VERSION}`;
@@ -198,6 +198,10 @@ self.addEventListener('fetch', event => {
   let url;
   try { url = new URL(request.url); } catch { return; }
   if (!/^https?:$/.test(url.protocol)) return;
+
+  /* Routen (Valhalla beim FOSSGIS e.V.) gehören nicht in den Vorrat: Jede Anfrage
+   * hat ihre eigenen Punkte, und eine alte Route wäre offline falsch statt fehlend. */
+  if (url.hostname === 'valhalla1.openstreetmap.de') return;
 
   if (url.origin === self.location.origin) {
     /* Die Nachbar-Apps teilen die Herkunft, nicht diesen Vorrat: Was außerhalb
