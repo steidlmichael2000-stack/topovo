@@ -111,6 +111,10 @@ Parzellen sind eine `ParzGruppe` aus drei `ParzWms` (BVV; LGL-Flurstücke; LGL-G
 `fuellungWeg` und 1024er-Kacheln, weil der Dienst je Abfrage ~2,3 s braucht), je mit `bounds` des Landes.
 Straßen und Ortsnamen kamen bis 30.09.2026 als Rasterkacheln von Esri: auf dem Land ab
 Zoomstufe 16 leer und auf dem Handy unscharf. Nicht zurückbauen.
+**Weit draußen** (02.11.2026): `str-fern` zeigt Autobahnen ab GL-Stufe 4 (bis 8, dann `str-gross`);
+`glGrenzen` (mit `prefs.ort`, unter den Straßen) Staaten/Länder ab 0, Regierungsbezirke (admin_level 5)
+ab GL 9 — früher haben die OpenFreeMap-Kacheln sie nicht. `land-namen` (place class state) GL 4–8.
+In Dunkel ersetzen sie deren eigene Grenzen (`glDunkelErsetzt`, source-layer boundary).
 **Kein Esri mehr** (seit 02.11.2026): Das World-Imagery-Luftbild (`sat`) ist raus — Esri verlangt
 API-Schlüssel oder ArcGIS-Konto, der Abruf ohne war nur geduldet. Der Knopf „Luftbild“ ist jetzt
 `data-base="dop"`; ein gespeichertes `prefs.base = 'sat'` wird in `setBase` zu `'dop'`.

@@ -2108,6 +2108,12 @@ function glStrassen(src = 'ofm') {
   const farbe = glFarbe(src === 'openmaptiles');
   const rund = { 'line-cap': 'round', 'line-join': 'round' };
   return [
+    /* Weit draußen nur die Autobahnen, dünner — ab Stufe 8 übernehmen die
+     * großen Straßen. Die Kacheln haben Autobahnen ab Stufe 4. */
+    { id: 'str-umriss-fern', type: 'line', ...quelle, minzoom: 4, maxzoom: 8, filter: glLinie(['motorway']), layout: rund,
+      paint: { 'line-color': 'rgba(0, 0, 0, 0.45)', 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.6, 8, 2.6] } },
+    { id: 'str-fern', type: 'line', ...quelle, minzoom: 4, maxzoom: 8, filter: glLinie(['motorway']), layout: rund,
+      paint: { 'line-color': farbe, 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.6, 8, 1.2] } },
     { id: 'str-umriss-klein', type: 'line', ...quelle, minzoom: 13, filter: glLinie(GL_KLEIN), layout: rund,
       paint: { 'line-color': 'rgba(0, 0, 0, 0.45)', 'line-width': GL_UMRISS } },
     { id: 'str-umriss-gross', type: 'line', ...quelle, minzoom: 8, filter: glLinie(GL_GROSS), layout: rund,
@@ -2137,8 +2143,41 @@ function glOrte(src = 'ofm') {
     paint: GL_SCHRIFT_WEISS
   });
   return [
+    // Weit draußen die Länder (und die Regionen der Nachbarn), bis die Orte kommen
+    { id: 'land-namen', type: 'symbol', source: src, 'source-layer': 'place', minzoom: 4, maxzoom: 8,
+      filter: ['==', ['get', 'class'], 'state'],
+      layout: { 'text-field': GL_NAME, 'text-font': ['Noto Sans Regular'], 'text-max-width': 7,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 4, 10, 7, 13], 'text-letter-spacing': 0.08,
+        'text-transform': 'uppercase' },
+      paint: { ...GL_SCHRIFT_WEISS, 'text-color': 'rgba(255, 255, 255, 0.85)' } },
     ebene('ort-namen', 8, ['city', 'town', 'village']),
     ebene('ort-namen-klein', 12, ['hamlet', 'suburb', 'quarter', 'neighbourhood'])
+  ];
+}
+
+/* Grenzen, mit den Ortsnamen geschaltet: Staaten durchgezogen, Länder
+ * gestrichelt, Regierungsbezirke gepunktet. Die Kacheln haben Staaten und
+ * Länder in jeder Stufe, Bezirke (admin_level 5) erst ab Stufe 9 (gemessen
+ * 02.11.2026). Seegrenzen nicht — die laufen sonst mitten durchs Meer. Unter
+ * den Straßen, damit eine Autobahn an der Grenze nicht zerschnitten wirkt. */
+function glGrenzen(src = 'ofm') {
+  const quelle = { source: src, 'source-layer': 'boundary' };
+  const ebene = (stufe, minzoom, breite, strich, deckung) => {
+    const filter = ['all', ['==', ['get', 'admin_level'], stufe], ['!=', ['get', 'maritime'], 1]];
+    return [
+      { id: `grenze-${stufe}-umriss`, type: 'line', ...quelle, minzoom, filter,
+        layout: { 'line-join': 'round' },
+        paint: { 'line-color': 'rgba(0, 0, 0, 0.5)', 'line-width': breite + 2 } },
+      { id: `grenze-${stufe}`, type: 'line', ...quelle, minzoom, filter,
+        layout: { 'line-join': 'round' },
+        paint: { 'line-color': `rgba(255, 255, 255, ${deckung})`, 'line-width': breite,
+          ...(strich ? { 'line-dasharray': strich } : {}) } }
+    ];
+  };
+  return [
+    ...ebene(5, 9, 1.1, [1.5, 2], 0.9),
+    ...ebene(4, 0, 1.1, [4, 2.5], 0.85),
+    ...ebene(2, 0, 1.6, null, 0.95)
   ];
 }
 
@@ -2162,7 +2201,7 @@ function glDunkelErsetzt(ebene) {
   const quelle = ebene['source-layer'];
   if (prefs.str && quelle === 'transportation_name') return true;
   if (prefs.str && quelle === 'transportation' && !ebene.id.startsWith('railway')) return true;
-  return !!prefs.ort && quelle === 'place';
+  return !!prefs.ort && (quelle === 'place' || quelle === 'boundary');
 }
 
 /** Der Stil für die aktuelle Wahl: die dunkle Karte (fertiger Stil, bei
@@ -2178,6 +2217,7 @@ function glStil() {
       ...glDunkelJson,
       layers: [
         ...glDunkelJson.layers.filter(l => !glDunkelErsetzt(l)),
+        ...(prefs.ort ? glGrenzen('openmaptiles') : []),
         ...(prefs.str ? glStrassen('openmaptiles') : []),
         ...(prefs.ort ? glOrte('openmaptiles') : [])
       ]
@@ -2194,6 +2234,7 @@ function glStil() {
     layers: [
       { id: 'hintergrund', type: 'background', paint: { 'background-color': glDeckung < 1 ? '#ffffff' : grund } },
       { id: 'bild', type: 'raster', source: 'bild', paint: { 'raster-opacity': glDeckung, 'raster-fade-duration': 0 } },
+      ...(prefs.ort ? glGrenzen() : []),
       ...(prefs.str ? glStrassen() : []),
       ...(prefs.ort ? glOrte() : [])
     ]
