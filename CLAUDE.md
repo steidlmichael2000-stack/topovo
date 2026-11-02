@@ -463,8 +463,9 @@ von Valhalla beim FOSSGIS (`ROUTE_DIENST`, höchstens eine Anfrage je Sekunde, `
 Service Worker lässt den Dienst durch. Start: Standort, Tipp auf die Karte, Ziehen oder eine Adresse im
 Startfeld (`routeSuchen` über `searchOrt`, Treffer in `#routeVorschlag`). `routeLeiste` zeichnet die
 Leiste neu und gibt dem Feld Fokus und Cursor zurück — wer sie umbaut, erhält das, sonst springt beim
-Tippen die Tastatur weg. Navigation übergibt der Knopf „Google Maps" (kurz, damit die Ergebnisleiste mit
-vier Knöpfen auf 375 px bei 152 px bleibt; „In Google Maps öffnen" brach dreizeilig um).
+Tippen die Tastatur weg. Navigation übergibt der Knopf „Google Maps" („In Google Maps öffnen" brach neben
+den Symbolen dreizeilig um). Info und Teilen stehen klein im Kopf neben dem × (`.bb-eck`), unten nur
+Google Maps, Route, Profil — so bleibt die Ergebnisleiste auf 375 px bei 136 px.
 
 ## Service Worker: nichts vor dem Ausliefern abwarten (November 2026)
 

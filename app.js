@@ -9883,34 +9883,34 @@ function renderBottom() {
     ${hoeheZeile(p.lat, p.lon)}
     ${warn}
     ${refine}
-    <!-- Koordinaten und Herkunft klappt der i-Knopf unten auf. Das Feld steht
-         über den Knöpfen, damit die beim Aufklappen nicht unter dem Finger
-         wegrutschen. Gebraucht wird es selten; Google Maps und Teilen tragen
+    <!-- Koordinaten und Herkunft klappt der i-Knopf oben auf. Das Feld steht
+         unter dem Kopf; die Knöpfe unten rutschen beim Aufklappen nach unten,
+         das i oben bleibt stehen. Gebraucht wird es selten; Google Maps und Teilen tragen
          die Koordinaten ohnehin mit. -->
     <div id="bbInfo" class="bb-info"${infoOffen ? '' : ' hidden'}>
       <p class="bb-coord">${fmtCoord(p.lat, p.lon)}</p>
       <p class="bb-note plain">${esc(sub)}${detail ? ' · ' + esc(detail) : ''}</p>
     </div>
-    <button type="button" id="bbClose" class="bb-close" aria-label="Anzeige schließen">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
-    <!-- Navigation läuft über Google Maps, die Route ist dort ein Tipp. Info und
-         Teilen als Symbole, damit der Hauptknopf Platz hat. -->
-    <div class="bb-actions">
-      <a id="mapsBtn" class="maps" href="${gmapsUrl(p.lat, p.lon)}"${svAttr(p.lat, p.lon)} target="_blank" rel="noopener">Google Maps${SV_HINWEIS}</a>
-      ${routeKnopfBB}
-      ${profilKnopf}
-      <button type="button" id="infoBtn" class="bb-ikon${infoOffen ? ' is-on' : ''}" aria-label="Koordinaten und Herkunft"
+    <!-- Info und Teilen klein oben neben dem × — unten bleibt Platz für Google Maps -->
+    <button type="button" id="infoBtn" class="bb-eck info${infoOffen ? ' is-on' : ''}" aria-label="Koordinaten und Herkunft"
               title="Koordinaten und Herkunft" aria-controls="bbInfo" aria-expanded="${infoOffen}">
         <!-- Dieselbe Zeichnung wie vor „Hinweise" im Menü -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.8v5.7"/><circle class="voll" cx="12" cy="7.7" r="1.1"/></svg>
       </button>
-      <button type="button" id="shareBtn" class="bb-ikon" aria-label="Teilen" title="Teilen">
+      <button type="button" id="shareBtn" class="bb-eck teilen" aria-label="Teilen" title="Teilen">
         <!-- Drei Punkte, verbunden — das Teilen-Zeichen von Android. Der Pfeil aus
              der Kiste davor las sich wie Hochladen. Die Striche enden rechnerisch
              am Kreisrand (r 2,6), statt in die Kreise hineinzulaufen. -->
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="17.5" cy="5.5" r="2.6"/><circle cx="6.5" cy="12" r="2.6"/><circle cx="17.5" cy="18.5" r="2.6"/><path d="M8.74 10.68 15.26 6.82M8.74 13.32l6.52 3.86"/></svg>
       </button>
+    <button type="button" id="bbClose" class="bb-close" aria-label="Anzeige schließen">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <!-- Navigation läuft über Google Maps; Route und Profil als Symbole daneben. -->
+    <div class="bb-actions">
+      <a id="mapsBtn" class="maps" href="${gmapsUrl(p.lat, p.lon)}"${svAttr(p.lat, p.lon)} target="_blank" rel="noopener">Google Maps${SV_HINWEIS}</a>
+      ${routeKnopfBB}
+      ${profilKnopf}
     </div>`;
 
   bindBottom();

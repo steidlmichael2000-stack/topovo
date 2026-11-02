@@ -1152,6 +1152,22 @@ input[type="range"] { min-width: 0; }
 .bb-hilfe:active { color: var(--text); }
 .bb-hilfe ~ .bb-head, .bb-hilfe ~ .ab-kopf { padding-right: 62px; }
 
+/* Info und Teilen klein im Kopf, links neben dem × (Reihenfolge von rechts: ×, Teilen, i) */
+.bb-eck {
+  position: absolute; top: 5px; right: 38px;
+  width: 32px; height: 32px; padding: 0;
+  display: grid; place-items: center;
+  border: none; border-radius: 50%;
+  background: none; color: var(--muted-2); cursor: pointer;
+}
+.bb-eck.info { right: 70px; }
+.bb-eck svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.bb-eck .voll { fill: currentColor; stroke: none; }
+.bb-eck:active { color: var(--text); }
+.bb-eck.is-on { color: var(--accent); }
+/* Die Knöpfe stehen im Markup hinter dem Kopf, deshalb :has statt ~ */
+#bottom:has(> .bb-eck) .bb-head, #bottom:has(> .bb-eck) .bb-reihe { padding-right: 94px; }
+
 .bb-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding-right: 30px; }
 .bb-title { font-size: 1.02rem; font-weight: 650; margin: 0; }
 .bb-sub { font-size: .76rem; color: var(--muted); margin: 2px 0 0; }
