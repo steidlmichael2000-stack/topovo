@@ -1914,7 +1914,7 @@ const kmTokens = s => String(s).split(/[&;\s]+/).filter(Boolean);
 
 /* ============================ Karte ============================ */
 
-let map, baseOsm, baseSat, baseDop, baseRelief, ormLayer, parzLayer, glGrund;
+let map, baseOsm, baseDop, baseRelief, ormLayer, parzLayer, glGrund;
 let msLayer, trackLayer, pointLayer, meLayer, merkLayer, liveLayer;
 /* Hintergründe schließen sich aus, Auflagen nicht — als Verzeichnis gehalten,
  * damit ein weiterer Dienst nur ein Eintrag und ein Knopf ist. */
@@ -2058,8 +2058,6 @@ const RELIEF_QUELLE = landQuelle('Relief', ['by', 'bw']);
 const BVV_NATIV = { dop: 19, relief: 18 };
 
 const GL_BILDER = {
-  sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    maxzoom: 18, quelle: 'Luftbild: Esri, Maxar' },
   // Alle Länder, je Kachel entschieden (dopKachel, Protokoll in glLaden); Quelle nach Ausschnitt
   dop: { url: 'land://dop/{z}/{x}/{y}', maxzoom: BVV_NATIV.dop, quelle: null },
   relief: { url: 'land://relief/{z}/{x}/{y}', maxzoom: BVV_NATIV.relief, quelle: RELIEF_QUELLE }
@@ -2388,9 +2386,10 @@ function initMap() {
     maxZoom: 22, maxNativeZoom: 19, crossOrigin: 'anonymous',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   });
-  baseSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 22, maxNativeZoom: 18, crossOrigin: 'anonymous', attribution: 'Luftbild: Esri, Maxar'
-  });
+  /* Das weltweite Luftbild von Esri (World Imagery) ist seit November 2026 raus:
+   * Esri verlangt dafür einen API-Schlüssel oder ein ArcGIS-Konto, der Abruf
+   * ohne war nur geduldet. Ein Luftbild gibt es seitdem nur noch amtlich, aus
+   * den Ländern (DOP20), also nur für Deutschland. */
 
   /* Dunkle Karte, Straßen und Ortsnamen zeichnet MapLibre (GlGrund). Straßen
    * und Namen kamen bis 30.09.2026 als Rasterkacheln von Esri, die dunkle
@@ -2452,7 +2451,7 @@ function initMap() {
   ]);
 
   // Die Leaflet-Grundkarten. „dark" hat keine: die zeichnet immer MapLibre.
-  baseLayers = { osm: baseOsm, sat: baseSat, dop: baseDop, relief: baseRelief };
+  baseLayers = { osm: baseOsm, dop: baseDop, relief: baseRelief };
   ormLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png', {
     subdomains: 'abc', maxZoom: 22, maxNativeZoom: 19, opacity: 0.85, crossOrigin: 'anonymous',
     attribution: '<a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>'
@@ -2677,7 +2676,8 @@ function parzPunkteWeg(d, w, h) {
  * dunkler und flacher als das bayerische Schräglicht — einen Dienst aus dem
  * DGM1 gibt es nicht mehr, WMS_LGL-BW_ATKIS_DGM_1_Schummerung antwortet mit
  * 500). Bis November 2026 kam auch das DOP20 nur aus diesen beiden Ländern,
- * für den Rest Deutschlands gab es nur das Luftbild von Esri.
+ * für den Rest Deutschlands gab es nur das Luftbild von Esri (seit November
+ * 2026 ganz entfernt).
  *
  * Alle Dienste antworten außerhalb ihres Landes mit einer leeren (weißen)
  * Kachel; als PNG wäre sie durchsichtig, aber ein Luftbild als PNG ist
@@ -2866,10 +2866,20 @@ function dopUrl(art, land, z, x, y) {
   return `${LAND_WMS[art][land]}&WIDTH=${px}&HEIGHT=${px}&FORMAT=image/jpeg&BBOX=${bbox}`;
 }
 
+/* Ein WMS meldet Fehler mit Status 200 und XML statt Bild. Sachsen-Anhalt
+ * antwortete am 02.11.2026 bei derselben Kachel abwechselnd mit Bild und mit
+ * „Could not process client request“ — deshalb bis zu DOP_VERSUCHE Anläufe, die
+ * späteren am HTTP-Cache vorbei, damit nicht die Fehlermeldung wiederkommt. */
+const DOP_VERSUCHE = 4;
+
 async function dopBild(url, signal) {
-  const r = await fetch(url, { signal });
-  if (!r.ok) throw new Error(`Luftbild/Relief: HTTP ${r.status}`);
-  return r.blob();
+  for (let versuch = 1; ; versuch++) {
+    const r = await fetch(url, versuch > 1 ? { signal, cache: 'reload' } : { signal });
+    if (!r.ok) throw new Error(`Luftbild/Relief: HTTP ${r.status}`);
+    if (/^image\//.test(r.headers.get('content-type') || '')) return r.blob();
+    if (versuch >= DOP_VERSUCHE) throw new Error('Luftbild/Relief: Dienst meldet einen Fehler');
+    await new Promise(fertig => setTimeout(fertig, 250 * versuch));
+  }
 }
 
 /** Ein Bild schon beim Entpacken verkleinert: Ein JPEG mit 4096 Bildpunkten
@@ -3267,7 +3277,7 @@ function ordneAuflagen() {
   }
 }
 
-const GRUNDKARTEN = ['osm', 'dark', 'sat', 'dop', 'relief'];
+const GRUNDKARTEN = ['osm', 'dark', 'dop', 'relief'];
 
 /** Wer zeichnet den Grund? Braucht die Wahl MapLibre (dunkle Karte, oder ein
  *  Bild mit Straßen/Namen), zeichnet es MapLibre allein und die Leaflet-
@@ -3291,6 +3301,7 @@ function grundAnwenden() {
 /** still: beim Start. Dort steht die Karte noch auf der Deutschlandansicht,
  *  die über Bayern hinausreicht — die Warnung käme bei jedem Öffnen. */
 function setBase(which, still = false) {
+  if (which === 'sat') which = 'dop';   // gespeichert, als es das Esri-Luftbild noch gab
   if (!GRUNDKARTEN.includes(which)) which = 'osm';
   prefs.base = which;
   grundAnwenden();
@@ -3609,7 +3620,7 @@ const RADAR_HALT = 1500;       // ms am Ende stehen, dann von vorn
  * gingen abgedunkelte Linien im Wald unter. */
 const RADAR_FLAECHE = 0.45;
 const RADAR_LINIE_TON = 0.62;
-const RADAR_GRUND_DUNKEL = new Set(['dark', 'sat', 'dop']);
+const RADAR_GRUND_DUNKEL = new Set(['dark', 'dop']);
 const RADAR_FRISCH = 5 * 60000;
 const RADAR_RASTER = 400;      // Zellen je Richtung höchstens
 const RADAR_ZELLE = 1464;      // Mercator-Meter je Zelle in voller Auflösung (im Süden; im Norden mehr)
@@ -5605,7 +5616,7 @@ function ifgZeichnen() {
   const hervor = view.hervor && !view.point && !reihe.length;
   if (hervor) {
     const linien = st.abschnitte.map(g => g.pts.map(p => [p.lat, p.lon]));
-    const dunkel = ['dark', 'sat', 'dop'].includes(prefs.base);
+    const dunkel = ['dark', 'dop'].includes(prefs.base);
     const pal = PALETTEN[prefs.palette] || PALETTEN.lapis;
     const farbe = (dunkel ? pal.dark : pal.light).accent;
     L.polyline(linien, { color: dunkel ? '#000' : '#fff', weight: 8, opacity: 0.85, interactive: false })

@@ -785,7 +785,8 @@ Drei offene Dienste der Bayerischen Vermessungsverwaltung sind fest eingebaut, a
 | **Parzellen** | `geoservices.bayern.de/od/wms/alkis/v1/parzellarkarte` | `by_alkis_parzellarkarte_umr_schwarz`, in der App gefärbt |
 
 **DOP20** ist das amtliche Orthophoto mit 20 cm Bodenauflösung und damit wesentlich feiner als das
-weltweite Esri-Luftbild. **Relief** ist das Schräglicht aus dem Geländemodell — Dämme, Einschnitte
+weltweite Esri-Luftbild (das seit November 2026 raus ist: Esri verlangt einen API-Schlüssel oder ein
+ArcGIS-Konto; der Knopf „Luftbild“ zeigt seitdem das DOP20). **Relief** ist das Schräglicht aus dem Geländemodell — Dämme, Einschnitte
 und alte Trassen sind darauf deutlich zu sehen; die ebenfalls angebotene kombinierte Darstellung
 wäscht genau diese kleinen Formen weg und ist deshalb nicht eingebaut. Beides deckt nur Bayern ab;
 außerhalb antworten die Dienste mit einem leeren Bild und Status 200, also nicht mit einem Fehler,
@@ -1695,7 +1696,8 @@ Karten- und Bahndaten: © OpenStreetMap-Mitwirkende
 ([ODbL](https://www.openstreetmap.org/copyright)) — das schließt die mitgelieferten Netzkacheln
 unter `netz/` ein, die aus OSM abgeleitet sind und damit ebenfalls unter der ODbL stehen.
 Bahn-Layer von
-[OpenRailwayMap](https://www.openrailwaymap.org/) (CC-BY-SA 2.0), Luftbilder von Esri,
+[OpenRailwayMap](https://www.openrailwaymap.org/) (CC-BY-SA 2.0), Luftbilder von den
+Vermessungsverwaltungen der Länder (siehe Quellenangabe in der App),
 dunkle Karte, Straßen und Ortsnamen von [OpenFreeMap](https://openfreemap.org/) (© OpenMapTiles,
 Daten © OpenStreetMap). Regenradar: Quelle [Deutscher Wetterdienst](https://www.dwd.de/).
 DOP20, Geländerelief, Parzellarkarte und die Höhen in Profil und Höhenangabe (DGM1, DOM20): Bayerische

@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v85';
+const VERSION = 'v86';
 const SHELL = `topovo-shell-${VERSION}`;
 const TILES = `topovo-tiles-${VERSION}`;
 const DATA = `topovo-data-${VERSION}`;
@@ -28,7 +28,7 @@ const SHELL_FILES = [
 ];
 
 // Mit den Orthophoto-Diensten der Länder (LAND_WMS in app.js)
-const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openrailwaymap.org', 'server.arcgisonline.com',
+const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openrailwaymap.org',
   'geoservices.bayern.de', 'owsproxy.lgl-bw.de', 'www.wms.nrw.de', 'opendata.lgln.niedersachsen.de',
   'www.gds-srv.hessen.de', 'geo4.service24.rlp.de', 'geoportal.saarland.de', 'www.geoproxy.geoportal-th.de',
   'geodienste.sachsen.de', 'www.geodatenportal.sachsen-anhalt.de', 'isk.geobasis-bb.de', 'gdi.berlin.de',
@@ -128,6 +128,10 @@ async function cacheSchreiben(cacheName, request, response, max) {
  * Karte bekommt jede Kachel, sobald sie da ist, statt erst nach dem Schreiben. */
 function nebenbeiAblegen(event, cacheName, request, res, max) {
   if (!res || !res.ok || res.status === 206) return;
+  /* Ein WMS meldet Fehler mit Status 200 und XML statt Bild — Sachsen-Anhalt tut
+   * das gemessen bei jeder zweiten Abfrage. Im Vorrat bliebe die Kachel sonst
+   * für immer kaputt. */
+  if (cacheName === TILES && !/^image\//.test(res.headers.get('content-type') || '')) return;
   event.waitUntil(cacheSchreiben(cacheName, request, res.clone(), max));
 }
 

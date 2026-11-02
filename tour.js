@@ -164,7 +164,7 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Karten und Auflagen',
-    text: 'Hinter dem Regler-Symbol: Karte, dunkle Karte, Luftbild, das amtliche Orthophoto DOP20 und ' +
+    text: 'Hinter dem Regler-Symbol: Karte, dunkle Karte, das amtliche Luftbild (DOP20) und ' +
       'das Geländerelief. Darüber lassen sich Bahn-Layer, Parzellen, Straßen und Ortsnamen legen — ' +
       'lange drücken auf „Parzellen" wählt ihre Farbe. Unter „Erklärung" steht zu jedem mehr.',
     ziel: () => tourSichtbar('#sheet'),
