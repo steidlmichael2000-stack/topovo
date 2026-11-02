@@ -2017,16 +2017,36 @@ const OFM_DUNKEL = 'https://tiles.openfreemap.org/styles/dark';
 const OFM_KACHELN = 'https://tiles.openfreemap.org/planet';
 const OFM_GLYPHEN = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
 const OFM_QUELLE = '<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; OpenMapTiles, Daten &copy; OpenStreetMap';
-// Nur noch die Parzellen — DOP20 und Relief nennen beide Länder selbst (LAND_QUELLE)
+// Nur noch die Parzellen — DOP20 und Relief nennen die Länder selbst (LAND_URHEBER)
 const BVV_QUELLE = 'Parzellen: <a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (CC BY 4.0)';
-// Das DOP20 kommt aus zwei Ländern (DopWms) — beide Urheber, das LGL mit Jahr des Datenbezugs
-const LAND_QUELLE = was => `${was}: <a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (CC BY 4.0), ` +
-  `<a href="https://www.lgl-bw.de/">LGL-BW</a> (${new Date().getFullYear()}, dl-de/by-2-0)`;
-const DOP_QUELLE = LAND_QUELLE('DOP20'), RELIEF_QUELLE = LAND_QUELLE('Relief');
+/* Urheber je Land, wie es die Dienste verlangen; wo ein Jahr des Datenbezugs
+ * gefordert ist, das laufende. Das DOP20 nennt nur die Länder, die gerade im
+ * Bild sind (dopQuelleErneuern), das Relief kommt immer aus Bayern und BW. */
+const JAHR = new Date().getFullYear();
+const LAND_URHEBER = {
+  by: '<a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (CC BY 4.0)',
+  bw: `<a href="https://www.lgl-bw.de/">LGL-BW</a> (${JAHR}, dl-de/by-2-0)`,
+  nw: 'Geobasis NRW (dl-de/zero-2-0)',
+  ni: `LGLN (${JAHR}, CC BY 4.0)`,
+  he: 'HVBG (dl-de/zero-2-0)',
+  rp: `GeoBasis-DE / LVermGeoRP (${JAHR}, dl-de/by-2-0)`,
+  sl: 'GeoBasis-DE / LVGL-SL (dl-de/by-2-0)',
+  th: '© GDI-Th (CC BY 4.0)',
+  sn: 'GeoSN (dl-de/by-2-0)',
+  st: 'GeoBasis-DE / LVermGeo LSA (dl-de/by-2-0)',
+  bb: 'GeoBasis-DE/LGB (dl-de/by-2-0)',
+  be: 'Geoportal Berlin (dl-de/zero-2-0)',
+  mv: `GeoBasis-DE/M-V ${JAHR}`,
+  sh: 'GeoBasis-DE/LVermGeo SH (CC BY 4.0)',
+  hb: 'Landesamt GeoInformation Bremen (CC BY)',
+  hh: 'FHH, LGV (dl-de/by-2-0)'
+};
+const landQuelle = (was, laender) => `${was}: ${laender.map(l => LAND_URHEBER[l]).join(', ')}`;
+const RELIEF_QUELLE = landQuelle('Relief', ['by', 'bw']);
 
 /* Die Bilder für MapLibre — dieselben Dienste und Grenzen wie die Leaflet-
  * Ebenen in initMap. DOP20 und Relief kommen über das Protokoll land:// aus
- * dopKachel (Bayern und BW je Kachel entschieden). Eine 256er-Rasterkachel holt
+ * dopKachel (das Land je Kachel entschieden). Eine 256er-Rasterkachel holt
  * MapLibre auf derselben Zoomstufe wie Leaflet. */
 /* Bis zu welcher Zoomstufe die Bilder der BVV geholt werden; darüber wird das
  * Bild der letzten Stufe weich vergrößert (Leaflet per CSS, MapLibre linear).
@@ -2040,8 +2060,8 @@ const BVV_NATIV = { dop: 19, relief: 18 };
 const GL_BILDER = {
   sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     maxzoom: 18, quelle: 'Luftbild: Esri, Maxar' },
-  // Bayern und BW, je Kachel entschieden (dopKachel, Protokoll in glLaden)
-  dop: { url: 'land://dop/{z}/{x}/{y}', maxzoom: BVV_NATIV.dop, quelle: DOP_QUELLE },
+  // Alle Länder, je Kachel entschieden (dopKachel, Protokoll in glLaden); Quelle nach Ausschnitt
+  dop: { url: 'land://dop/{z}/{x}/{y}', maxzoom: BVV_NATIV.dop, quelle: null },
   relief: { url: 'land://relief/{z}/{x}/{y}', maxzoom: BVV_NATIV.relief, quelle: RELIEF_QUELLE }
 };
 
@@ -2200,7 +2220,7 @@ function glStilSetzen() {
  * Parzellen und die des DOP20 heben sich also nicht gegenseitig auf. */
 function glQuellenErneuern() {
   const b = prefs.base || 'osm';
-  const neu = !glAn ? [] : b === 'dark' ? [OFM_QUELLE] : [GL_BILDER[b].quelle, OFM_QUELLE];
+  const neu = !glAn ? [] : b === 'dark' ? [OFM_QUELLE] : [GL_BILDER[b].quelle, OFM_QUELLE].filter(Boolean);
   if (neu.join('|') === glQuellenZuletzt.join('|')) return;
   for (const q of glQuellenZuletzt) map.attributionControl.removeAttribution(q);
   for (const q of neu) map.attributionControl.addAttribution(q);
@@ -2253,7 +2273,7 @@ async function glLaden() {
       css.href = 'vendor/maplibre/maplibre-gl.css';
       document.head.appendChild(css);
       const maplibregl = await import('./vendor/maplibre/maplibre-gl.mjs');
-      // DOP20 und Relief aus Bayern und BW: dieselbe Kachel wie in Leaflet (dopKachel)
+      // DOP20 und Relief aus den Ländern: dieselbe Kachel wie in Leaflet (dopKachel)
       maplibregl.addProtocol('land', async (anfrage, abbruch) => {
         const [art, z, x, y] = anfrage.url.slice('land://'.length).split('/');
         return { data: await (await dopKachel(art, +z, +x, +y, abbruch.signal)).arrayBuffer() };
@@ -2387,8 +2407,9 @@ function initMap() {
    * den man abfangen könnte, sondern weißer Grund. */
   const BVV = BVV_QUELLE;
 
-  // Bayern und Baden-Württemberg, je Kachel entschieden (DopWms)
-  baseDop = new DopWms({ maxZoom: 22, maxNativeZoom: BVV_NATIV.dop, attribution: DOP_QUELLE });
+  // Alle Länder, je Kachel entschieden (DopWms); die Quelle setzt dopQuelleErneuern nach Ausschnitt
+  baseDop = new DopWms({ maxZoom: 22, maxNativeZoom: BVV_NATIV.dop });
+  map.on('moveend', dopQuelleErneuern);
 
   /* Schräglicht und nicht die kombinierte Darstellung: Das Schräglicht zeigt
    * Dämme, Einschnitte und alte Trassen plastisch, die kombinierte Fassung wäscht
@@ -2573,6 +2594,7 @@ function syncNorth() {
 
 /** Ungefährer Rahmen um Bayern — nur um zu warnen, nicht um zu sperren. */
 const BAYERN = { s: 47.2, w: 8.9, n: 50.6, o: 13.9 };
+const DEUTSCHLAND = { s: 47.2, w: 5.8, n: 55.1, o: 15.1 };
 
 function ausserhalbBayerns() {
   const c = map.getCenter();
@@ -2648,102 +2670,194 @@ function parzPunkteWeg(d, w, h) {
   }
 }
 
-/* ===================== DOP20 und Relief aus zwei Ländern =====================
+/* ===================== DOP20 aus allen Ländern, Relief aus zweien =====================
  *
- * Je eine Ebene „DOP20" und „Relief" über Bayern (BVV) und Baden-Württemberg
- * (LGL; das Relief dort ist die Schummerung aus dem DGM025, dunkler und flacher
- * als das bayerische Schräglicht — einen Dienst aus dem DGM1 gibt es nicht
- * mehr, WMS_LGL-BW_ATKIS_DGM_1_Schummerung antwortet mit 500). Beide
- * Dienste antworten außerhalb ihres Landes mit einer leeren Kachel; als PNG wäre
- * sie durchsichtig, aber ein Luftbild als PNG ist gemessen 11-mal (BVV) bzw.
- * knapp 3-mal (LGL) so groß wie als JPEG. Deshalb entscheidet die App je Kachel
- * an der Landesgrenze (bw-grenze.json, werkzeug/bw-grenze-bauen.mjs):
+ * „DOP20" zeigt die Orthophotos aller 16 Länder, „Relief" nur Bayern (BVV) und
+ * Baden-Württemberg (LGL; das Relief dort ist die Schummerung aus dem DGM025,
+ * dunkler und flacher als das bayerische Schräglicht — einen Dienst aus dem
+ * DGM1 gibt es nicht mehr, WMS_LGL-BW_ATKIS_DGM_1_Schummerung antwortet mit
+ * 500). Bis November 2026 kam auch das DOP20 nur aus diesen beiden Ländern,
+ * für den Rest Deutschlands gab es nur das Luftbild von Esri.
  *
- *   ganz in BW            → LGL
- *   ganz außerhalb von BW → BVV, wie bisher
- *   im Saum der Grenze    → beide, je Bildpunkt das Land, in dem er liegt
+ * Alle Dienste antworten außerhalb ihres Landes mit einer leeren (weißen)
+ * Kachel; als PNG wäre sie durchsichtig, aber ein Luftbild als PNG ist
+ * gemessen 11-mal (BVV) bzw. knapp 3-mal (LGL) so groß wie als JPEG. Deshalb
+ * entscheidet die App je Kachel an den Landesgrenzen (laender-grenzen.json,
+ * werkzeug/laender-grenzen-bauen.mjs):
+ *
+ *   ganz in einem Land     → dessen Dienst, durchgereicht
+ *   im Saum einer Grenze   → alle beteiligten, je Bildpunkt das Land, in dem er liegt
+ *   außerhalb aller Länder → nichts (durchsichtig)
  *
  * Alles als JPEG. Ist ein Bildpunkt beim zuständigen Land leer (weiß), kommt er
- * vom anderen: Beide Dienste reichen ein Stück über die Grenze, und das LGL hat
- * Löcher — bei Ulm-Wiblingen fehlt in der Schummerung ein Rechteck, das der
+ * von einem anderen: Die Dienste reichen ein Stück über die Grenze, und das LGL
+ * hat Löcher — bei Ulm-Wiblingen fehlt in der Schummerung ein Rechteck, das der
  * bayerische Reliefdienst abdeckt. Liegt eine Kachel ganz in einem Land und
- * ist mehr als DOP_LOCH_ANTEIL weiß, wird der andere Dienst dazugeholt. Tief in
- * Bayern (außerhalb des Rahmens um BW) wird gar nicht erst nachgesehen.
- * Die Grenze ist auf 50 m vereinfacht; an ihr können Stilwechsel (das Relief
- * des LGL ist dunkler) bis dahin neben der echten Grenze liegen.
+ * ist mehr als DOP_LOCH_ANTEIL weiß, werden die Länder dazugeholt, deren Grenze
+ * höchstens DOP_UMFELD_M entfernt ist. Bildpunkte außerhalb aller Länder (Meer,
+ * Ausland) nimmt der erste Dienst, der dort etwas hat.
+ * Die Grenzen sind auf 100 m vereinfacht; an ihnen können Stilwechsel (das
+ * Relief des LGL ist dunkler) bis dahin neben der echten Grenze liegen.
  *
  * Leaflet zeichnet das in DopWms auf Canvas, MapLibre bekommt es über das
  * Protokoll land:// (land://dop/{z}/{x}/{y}) — beide aus dopKachel. Der Saum
- * (DOP_SAUM_M plus halbe Kacheldiagonale) deckt die 50 m Vereinfachung der
- * Grenze weit ab. */
+ * (DOP_SAUM_M plus halbe Kacheldiagonale) deckt die 100 m Vereinfachung der
+ * Grenzen weit ab. */
 const DOP_LOCH_ANTEIL = 0.01;
 const DOP_SAUM_M = 300;
+const DOP_UMFELD_M = 5000;
+const DOP_FAST_LEER = 225;
 const LAND_WMS_TEIL = '?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&STYLES=&CRS=EPSG:3857&LAYERS=';
-/* Luftbild und Relief der BVV gibt es nur bis 1:3,5 Mio. (MaxScaleDenominator),
- * darüber kommt eine weiße Kachel — weit herausgezoomt (ab Zoomstufe 6) fehlte
- * Bayern deshalb ganz, BW nicht. Der Maßstab hängt an der Bildgröße: Dieselbe
- * Kachel mit 2-, 4- oder 8-mal so vielen Bildpunkten abgefragt liegt wieder
- * darunter, verkleinert wird sie in dopPixel. Mit etwas Abstand zur Grenze. */
-const BY_MASSSTAB_MAX = 3.0e6;
+/* Manche Dienste zeichnen nur bis zu einem Maßstab, darüber kommt eine weiße
+ * Kachel — weit herausgezoomt fehlte Bayern deshalb ganz (ab Zoomstufe 6). Der
+ * Maßstab hängt an der Bildgröße: Dieselbe Kachel mit 2-, 4- oder 8-mal so
+ * vielen Bildpunkten abgefragt liegt wieder darunter, verkleinert wird sie in
+ * dopPixel. Gemessen am 02.11.2026, jeweils mit etwas Abstand zur Grenze:
+ * BVV laut Dienst 1:3,5 Mio.; Thüringen zeichnet bei 1:690 000 noch, bei
+ * 1:1,4 Mio. nicht mehr (laut Dienst 1:2 Mio.); Mecklenburg-Vorpommern bei
+ * 1:162 000 noch, bei 1:324 000 nicht mehr (laut Dienst 1:400 000).
+ * Mecklenburg-Vorpommern braucht dafür auf Zoomstufe 7 schon 4096 × 4096
+ * Bildpunkte (gemessen 2,2 MB, 7 s), und mehr als 4192 gibt der Dienst nicht her
+ * (MaxWidth). Auf Stufe 6 setzt die App die Kachel deshalb aus vier Teilen der
+ * nächsten Stufe zusammen (dopLandPixel); noch weiter draußen bleibt es weiß. */
+const LAND_MASSSTAB_MAX = { by: 3.0e6, th: 9.0e5, mv: 1.7e5 };
+const LAND_GROESSE_MAX = 16;
+/* Je Land der Dienst, je Art. Hessen mit he_dop_rgb, nicht he_dop20_rgb: Der
+ * zeichnet nur bis 1:9000, darüber gehören je Maßstab andere Ebenen dazu, die
+ * he_dop_rgb zusammenfasst. Bremen ist Bremen und Bremerhaven, zwei Ebenen.
+ * Hamburg hat nur Zeitreihen; ohne TIME kommt das neueste Jahr (unbelaubt
+ * 2026, belaubt erst 2024). */
 const LAND_WMS = {
   dop: {
     by: 'https://geoservices.bayern.de/od/wms/dop/v1/dop20' + LAND_WMS_TEIL + 'by_dop20c',
-    bw: 'https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DOP_20_C' + LAND_WMS_TEIL + 'IMAGES_DOP_20_RGB'
+    bw: 'https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DOP_20_C' + LAND_WMS_TEIL + 'IMAGES_DOP_20_RGB',
+    nw: 'https://www.wms.nrw.de/geobasis/wms_nw_dop' + LAND_WMS_TEIL + 'nw_dop_rgb',
+    ni: 'https://opendata.lgln.niedersachsen.de/doorman/noauth/dop_wms' + LAND_WMS_TEIL + 'ni_dop20',
+    he: 'https://www.gds-srv.hessen.de/cgi-bin/lika-services/ogc-free-images.ows' + LAND_WMS_TEIL + 'he_dop_rgb',
+    rp: 'https://geo4.service24.rlp.de/wms/rp_dop20.fcgi' + LAND_WMS_TEIL + 'rp_dop20',
+    sl: 'https://geoportal.saarland.de/freewms/dop2023' + LAND_WMS_TEIL + 'sl_dop20_rgb',
+    th: 'https://www.geoproxy.geoportal-th.de/geoproxy/services/DOP' + LAND_WMS_TEIL + 'th_dop',
+    sn: 'https://geodienste.sachsen.de/wms_geosn_dop-rgb/guest' + LAND_WMS_TEIL + 'sn_dop_020',
+    st: 'https://www.geodatenportal.sachsen-anhalt.de/wss/service/ST_LVermGeo_DOP_WMS_OpenData/guest' + LAND_WMS_TEIL + 'lsa_lvermgeo_dop20_2',
+    bb: 'https://isk.geobasis-bb.de/mapproxy/dop20c/service/wms' + LAND_WMS_TEIL + 'bebb_dop20c',
+    be: 'https://gdi.berlin.de/services/wms/truedop_2024' + LAND_WMS_TEIL + 'truedop_2024',
+    mv: 'https://www.geodaten-mv.de/dienste/adv_dop' + LAND_WMS_TEIL + 'mv_dop',
+    sh: 'https://dienste.gdi-sh.de/WMS_SH_DOP20col_OpenGBD' + LAND_WMS_TEIL + 'sh_dop20_rgb',
+    hb: 'https://geodienste.bremen.de/wms_dop20_2023' + LAND_WMS_TEIL + 'DOP20_2023_HB,DOP20_2023_BHV',
+    hh: 'https://geodienste.hamburg.de/wms_dop_zeitreihe_unbelaubt' + LAND_WMS_TEIL + 'dop_zeitreihe_unbelaubt'
   },
   relief: {
     by: 'https://geoservices.bayern.de/od/wms/dgm/v1/relief' + LAND_WMS_TEIL + 'by_relief_schraeglicht',
     bw: 'https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DGM_025_Schummerung' + LAND_WMS_TEIL + 'Schummerung_DGM_025_BW'
   }
 };
-let bwGrenze = null;            // Promise der Ringe, je { p: UTM e,n,…, g: lat,lon,…, bb (UTM) }
+let laenderGrenzen = null;   // Promise: Land → { ringe: [{ p: UTM e,n,…, g: lat,lon,…, bb }], bb (UTM), gb (lat, lon) }
 
-function bwGrenzeHolen() {
-  if (!bwGrenze) {
-    bwGrenze = fetch('bw-grenze.json').then(r => { if (!r.ok) throw new Error(`Landesgrenze: HTTP ${r.status}`); return r.json(); })
-      .then(j => j.ringe.map(ring => {
-        const p = new Float64Array(ring.length * 2), g = new Float64Array(ring.length * 2), bb = [Infinity, Infinity, -Infinity, -Infinity];
-        ring.forEach(([lat, lon], i) => {
-          const [e, n] = utm32Hin(lat, lon);
-          p[2 * i] = e; p[2 * i + 1] = n;
-          g[2 * i] = lat; g[2 * i + 1] = lon;
-          bb[0] = Math.min(bb[0], e); bb[1] = Math.min(bb[1], n); bb[2] = Math.max(bb[2], e); bb[3] = Math.max(bb[3], n);
-        });
-        return { p, g, bb };
-      }));
-    bwGrenze.catch(() => { bwGrenze = null; });
+function laenderGrenzenHolen() {
+  if (!laenderGrenzen) {
+    laenderGrenzen = fetch('laender-grenzen.json')
+      .then(r => { if (!r.ok) throw new Error(`Landesgrenzen: HTTP ${r.status}`); return r.json(); })
+      .then(j => {
+        const aus = {};
+        for (const [land, reihen] of Object.entries(j.laender)) {
+          const bbLand = [Infinity, Infinity, -Infinity, -Infinity], gb = [Infinity, Infinity, -Infinity, -Infinity];
+          const ringe = reihen.map(reihe => {
+            // Erster Punkt ganz, jeder weitere als Abstand zum vorigen (laender-grenzen-bauen.mjs)
+            const p = new Float64Array(reihe.length), g = new Float64Array(reihe.length), bb = [Infinity, Infinity, -Infinity, -Infinity];
+            let lat = 0, lon = 0;
+            for (let i = 0; i < reihe.length; i += 2) {
+              lat += reihe[i]; lon += reihe[i + 1];
+              const [e, n] = utm32Hin(lat * j.einheit, lon * j.einheit);
+              p[i] = e; p[i + 1] = n;
+              g[i] = lat * j.einheit; g[i + 1] = lon * j.einheit;
+              gb[0] = Math.min(gb[0], g[i]); gb[1] = Math.min(gb[1], g[i + 1]); gb[2] = Math.max(gb[2], g[i]); gb[3] = Math.max(gb[3], g[i + 1]);
+              bb[0] = Math.min(bb[0], e); bb[1] = Math.min(bb[1], n); bb[2] = Math.max(bb[2], e); bb[3] = Math.max(bb[3], n);
+            }
+            for (let k = 0; k < 4; k++) bbLand[k] = (k < 2 ? Math.min : Math.max)(bbLand[k], bb[k]);
+            return { p, g, bb };
+          });
+          aus[land] = { ringe, bb: bbLand, gb };
+        }
+        return aus;
+      });
+    laenderGrenzen.catch(() => { laenderGrenzen = null; });
   }
-  return bwGrenze;
+  return laenderGrenzen;
 }
 
-/** 'bw', 'by' (außerhalb von BW) oder 'beide', wenn die Kachel die Grenze berühren könnte. */
-async function dopWahl(z, x, y) {
-  const ringe = await bwGrenzeHolen();
-  const n2 = 2 ** z, lon = (x + 0.5) / n2 * 360 - 180;
-  const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n2))) * 180 / Math.PI;
+/** Mitte einer Kachel, geografisch. */
+function kachelMitte(z, x, y) {
+  const n2 = 2 ** z;
+  return [Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n2))) * 180 / Math.PI, (x + 0.5) / n2 * 360 - 180];
+}
+
+/** Für die Länder, die art anbietet: in welchem liegt die Mitte der Kachel
+ *  (drin), deren Grenze die Kachel berühren könnte (nah), deren Grenze höchstens
+ *  DOP_UMFELD_M weiter weg ist (umfeld, zum Füllen von Löchern). */
+async function dopWahl(art, z, x, y) {
+  const grenzen = await laenderGrenzenHolen();
+  const [lat, lon] = kachelMitte(z, x, y);
   const [e, n] = utm32Hin(lat, lon);
-  const r = 40075016.686 * Math.cos(lat * Math.PI / 180) / n2 * 0.7072 + DOP_SAUM_M;
-  let drin = false;
-  for (const { p, bb } of ringe) {
-    if (e < bb[0] - r || e > bb[2] + r || n < bb[1] - r || n > bb[3] + r) continue;
-    for (let i = 0, k = p.length - 2; i < p.length; k = i, i += 2) {
-      const ax = p[k], ay = p[k + 1], bx = p[i], by = p[i + 1];
-      if ((ay > n) !== (by > n) && e < (bx - ax) * (n - ay) / (by - ay) + ax) drin = !drin;
-      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
-      const t = l2 ? Math.max(0, Math.min(1, ((e - ax) * dx + (n - ay) * dy) / l2)) : 0;
-      if (Math.hypot(e - ax - t * dx, n - ay - t * dy) < r) return 'beide';
+  const r = 40075016.686 * Math.cos(lat * Math.PI / 180) / 2 ** z * 0.7072 + DOP_SAUM_M;
+  const weit = r + DOP_UMFELD_M;
+  let drin = null;
+  const nah = [], umfeld = [];
+  for (const land of Object.keys(LAND_WMS[art])) {
+    const { ringe, bb: b } = grenzen[land];
+    if (e < b[0] - weit || e > b[2] + weit || n < b[1] - weit || n > b[3] + weit) continue;
+    let innen = false, abstand = Infinity;
+    for (const { p, bb } of ringe) {
+      // Ein Ring, der ganz außerhalb des Umfelds liegt, kann die Mitte nicht umschließen
+      if (e < bb[0] - weit || e > bb[2] + weit || n < bb[1] - weit || n > bb[3] + weit) continue;
+      for (let i = 0, k = p.length - 2; i < p.length; k = i, i += 2) {
+        const ax = p[k], ay = p[k + 1], bx = p[i], by = p[i + 1];
+        if ((ay > n) !== (by > n) && e < (bx - ax) * (n - ay) / (by - ay) + ax) innen = !innen;
+        const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+        const t = l2 ? Math.max(0, Math.min(1, ((e - ax) * dx + (n - ay) * dy) / l2)) : 0;
+        abstand = Math.min(abstand, Math.hypot(e - ax - t * dx, n - ay - t * dy));
+      }
     }
+    if (innen) drin = land;
+    if (abstand < r) nah.push(land);
+    else if (abstand < weit) umfeld.push(land);
   }
-  return drin ? 'bw' : 'by';
+  return { drin, nah, umfeld };
 }
 
-/** Kantenlänge der Abfrage in Bildpunkten: 256, nur für Bayern weit draußen mehr. */
-function dopGroesse(land, z, y) {
-  if (land !== 'by') return 256;
+/** Um wie viel größer die Kachel abgefragt werden müsste, damit das Land sie zeichnet (1, 2, 4 …). */
+function dopFaktor(land, z, y) {
+  const max = LAND_MASSSTAB_MAX[land];
+  if (!max) return 1;
   const n2 = 2 ** z, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n2)));
   const massstab = 40075016.686 * Math.cos(lat) / n2 / 256 / 0.00028;   // 0,28 mm je Bildpunkt wie im WMS
   let f = 1;
-  while (massstab / f > BY_MASSSTAB_MAX && f < 16) f *= 2;
-  return 256 * f;
+  while (massstab / f > max && f < 4 * LAND_GROESSE_MAX) f *= 2;
+  return f;
+}
+
+/** Kantenlänge der Abfrage in Bildpunkten: 256, für Länder mit Maßstabsgrenze weit draußen mehr. */
+function dopGroesse(land, z, y) {
+  return 256 * Math.min(dopFaktor(land, z, y), LAND_GROESSE_MAX);
+}
+
+/** Reicht eine Abfrage nicht (dopFaktor über LAND_GROESSE_MAX), kommt die Kachel aus vier Teilen. */
+const dopGeteilt = (land, z, y) => dopFaktor(land, z, y) > LAND_GROESSE_MAX;
+
+/** Die Bildpunkte eines Landes für eine Kachel: eine Abfrage oder vier Teile der
+ *  nächsten Zoomstufe, je zu zweit, damit nicht vier Bilder mit 4096 Bildpunkten
+ *  zugleich im Speicher liegen. */
+async function dopLandPixel(art, land, z, x, y, signal) {
+  if (!dopGeteilt(land, z, y)) return dopPixel(await dopBild(dopUrl(art, land, z, x, y), signal));
+  const c = new OffscreenCanvas(256, 256), g = c.getContext('2d', { willReadFrequently: true });
+  for (const dy of [0, 1]) {
+    await Promise.all([0, 1].map(async dx => {
+      const blob = await dopBild(dopUrl(art, land, z + 1, 2 * x + dx, 2 * y + dy), signal);
+      const bild = await dopBitmap(blob, 128);
+      g.drawImage(bild, dx * 128, dy * 128, 128, 128);
+      bild.close();
+    }));
+  }
+  return g.getImageData(0, 0, 256, 256);
 }
 
 function dopUrl(art, land, z, x, y) {
@@ -2758,16 +2872,26 @@ async function dopBild(url, signal) {
   return r.blob();
 }
 
+/** Ein Bild schon beim Entpacken verkleinert: Ein JPEG mit 4096 Bildpunkten
+ *  läge sonst mit 64 MB im Speicher. Wo der Browser das nicht kann, ganz. */
+async function dopBitmap(blob, kante) {
+  try {
+    return await createImageBitmap(blob, { resizeWidth: kante, resizeHeight: kante, resizeQuality: 'high' });
+  } catch {
+    return createImageBitmap(blob);
+  }
+}
+
 /** Bildpunkte eines Blobs (256 × 256, RGBA). */
 async function dopPixel(blob) {
-  const bild = await createImageBitmap(blob);
+  const bild = await dopBitmap(blob, 256);
   const c = new OffscreenCanvas(256, 256), g = c.getContext('2d', { willReadFrequently: true });
   g.drawImage(bild, 0, 0, 256, 256);
   bild.close();
   return g.getImageData(0, 0, 256, 256);
 }
 
-// Leer heißt: alle drei Kanäle fast ganz weiß — so füllen beide Dienste, wo sie nichts haben
+// Leer heißt: alle drei Kanäle fast ganz weiß — so füllen die Dienste, wo sie nichts haben
 const dopLeer = (d, i) => d[i] >= 250 && d[i + 1] >= 250 && d[i + 2] >= 250;
 
 function dopLeerAnteil(d) {
@@ -2776,9 +2900,9 @@ function dopLeerAnteil(d) {
   return n / (d.length / 4);
 }
 
-/** Welche Bildpunkte der Kachel liegen in BW? Die Grenze als Fläche gezeichnet. */
-async function dopMaske(z, x, y) {
-  const ringe = await bwGrenzeHolen(), n2 = 2 ** z;
+/** Welche Bildpunkte der Kachel liegen im Land? Die Grenze als Fläche gezeichnet. */
+async function dopMaske(land, z, x, y) {
+  const { ringe } = (await laenderGrenzenHolen())[land], n2 = 2 ** z;
   const c = new OffscreenCanvas(256, 256), g = c.getContext('2d', { willReadFrequently: true });
   g.beginPath();
   for (const { g: ll } of ringe) {
@@ -2794,39 +2918,132 @@ async function dopMaske(z, x, y) {
   return g.getImageData(0, 0, 256, 256).data;
 }
 
+/* Quellenangabe des DOP20: die Länder, deren Rahmen den Ausschnitt berührt.
+ * Der Rahmen ist grob (Niedersachsen umschließt Bremen und Hamburg), es steht
+ * also eher eins zu viel da als eins zu wenig. */
+let dopQuelleZuletzt = '';
+
+async function dopQuelleErneuern() {
+  let neu = '';
+  if (prefs.base === 'dop') {
+    const grenzen = await laenderGrenzenHolen().catch(() => null);
+    if (!grenzen) return;
+    const b = map.getBounds(), s = b.getSouth(), w = b.getWest(), n = b.getNorth(), o = b.getEast();
+    const laender = Object.keys(LAND_WMS.dop).filter(l => {
+      const gb = grenzen[l].gb;
+      return gb[0] <= n && gb[2] >= s && gb[1] <= o && gb[3] >= w;
+    });
+    if (laender.length) neu = landQuelle('DOP20', laender);
+  }
+  if (neu === dopQuelleZuletzt) return;
+  if (dopQuelleZuletzt) map.attributionControl.removeAttribution(dopQuelleZuletzt);
+  if (neu) map.attributionControl.addAttribution(neu);
+  dopQuelleZuletzt = neu;
+}
+
+let dopNichts = null;   // die durchsichtige Kachel für außerhalb aller Länder, einmal gebaut
+
 /** Eine Kachel (art 'dop' oder 'relief') als Bild-Blob: aus einem Dienst
  *  durchgereicht, wo es geht; sonst je Bildpunkt aus dem zuständigen Land, Löcher
- *  aus dem anderen (JPEG, damit der Speicher nicht anschwillt). */
+ *  aus den anderen (JPEG, damit der Speicher nicht anschwillt). */
 async function dopKachel(art, z, x, y, signal) {
-  const wahl = await dopWahl(z, x, y);
-  let eigen = null;
-  if (wahl !== 'beide') {
-    const blob = await dopBild(dopUrl(art, wahl, z, x, y), signal);
-    // Tief in Bayern hat der LGL nichts, was ein Loch füllen könnte
-    const n2 = 2 ** z, lon = (x + 0.5) / n2 * 360 - 180;
-    const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n2))) * 180 / Math.PI;
+  const { drin, nah, umfeld } = await dopWahl(art, z, x, y);
+  const laender = nah.length ? [...new Set([drin, ...nah].filter(Boolean))] : drin ? [drin] : [];
+  if (!laender.length) {
+    if (!dopNichts) {
+      const c = new OffscreenCanvas(256, 256);
+      c.getContext('2d');   // ohne Zeichenfläche weigert sich convertToBlob
+      dopNichts = c.convertToBlob({ type: 'image/png' });
+    }
+    return dopNichts;
+  }
+  let eigen = null, helfer = [];
+  // Ganz in einem Land; berührt die Kachel eine Grenze, entscheidet die Maske, auch bei nur einem Land
+  if (!nah.length) {
+    const land = laender[0];
     // Größer abgefragt (dopGroesse) geht sie durch dopPixel, damit die Kachel 256 px bleibt
-    const gross = dopGroesse(wahl, z, y) > 256;
-    if (wahl === 'by' && !inLandRahmen('bw', lat, lon) && !gross) return blob;
-    eigen = await dopPixel(blob);
-    if (dopLeerAnteil(eigen.data) <= DOP_LOCH_ANTEIL && !gross) return blob;
-    if (wahl === 'by' && !inLandRahmen('bw', lat, lon)) return dopAlsJpeg(eigen);
+    const gross = dopGroesse(land, z, y) > 256;
+    const blob = dopGeteilt(land, z, y) ? null : await dopBild(dopUrl(art, land, z, x, y), signal);
+    if (blob && !umfeld.length && !gross) return blob;
+    eigen = blob ? await dopPixel(blob) : await dopLandPixel(art, land, z, x, y, signal);
+    const loch = dopLeerAnteil(eigen.data) > DOP_LOCH_ANTEIL;
+    if (!loch && !gross) return blob;
+    if (!loch || !umfeld.length) return dopAlsJpeg(eigen);
+    helfer = umfeld;
   }
-  const holen = land => dopBild(dopUrl(art, land, z, x, y), signal).then(dopPixel);
-  const [by, bw, maske] = await Promise.all([
-    wahl === 'by' ? eigen : holen('by'),
-    wahl === 'bw' ? eigen : holen('bw'),
-    wahl === 'beide' ? dopMaske(z, x, y) : null
+  const alle = [...laender, ...helfer];
+  const [bilder, masken] = await Promise.all([
+    /* Fällt ein Dienst aus, bleibt sein Teil leer, statt dass die ganze Kachel
+     * fehlt. Schleswig-Holstein und Sachsen-Anhalt geben CORS nur für https-
+     * Herkünfte frei — unter http://localhost fehlen sie deshalb. */
+    Promise.all(alle.map((land, i) => i === 0 && eigen ? eigen
+      : dopLandPixel(art, land, z, x, y, signal)
+        .catch(err => { if (signal?.aborted) throw err; return null; }))),
+    // Ohne Grenze in der Kachel ist das eine Land für alles zuständig
+    nah.length ? Promise.all(laender.map(land => dopMaske(land, z, x, y))) : null
   ]);
-  const a = by.data, b = bw.data;
+  const aus = bilder.find(Boolean);
+  if (!aus) throw new Error('Luftbild: kein Dienst erreichbar');
+  const daten = bilder.map(b => b && b.data), a = aus.data;
+  // Strenger als dopLeer: Der Saum am weißen Rand der Dienste liegt knapp unter 250
+  const fastLeer = (d, i) => !d || (d[i] >= DOP_FAST_LEER && d[i + 1] >= DOP_FAST_LEER && d[i + 2] >= DOP_FAST_LEER);
+  let durchsichtig = false;
+  const luecke = [];   // im Land, aber bei keinem Dienst etwas Brauchbares
   for (let i = 0; i < a.length; i += 4) {
-    const inBw = maske ? maske[i + 3] >= 128 : wahl === 'bw';
-    const [hier, dort] = inBw ? [b, a] : [a, b];
-    const quelle = dopLeer(hier, i) && !dopLeer(dort, i) ? dort : hier;
-    if (quelle !== a) { a[i] = quelle[i]; a[i + 1] = quelle[i + 1]; a[i + 2] = quelle[i + 2]; }
-    a[i + 3] = 255;
+    const zust = masken ? masken.findIndex(m => m[i + 3] >= 128) : 0;
+    let quelle;
+    if (zust >= 0) {
+      /* Im Land bleibt der Bildpunkt stehen, auch ein heller. Nur ein (fast) weißer
+       * kommt von woanders, wenn ein anderer Dienst dort etwas Dunkleres hat: Am
+       * eigenen Rand mischt jeder Dienst beim Verkleinern sein Bild mit dem
+       * Weiß dahinter, weit herausgezoomt stand sonst ein heller Strich auf
+       * jeder Landesgrenze. */
+      quelle = !fastLeer(daten[zust], i) ? zust : daten.findIndex(d => !fastLeer(d, i));
+      if (quelle < 0) { quelle = daten[zust] ? zust : daten.findIndex(Boolean); luecke.push(i); }
+    } else {
+      quelle = daten.findIndex(d => !fastLeer(d, i));
+    }
+    const d = quelle >= 0 ? daten[quelle] : null;
+    if (d && d !== a) { a[i] = d[i]; a[i + 1] = d[i + 1]; a[i + 2] = d[i + 2]; }
+    // Hat außerhalb kein Dienst etwas, bleibt der Bildpunkt durchsichtig wie die Kacheln ganz außerhalb
+    a[i + 3] = d ? 255 : (durchsichtig = true, 0);
   }
-  return dopAlsJpeg(by);
+  dopLueckenFuellen(a, luecke, fastLeer);
+  return durchsichtig ? dopAlsPng(aus) : dopAlsJpeg(aus);
+}
+
+/* Weit herausgezoomt hört an einer Landesgrenze oft jeder Dienst einen
+ * Bildpunkt zu früh auf: Das eine Land hat dort nichts mehr, das andere nur
+ * noch seinen mit Weiß gemischten Rand. Übrig blieb ein heller Strich auf der
+ * Grenze. Solche Bildpunkte bekommen den Mittelwert ihrer brauchbaren
+ * Nachbarn, in zwei Runden — breiter ist die Lücke nicht. */
+function dopLueckenFuellen(a, luecke, fastLeer) {
+  for (let runde = 0; runde < 2 && luecke.length; runde++) {
+    const offen = new Set(luecke), rest = [], neu = [];
+    for (const i of luecke) {
+      const px = (i >> 2) & 255, py = i >> 10;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const qx = px + dx, qy = py + dy;
+        if ((!dx && !dy) || qx < 0 || qy < 0 || qx > 255 || qy > 255) continue;
+        const j = (qy * 256 + qx) * 4;
+        if (offen.has(j) || a[j + 3] === 0 || fastLeer(a, j)) continue;
+        r += a[j]; g += a[j + 1]; b += a[j + 2]; n++;
+      }
+      if (n) neu.push([i, r / n, g / n, b / n]); else rest.push(i);
+    }
+    for (const [i, r, g, b] of neu) { a[i] = r; a[i + 1] = g; a[i + 2] = b; }
+    luecke = rest;
+  }
+}
+
+/* Nur Kacheln an der Staatsgrenze und an der Küste: Ein Luftbild als PNG ist
+ * ein Vielfaches größer, aber ein weißer Rand ums Land sähe über der dunklen
+ * Karte wie ein Fehler aus. */
+function dopAlsPng(bild) {
+  const c = new OffscreenCanvas(256, 256);
+  c.getContext('2d').putImageData(bild, 0, 0);
+  return c.convertToBlob({ type: 'image/png' });
 }
 
 function dopAlsJpeg(bild) {
@@ -3068,6 +3285,7 @@ function grundAnwenden() {
   if (mitGl && !map.hasLayer(glGrund)) glGrund.addTo(map);
   if (!mitGl && map.hasLayer(glGrund)) map.removeLayer(glGrund);
   if (mitGl) { glDeckungSetzen(); glQuellenErneuern(); }
+  dopQuelleErneuern();
 }
 
 /** still: beim Start. Dort steht die Karte noch auf der Deutschlandansicht,
@@ -3077,10 +3295,13 @@ function setBase(which, still = false) {
   prefs.base = which;
   grundAnwenden();
 
-  // Der Rahmen um BW ist grob; wo beide Rahmen nicht greifen, ist der Grund sicher weiß
-  if (!still && (which === 'dop' || which === 'relief') && ausserhalbBayerns() &&
-      !inLandRahmen('bw', map.getCenter().lat, map.getCenter().lng)) {
-    toast('Dieser Dienst deckt Bayern und Baden-Württemberg ab — hier bleibt der Grund weiß.');
+  // Die Rahmen sind grob; wo sie nicht greifen, bleibt der Grund sicher leer
+  const c = map.getCenter();
+  if (!still && which === 'relief' && ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng)) {
+    toast('Das Relief gibt es für Bayern und Baden-Württemberg — hier bleibt der Grund weiß.');
+  }
+  if (!still && which === 'dop' && !(c.lat >= DEUTSCHLAND.s && c.lat <= DEUTSCHLAND.n && c.lng >= DEUTSCHLAND.w && c.lng <= DEUTSCHLAND.o)) {
+    toast('Das DOP20 kommt von den Vermessungsämtern der Länder und gibt es nur für Deutschland.');
   }
 
   parzFarbeAnpassen();

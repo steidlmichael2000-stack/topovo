@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v84';
+const VERSION = 'v85';
 const SHELL = `topovo-shell-${VERSION}`;
 const TILES = `topovo-tiles-${VERSION}`;
 const DATA = `topovo-data-${VERSION}`;
@@ -20,15 +20,19 @@ const ALT_PRAEFIXE = ['trackpilot-', 'railnav-'];
 
 const SHELL_FILES = [
   './', 'index.html', 'style.css', 'app.js', 'hoehen.js', 'pdf.js', 'gebaeude.js', 'tour.js', 'radar-werk.js',
-  'infrago.js', 'bw-grenze.json', 'impressum.html',
+  'infrago.js', 'laender-grenzen.json', 'impressum.html',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet-rotate.js',
   // Mit ?v=topovo, genau wie index.html und das Manifest es anfordern: Der Cache
   // vergleicht die volle Adresse, ohne den Zusatz fände er offline nichts.
   'manifest.webmanifest', 'icon.svg?v=topovo'
 ];
 
+// Mit den Orthophoto-Diensten der Länder (LAND_WMS in app.js)
 const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.openrailwaymap.org', 'server.arcgisonline.com',
-  'geoservices.bayern.de', 'owsproxy.lgl-bw.de'];
+  'geoservices.bayern.de', 'owsproxy.lgl-bw.de', 'www.wms.nrw.de', 'opendata.lgln.niedersachsen.de',
+  'www.gds-srv.hessen.de', 'geo4.service24.rlp.de', 'geoportal.saarland.de', 'www.geoproxy.geoportal-th.de',
+  'geodienste.sachsen.de', 'www.geodatenportal.sachsen-anhalt.de', 'isk.geobasis-bb.de', 'gdi.berlin.de',
+  'www.geodaten-mv.de', 'dienste.gdi-sh.de', 'geodienste.bremen.de', 'geodienste.hamburg.de'];
 const MAX_TILES = 600;
 
 /* Die Netzkacheln unter netz/ ändern sich nur, wenn werkzeug/netz-bauen.py neu

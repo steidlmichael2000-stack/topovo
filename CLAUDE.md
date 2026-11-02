@@ -94,12 +94,19 @@ MapLibre zeichnet zweierlei (`glStil`): die dunkle Karte als fertigen Stil, oder
 zeichnet MapLibre auch das Bild, und die Leaflet-Grundkarte ist aus (`grundAnwenden`) — nur so
 liegen die Straßen zwischen Bild und Bahn-Layer. Die Bilddienste stehen dafür zweimal im Code:
 als Leaflet-Ebene in `initMap` und in `GL_BILDER`. Wer einen Dienst ändert, ändert beide.
-Ausnahme DOP20 und Relief (seit 14.10.2026 Bayern + BW, Dienste in `LAND_WMS`): Beide Wege holen
-ihre Kacheln aus `dopKachel(art, …)` — Leaflet über `DopWms` (Canvas, Option `art`), MapLibre über
-das Protokoll `land://{art}/{z}/{x}/{y}` (`addProtocol` in `glLaden`). Je Kachel entscheidet `dopWahl`
-an `bw-grenze.json`; im 300-m-Saum je Bildpunkt per `dopMaske`, weiße Bildpunkte vom anderen Land.
-Nicht auf „LGL als PNG obendrauf" zurückbauen: Das LGL-Relief reicht deckend über die Grenze und hat
-Löcher (Ulm-Wiblingen). Grenze neu: `node werkzeug/bw-grenze-bauen.mjs`.
+Ausnahme DOP20 und Relief (Dienste in `LAND_WMS`; DOP20 seit 02.11.2026 alle 16 Länder, Relief
+Bayern + BW): Beide Wege holen ihre Kacheln aus `dopKachel(art, …)` — Leaflet über `DopWms` (Canvas,
+Option `art`), MapLibre über das Protokoll `land://{art}/{z}/{x}/{y}` (`addProtocol` in `glLaden`).
+Je Kachel entscheidet `dopWahl` an `laender-grenzen.json` (VG250 des BKG, 100 m vereinfacht,
+Delta-kodiert; neu: `node werkzeug/laender-grenzen-bauen.mjs`): ganz in einem Land durchgereicht,
+im 300-m-Saum je Bildpunkt per `dopMaske`, (fast) weiße Bildpunkte von einem anderen Land,
+1–2-px-Lücken auf der Grenze aus den Nachbarn (`dopLueckenFuellen`), außerhalb aller Länder
+durchsichtig (dann PNG). Ein ausfallender Dienst lässt nur seinen Teil leer. Weit draußen fragen
+Länder mit Maßstabsgrenze größer ab (`LAND_MASSSTAB_MAX`: BY, TH, MV; bis 4096 px, darüber vier
+Teile der nächsten Stufe in `dopLandPixel` — M-V auf Stufe 6). Die Quellenangabe des DOP20
+setzt `dopQuelleErneuern` nach den Ländern im Ausschnitt. SH und ST geben CORS nur für https frei —
+unter localhost fehlen sie, auf github.io nicht. Nicht auf „PNG obendrauf" zurückbauen: Das
+LGL-Relief reicht deckend über die Grenze und hat Löcher (Ulm-Wiblingen).
 Parzellen sind eine `ParzGruppe` aus drei `ParzWms` (BVV; LGL-Flurstücke; LGL-Gebäude mit
 `fuellungWeg` und 1024er-Kacheln, weil der Dienst je Abfrage ~2,3 s braucht), je mit `bounds` des Landes.
 Straßen und Ortsnamen kamen bis 30.09.2026 als Rasterkacheln von Esri: auf dem Land ab

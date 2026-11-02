@@ -797,12 +797,41 @@ EPSG:3857, CORS frei, Datenlizenz Deutschland – Namensnennung 2.0). Auch diese
 außerhalb seines Landes eine leere Kachel. Als PNG wäre sie durchsichtig, und man könnte beide
 Dienste einfach übereinanderlegen — aber ein Luftbild als PNG ist gemessen 11-mal (BVV, 17 kB →
 192 kB je Kachel) bzw. knapp 3-mal (LGL, 23 kB → 63 kB) so groß wie als JPEG. Die App entscheidet
-deshalb je Kachel an der Landesgrenze (`bw-grenze.json`, aus dem Basis-DLM über die OGC API des
-LGL, auf 50 m vereinfacht, 79 kB; neu bauen mit `node werkzeug/bw-grenze-bauen.mjs`): ganz in BW
+deshalb je Kachel an der Landesgrenze (damals `bw-grenze.json`, aus dem Basis-DLM über die OGC API
+des LGL, auf 50 m vereinfacht, 79 kB; seit 02.11.2026 `laender-grenzen.json`, s. u.): ganz in BW
 das LGL, ganz außerhalb die BVV, nur im Saum von 300 m plus halber Kachel beide, und dann je
 Bildpunkt das Land, in dem er liegt (die Grenze als Fläche auf die Kachel gezeichnet). Alles als
 JPEG. Ist ein Bildpunkt beim zuständigen Land weiß, kommt er vom anderen: Beide Dienste reichen
 ein Stück über die Grenze, und das LGL hat Löcher. Die Entscheidung kostet 0,2 ms je Kachel.
+
+**DOP20 aus allen 16 Ländern** (seit 02.11.2026). Alle Länder bieten ihr Orthophoto offen als WMS
+mit EPSG:3857 und CORS an (geprüft am 02.11.2026, Adressen und Layer in `LAND_WMS` in `app.js`).
+Ein bundesweiter Dienst des BKG (`sgx.geodatenzentrum.de/wms_dop`) ist nicht offen (403). Die
+Landesgrenzen kommen jetzt aus dem VG250 des BKG (WFS `vg250_lan`, nur Landflächen,
+dl-de/by-2-0), auf 100 m vereinfacht und als Abstände in Zehntausendstel Grad gespeichert:
+`laender-grenzen.json`, 198 kB (gepackt 77 kB); neu bauen mit
+`node werkzeug/laender-grenzen-bauen.mjs`. `bw-grenze.json` ist damit entfallen. Die Wahl je Kachel
+ist dieselbe wie vorher, nur mit beliebig vielen Ländern: ganz in einem Land durchgereicht, im
+Saum alle beteiligten mit Maske je Land. Ganz außerhalb Deutschlands bleibt die Kachel
+durchsichtig, an der Staatsgrenze die Bildpunkte, für die kein Dienst etwas hat (diese Kacheln
+dann als PNG). Fällt ein Dienst aus, bleibt nur sein Teil leer.
+Was dabei auffiel:
+- Hessen mit `he_dop_rgb`, nicht `he_dop20_rgb` (zeichnet nur bis 1:9000).
+- Bremen sind zwei Ebenen (`DOP20_2023_HB,DOP20_2023_BHV`).
+- Hamburg hat nur Zeitreihen; ohne `TIME` kommt das neueste Jahr (unbelaubt 2026).
+- Thüringen und Mecklenburg-Vorpommern zeichnen weit draußen nicht (gemessen bis 1:690 000 bzw.
+  1:162 000) — wie bei der BVV fragt die App dort größer ab (`LAND_MASSSTAB_MAX`), bis 4096
+  Bildpunkte (der Dienst in M-V gibt höchstens 4192 her). M-V auf Stufe 6 bräuchte 8192; dort setzt
+  `dopLandPixel` die Kachel aus vier Teilen der Stufe 7 zusammen (gemessen 12 s beim ersten Laden),
+  je zwei zugleich und schon beim Entpacken auf 128 Bildpunkte verkleinert (`dopBitmap`), damit
+  nicht 64 MB je Bild im Speicher liegen. Weiter draußen bleibt M-V weiß.
+- Mecklenburg-Vorpommern stempelt seinen Quellenvermerk ins Bild.
+- Schleswig-Holstein und Sachsen-Anhalt geben CORS nur für https-Herkünfte frei; unter
+  `http://localhost` fehlen sie.
+- Weit herausgezoomt hört an einer Grenze oft jeder Dienst einen Bildpunkt zu früh auf; diese
+  Lücken füllt `dopLueckenFuellen` aus den Nachbarn, sonst stand ein heller Strich auf der Grenze.
+Die Quellenangabe des DOP20 nennt die Länder, deren Rahmen den Ausschnitt berührt
+(`dopQuelleErneuern`).
 
 **Relief und Flurstücke ebenso** (14.10.2026). Das Relief in BW ist die Schummerung des LGL aus dem
 DGM025 (`WMS_LGL-BW_ATKIS_DGM_025_Schummerung`, Layer `Schummerung_DGM_025_BW`) — dunkler und
