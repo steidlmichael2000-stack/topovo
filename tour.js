@@ -397,16 +397,11 @@ const HILFE = {
     },
     {
       titel: 'Start und Zufahrt',
-      text: 'Den Start als Adresse oder Ort ins Feld schreiben — oder auf die Karte tippen. Start und ' +
+      text: 'Den Start als Adresse oder Ort ins Feld schreiben, auf die Karte tippen oder mit dem ' +
+        'Fadenkreuz im Feld den eigenen Standort nehmen. Start und ' +
         'Endpunkt lassen sich ziehen. Liegt die Straße auf der falschen Seite der Gleise, den Endpunkt auf ' +
         'eine andere Zufahrt ziehen.',
       ziel: () => tourSichtbar('#routeStartFeld')
-    },
-    {
-      titel: 'Navigation',
-      text: 'Google Maps übernimmt die Fahrt bis zum Endpunkt — vom eigenen Standort aus, oder vom ' +
-        'gewählten Start.',
-      ziel: () => tourSichtbar('#routeMaps')
     }
   ],
 

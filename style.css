@@ -1244,8 +1244,6 @@ input[type="range"] { min-width: 0; }
 }
 /* Profil am Gleis: orange wie Messen und Profil auf der Karte */
 .bb-actions .bb-ikon.gp { color: var(--warn); border-color: transparent; }
-/* „Vom Standort" neben Google Maps in der Routenleiste: so breit wie nötig */
-.bb-actions .route-ort { flex: none; padding-left: 14px; padding-right: 14px; }
 
 /* Geländehöhe unter dem Ergebnis, in den Sprechblasen und beim Abstecken.
    Steht als Platzhalter da, bis der Wert kommt — die Leiste springt nicht. */
@@ -1973,8 +1971,38 @@ body { font-variant-numeric: tabular-nums; }
   background: var(--panel-2); color: var(--text); outline: none;
   font: inherit; font-size: .92rem; font-weight: 500;
 }
+/* Fadenkreuz rechts im Feld: Start am eigenen Standort, in der Signalfarbe, wenn er es ist */
+.route-feld { position: relative; }
+#routeStartFeld { padding-right: 44px; }
+#routeStartFeld::-webkit-search-cancel-button { display: none; }
+.route-ort {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 34px; height: 34px; padding: 0;
+  display: grid; place-items: center;
+  border: none; border-radius: 50%; background: none; color: var(--muted); cursor: pointer;
+}
+.route-ort svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.route-ort:active { color: var(--text); }
+.route-ort.is-on { color: var(--accent); }
+.route-ort.wartet svg { animation: route-ort-puls 1s ease-in-out infinite alternate; }
+@keyframes route-ort-puls { to { opacity: .35; } }
 #routeStartFeld::placeholder { color: var(--muted-2); opacity: 1; }
 #routeStartFeld:focus { border-color: var(--accent); }
 .route-vorschlag { border-top: none; padding: 4px 0 0; max-height: 34vh; }
 /* Unter 16 px zoomt Safari auf dem iPhone beim Antippen ins Feld */
 @media (pointer: coarse) { #routeStartFeld { font-size: 1rem; } }
+
+/* Route am Handy oben statt der Suchzeile, wie in Google Maps: Startfeld oben,
+   die Karte darunter bleibt frei für Start und Linie. Ab 1010 px steht sie
+   ohnehin in der Leiste links unter der Suche. */
+@media (max-width: 1009.98px) {
+  .ui:has(> #bottom[data-art="route"]:not([hidden])) > :is(.bar-top, #suggest) { display: none; }
+  .bar-bottom[data-art="route"] {
+    order: -1;
+    margin-top: calc(var(--gap) + env(safe-area-inset-top)); margin-bottom: 0;
+  }
+  .bar-bottom[data-art="route"]:not([hidden]) { animation-name: von-oben; }
+  .ui:has(> #ziel[hidden]):has(> #bottom[data-art="route"]) > .quellen {
+    margin-bottom: calc(6px + env(safe-area-inset-bottom));
+  }
+}

@@ -9968,6 +9968,7 @@ let routeSuchText = '';        // was im Startfeld steht, über das Neuzeichnen 
 let routeTreffer = [];
 let routeSuchLauf = 0;
 let routeSuchTimer = 0;
+const ROUTE_MEIN_ORT = 'Mein Standort';
 let routeWartetAufOrt = false;
 let routeZufahrt = null;       // [lat, lon] gezogen; null = Valhalla nimmt die nächste Straße
 let routeErg = null;           // { linie, dauer, laenge, autobahn, maut, faehre, anfang, ende }
@@ -10016,12 +10017,14 @@ function routeOeffnen(lat, lon, name = '') {
     routeStart = [ortLetzt.lat, ortLetzt.lon];
     routeVomOrt = true;
     routeWartetAufOrt = false;
+    routeSuchText = ROUTE_MEIN_ORT;
   } else {
     routeStart = null;
     routeVomOrt = false;
     routeWartetAufOrt = ortAn();     // läuft die Verfolgung schon, kommt der Standort gleich
   }
   closeSheet();
+  leisteZu(false);
   routeZeichnen();
   routeLeiste();
   syncButtons();
@@ -10060,12 +10063,15 @@ function routeOrtDa() {
   routeStart = [ortLetzt.lat, ortLetzt.lon];
   routeVomOrt = true;
   routeStartLeeren();
+  routeSuchText = ROUTE_MEIN_ORT;
   routeZeichnen();
+  routeLeiste();
   routeRechnen(!routeErg);
 }
 
 function routeVomStandort() {
   if (ortLetzt) { routeOrtDa(); return; }
+  routeStartLeeren();
   routeWartetAufOrt = true;
   if (!ortAn()) locate();
   routeLeiste();
@@ -10085,6 +10091,7 @@ function routeSuchen(text) {
   routeSuchText = text;
   clearTimeout(routeSuchTimer);
   const lauf = ++routeSuchLauf;
+  routeVomOrt = routeVomOrt && text === ROUTE_MEIN_ORT;
   if (text.trim().length < 3) { routeTreffer = []; routeTrefferZeigen(); return; }
   routeSuchTimer = setTimeout(async () => {
     let liste = [];
@@ -10095,10 +10102,24 @@ function routeSuchen(text) {
   }, 300);
 }
 
+/* Mein Standort steht oben in der Liste, solange nichts getippt ist —
+ * wie in Google Maps; dazu das Fadenkreuz rechts im Feld. */
+const routeMitOrt = () => !routeVomOrt && !routeSuchText.trim();
+
 function routeTrefferZeigen(meldung = '') {
   const box = $('#routeVorschlag');
   if (!box) return;
-  if (!routeTreffer.length) {
+  const feld = $('#routeStartFeld');
+  if (routeMitOrt() && feld && document.activeElement === feld) {
+    box.innerHTML = suggestZeile('ort', IKON_STANDORT, ROUTE_MEIN_ORT,
+      routeWartetAufOrt ? 'wird bestimmt …' : 'Start am eigenen Standort');
+    box.hidden = false;
+    box.querySelector('[data-i]').addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      feld.blur();
+      routeVomStandort();
+    });
+  } else if (!routeTreffer.length) {
     box.innerHTML = meldung ? `<p class="suggest-info">${esc(meldung)}</p>` : '';
     box.hidden = !meldung;
   } else {
@@ -10259,7 +10280,9 @@ function routeZeichnen() {
 function routeLeiste() {
   if (!routeAn) return;
   const b = $('#bottom');
-  b.dataset.art = 'werkzeug';      // ab 1010 px unten mittig statt in der Leiste
+  // Ab 1010 px in der Leiste links unter der Suche wie das Ergebnis, nicht unten mittig:
+  // Startfeld und Treffer gehören zur Suche, und die Route verdeckt sonst die Karte
+  b.dataset.art = 'route';
   b.hidden = false;
   const e = routeErg;
   const notizen = [];
@@ -10270,13 +10293,12 @@ function routeLeiste() {
     // Eine Zeile, was die Route ist; eine, was man mit ihr tun kann — der Rest steht hinter dem ?
     const rest = ellipsoidAbstand(e.ende, routeZiel);
     // Eine eingegebene Adresse steht schon im Feld darunter
-    notizen.push([routeVomOrt ? 'Vom Standort' : !routeStartName && 'Vom gewählten Start',
+    notizen.push([!routeVomOrt && !routeStartName && 'Vom gewählten Start',
       e.autobahn && 'Autobahn', e.maut && 'Maut', e.faehre && 'Fähre',
       rest >= 10 && `zu Fuß noch ${messText(rest)}`].filter(Boolean).join(' · '));
   }
   if (routeFehler) notizen.push({ warn: routeFehler });
   else if (!routeStart) {
-    if (routeWartetAufOrt) notizen.push('Standort wird bestimmt …');
   } else if (!e) notizen.push('Route wird gerechnet …');
 
   // Das Startfeld überlebt das Neuzeichnen (Ergebnis kommt, Standort trifft ein)
@@ -10284,10 +10306,6 @@ function routeLeiste() {
   const fokus = altFeld && document.activeElement === altFeld;
   const cursor = fokus ? altFeld.selectionStart : null;
 
-  const ende = e ? e.ende : routeZufahrt || routeZiel;
-  const gmaps = 'https://www.google.com/maps/dir/?api=1' +
-    (routeStart && !routeVomOrt ? `&origin=${routeStart[0].toFixed(6)},${routeStart[1].toFixed(6)}` : '') +
-    `&destination=${ende[0].toFixed(6)},${ende[1].toFixed(6)}&travelmode=driving`;
 
   b.innerHTML = `
     <button type="button" id="bbClose" class="bb-close" aria-label="Route schließen">
@@ -10303,16 +10321,16 @@ function routeLeiste() {
     ${notizen.map(t => typeof t === 'string'
       ? `<p class="bb-note plain">${esc(t)}</p>` : `<p class="bb-note">${esc(t.warn)}</p>`).join('')}
     <div class="route-start">
-      <input id="routeStartFeld" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false"
-             aria-label="Start als Adresse oder Ort" value="${esc(routeSuchText)}"
-             placeholder="Start: Adresse, Ort — oder auf die Karte tippen">
+      <div class="route-feld">
+        <input id="routeStartFeld" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false"
+               aria-label="Start als Adresse oder Ort" value="${esc(routeSuchText)}"
+               placeholder="${routeWartetAufOrt ? 'Standort wird bestimmt …' : 'Start: Adresse oder auf Karte tippen'}">
+        <button type="button" id="routeOrt" class="route-ort${routeVomOrt ? ' is-on' : ''}${routeWartetAufOrt ? ' wartet' : ''}"
+                aria-label="Start am eigenen Standort" title="Start am eigenen Standort">${IKON_STANDORT}</button>
+      </div>
       <div id="routeVorschlag" class="suggest route-vorschlag" role="listbox" hidden></div>
     </div>
-    <div class="bb-actions">
-      <a id="routeMaps" class="maps" href="${gmaps}" target="_blank" rel="noopener">Google Maps` +
-      `<small class="sv-hinweis">${e ? 'Navigation bis zum Endpunkt' : 'Navigation zum Punkt'}</small></a>
-      ${routeVomOrt ? '' : `<button type="button" id="routeOrt" class="route-ort"${routeWartetAufOrt ? ' disabled' : ''}>Vom Standort</button>`}
-    </div>
+    <!-- Kein Google Maps hier: Dafür ist der Knopf in der Ergebnisleiste, vor der Route -->
     <p class="prof-quelle">${ROUTE_QUELLE}</p>`;
 
   const an = (sel, f) => { const el = b.querySelector(sel); if (el) el.addEventListener('click', f); };
@@ -10320,13 +10338,15 @@ function routeLeiste() {
   an('#routeOrt', routeVomStandort);
   const feld = b.querySelector('#routeStartFeld');
   feld.addEventListener('input', () => routeSuchen(feld.value));
+  // Steht schon ein Start drin, ersetzt das Tippen ihn ganz
+  feld.addEventListener('focus', () => { if (feld.value) feld.select(); routeTrefferZeigen(); });
   feld.addEventListener('keydown', ev => {
     if (ev.key === 'Enter') { ev.preventDefault(); routeTrefferNehmen(routeTreffer[0]); }
     else if (ev.key === 'Escape') { routeTreffer = []; routeTrefferZeigen(); feld.blur(); }
   });
   feld.addEventListener('blur', () => { if (feld.isConnected) { routeTreffer = []; routeTrefferZeigen(); } });
   if (fokus) { feld.focus(); feld.setSelectionRange(cursor, cursor); }
-  if (routeTreffer.length) routeTrefferZeigen();
+  if (routeTreffer.length || fokus) routeTrefferZeigen();
   updateBH();
 }
 
@@ -10425,9 +10445,16 @@ function seitenBreite() {
 
 function kartePassen(grenzen, o = {}) {
   const links = seitenBreite();
+  const b = $('#bottom');
   if (links) {
     const tl = o.paddingTopLeft || o.padding || [30, 30], br = o.paddingBottomRight || o.padding || [30, 30];
     o = { ...o, paddingTopLeft: [links + tl[0], 30], paddingBottomRight: [Math.max(br[0], 76), untenBelegt()] };
+    delete o.padding;
+  } else if (b.dataset.art === 'route' && !b.hidden) {
+    // Am Handy steht die Route oben über der Karte
+    const p = o.padding || [30, 30];
+    o = { ...o, paddingTopLeft: [p[0], Math.round(b.getBoundingClientRect().bottom) + p[1]],
+      paddingBottomRight: [p[0], parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bh')) + p[1]] };
     delete o.padding;
   }
   map.fitBounds(grenzen, o);
@@ -10474,7 +10501,9 @@ function updateBH() {
   let grundlinie = UNTEN_RAND;
   // Bei offenem Menü sind die Leisten ausgeblendet (openSheet) und zählen nicht
   if (!document.body.classList.contains('menue-offen')) {
-    for (const el of [$('#bottom'), $('#ziel')]) {
+    // Die Route steht am Handy oben (style.css) und belegt unten nichts
+    const routeOben = $('#bottom').dataset.art === 'route';
+    for (const el of [routeOben ? null : $('#bottom'), $('#ziel')]) {
       if (el && !el.hidden) grundlinie += el.getBoundingClientRect().height + 8;
     }
   }
@@ -11907,6 +11936,8 @@ const IKON_ORT = '<svg class="s-ikon" viewBox="0 0 24 24" aria-hidden="true">' +
   '<circle cx="12" cy="10" r="2.3"/></svg>';
 const IKON_KOORD = '<svg class="s-ikon bahn" viewBox="0 0 24 24" aria-hidden="true">' +
   '<circle cx="12" cy="12" r="6.2"/><path d="M12 1.8v4M12 18.2v4M1.8 12h4M18.2 12h4"/></svg>';
+const IKON_STANDORT = '<svg class="s-ikon bahn" viewBox="0 0 24 24" aria-hidden="true">' +
+  '<circle cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="7.4"/><path d="M12 1.6v3M12 19.4v3M1.6 12h3M19.4 12h3"/></svg>';
 const IKON_UHR = '<svg class="s-ikon" viewBox="0 0 24 24" aria-hidden="true">' +
   '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.3l3.4 2"/></svg>';
 
@@ -12539,8 +12570,8 @@ function bind() {
     if (document.activeElement && $('#search').contains(document.activeElement)) document.activeElement.blur();
     suchZu();
     /* Leeren heißt auch: weg mit dem Gesuchten — Pin, Ergebnis und die
-     * hervorgehobene Strecke. Ein offenes Werkzeug (Profil, Messen) bleibt. */
-    if ($('#bottom').dataset.art !== 'werkzeug') {
+     * hervorgehobene Strecke. Ein offenes Werkzeug (Profil, Messen, Route) bleibt. */
+    if (!['werkzeug', 'route'].includes($('#bottom').dataset.art)) {
       closeBottom();
       view.ref = '';
       view.km = null;
