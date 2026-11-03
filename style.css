@@ -135,6 +135,8 @@ body {
    und damit hatte die Fläche die Höhe 0 */
 #glKarte { position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--bg); }
 #glKarte[hidden] { display: none; }
+/* Sättigung des DOP20, wenn Leaflet es zeichnet (applyDopFarbe) */
+.dop-ebene { filter: saturate(var(--dop-farbe, 1)); }
 #map.gl-grund { background: transparent !important; }
 
 /* Maßstab und Attribution stehen nicht mehr in der Karte, sondern in der
@@ -773,9 +775,11 @@ body {
 }
 .stack input:focus { border-color: var(--accent); }
 
+/* Raster statt Flex: Stehen zwei Regler untereinander (Hintergrund, Farbe), beginnen
+   sie trotz verschieden langer Namen an derselben Stelle. */
 .slider-row {
-  display: flex; align-items: center; gap: 12px; margin-top: 10px;
-  font-size: .8rem; color: var(--muted);
+  display: grid; grid-template-columns: 5.6em minmax(0, 1fr) auto; align-items: center;
+  gap: 12px; margin-top: 10px; font-size: .8rem; color: var(--muted);
 }
 .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 /* Firefox gibt Schiebereglern eine Mindestbreite von gut 130 px: Ohne min-width 0

@@ -292,11 +292,16 @@
         <input id="baseOpacity" type="range" min="0" max="100" step="5" value="100">
         <span id="baseOpacityVal" class="slider-val">100&thinsp;%</span>
       </label>
+      <label class="slider-row" for="dopFarbe" id="dopFarbeZeile" hidden>Farbe
+        <input id="dopFarbe" type="range" min="50" max="200" step="10" value="100">
+        <span id="dopFarbeVal" class="slider-val">100&thinsp;%</span>
+      </label>
       <!-- Die Erklärungen stehen erst nach einem Tipp auf „Erklärung" da; offen
            waren sie länger als die Bedienung selbst. -->
       <button type="button" class="erkl-knopf" aria-expanded="false" aria-controls="erklKarte">Erklärung</button>
       <div class="erkl" id="erklKarte" hidden>
       <p class="fine">Ganz nach links heruntergezogen bleibt nur der Bahn- bzw. WMS-Layer stehen.</p>
+      <p class="fine"><strong>Farbe</strong> gibt es nur beim Luftbild: Die DOP20 der Länder kommen recht blass, nach rechts werden sie kräftiger, nach links grauer.</p>
       <p class="fine"><strong>DB-Netz</strong> zeigt Anlagen aus den Infrastrukturdaten der DB InfraGO:
       Bahnübergänge als Andreaskreuz, Brücken mit Geländern, Tunnel gestrichelt mit Portalen an den
       Mundlöchern, Betriebsstellen als Quadrat mit Kürzel. <strong>Lange drücken oder

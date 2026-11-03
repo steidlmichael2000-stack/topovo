@@ -1885,6 +1885,7 @@ const PALETTEN = {
 
 let prefs = {
   theme: 'auto', palette: 'lapis', base: 'osm', orm: true, baseOpacity: 100,
+  dopFarbe: 100,                         // Sättigung des DOP20 in %, 100 = wie geliefert
   abSort: 'nah',                         // Abstecken: Punktliste nach Entfernung, Name oder Datei
   abKompass: false,                      // Abstecken: Pfeil nach dem Handy statt nach der Karte
   parzFarbe: 'auto',                     // 'auto' (nach Grundkarte) oder '#rrggbb'
@@ -2233,7 +2234,8 @@ function glStil() {
     },
     layers: [
       { id: 'hintergrund', type: 'background', paint: { 'background-color': glDeckung < 1 ? '#ffffff' : grund } },
-      { id: 'bild', type: 'raster', source: 'bild', paint: { 'raster-opacity': glDeckung, 'raster-fade-duration': 0 } },
+      { id: 'bild', type: 'raster', source: 'bild', paint: { 'raster-opacity': glDeckung, 'raster-fade-duration': 0,
+        'raster-saturation': b === 'dop' ? glSaettigung(dopFarbe()) : 0 } },
       ...(prefs.ort ? glGrenzen() : []),
       ...(prefs.str ? glStrassen() : []),
       ...(prefs.ort ? glOrte() : [])
@@ -2448,7 +2450,7 @@ function initMap() {
   const BVV = BVV_QUELLE;
 
   // Alle Länder, je Kachel entschieden (DopWms); die Quelle setzt dopQuelleErneuern nach Ausschnitt
-  baseDop = new DopWms({ maxZoom: 22, maxNativeZoom: BVV_NATIV.dop });
+  baseDop = new DopWms({ maxZoom: 22, maxNativeZoom: BVV_NATIV.dop, className: 'dop-ebene' });
   map.on('moveend', dopQuelleErneuern);
 
   /* Schräglicht und nicht die kombinierte Darstellung: Das Schräglicht zeigt
@@ -3361,6 +3363,7 @@ function setBase(which, still = false) {
 
   parzFarbeAnpassen();
   applyBaseOpacity();
+  applyDopFarbe();
   ordneAuflagen();
   radarZeichnen();      // die Konturen des Radars hängen am Grund (RADAR_LINIE_TON)
   ifgAuflageZeichnen(); // die Linien des DB-Netzes auch
@@ -3383,6 +3386,31 @@ function applyBaseOpacity() {
 
   const val = $('#baseOpacityVal');
   if (val) val.textContent = Math.round(o * 100) + ' %';
+}
+
+/* Farbe des DOP20. Die Luftbilder der Länder kommen recht blass, je nach
+ * Befliegung verschieden. Den Regler gibt es nur beim DOP20 — das Relief ist grau.
+ * Zeichnet Leaflet das Bild, wirkt saturate() per CSS auf die Ebene (.dop-ebene);
+ * zeichnet es MapLibre (mit Straßen/Namen), raster-saturation im Stil (glStil). */
+function dopFarbe() {
+  return (prefs.dopFarbe == null ? 100 : prefs.dopFarbe) / 100;
+}
+
+/** raster-saturation zur Verstärkung g wie bei saturate(g). MapLibre rechnet
+ *  bei s > 0 farbe = mittel + (farbe − mittel) / (1,001 − s), also s = 1,001 − 1/g;
+ *  bei s < 0 mischt es mit dem Faktor −s zum Grau, also s = g − 1. */
+function glSaettigung(g) {
+  return g >= 1 ? 1.001 - 1 / g : g - 1;
+}
+
+function applyDopFarbe() {
+  const g = dopFarbe();
+  $('#map').style.setProperty('--dop-farbe', String(g));
+  if (gl) glStilSetzen();
+  const zeile = $('#dopFarbeZeile');
+  if (zeile) zeile.hidden = (prefs.base || 'osm') !== 'dop';
+  const val = $('#dopFarbeVal');
+  if (val) val.textContent = Math.round(g * 100) + ' %';
 }
 
 /* Straßen und Ortsnamen zeichnet MapLibre, über Dunkel und den Bildern. In der
@@ -12651,6 +12679,14 @@ function bind() {
     applyBaseOpacity();
   });
   on('#baseOpacity', 'change', saveStore);
+
+  setVal('#dopFarbe', prefs.dopFarbe == null ? 100 : prefs.dopFarbe);
+  on('#dopFarbe', 'input', ev => {
+    prefs.dopFarbe = Number(ev.target.value);
+    applyDopFarbe();
+  });
+  on('#dopFarbe', 'change', saveStore);
+  applyDopFarbe();
 
   on('#northBtn', 'click', () => {
     if (map.setBearing) map.setBearing(0);
