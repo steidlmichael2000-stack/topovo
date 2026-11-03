@@ -1886,6 +1886,7 @@ const PALETTEN = {
 let prefs = {
   theme: 'auto', palette: 'lapis', base: 'osm', orm: true, baseOpacity: 100,
   dopFarbe: 100,                         // Sättigung des DOP20 in %, 100 = wie geliefert
+  bildHell: 100,                         // Helligkeit von DOP20 und Relief in %, 100 = wie geliefert
   abSort: 'nah',                         // Abstecken: Punktliste nach Entfernung, Name oder Datei
   abKompass: false,                      // Abstecken: Pfeil nach dem Handy statt nach der Karte
   parzFarbe: 'auto',                     // 'auto' (nach Grundkarte) oder '#rrggbb'
@@ -2235,7 +2236,7 @@ function glStil() {
     layers: [
       { id: 'hintergrund', type: 'background', paint: { 'background-color': glDeckung < 1 ? '#ffffff' : grund } },
       { id: 'bild', type: 'raster', source: 'bild', paint: { 'raster-opacity': glDeckung, 'raster-fade-duration': 0,
-        'raster-saturation': b === 'dop' ? glSaettigung(dopFarbe()) : 0 } },
+        'raster-saturation': b === 'dop' ? glSaettigung(dopFarbe()) : 0, 'raster-brightness-max': bildHell() } },
       ...(prefs.ort ? glGrenzen() : []),
       ...(prefs.str ? glStrassen() : []),
       ...(prefs.ort ? glOrte() : [])
@@ -2456,7 +2457,7 @@ function initMap() {
   /* Schräglicht und nicht die kombinierte Darstellung: Das Schräglicht zeigt
    * Dämme, Einschnitte und alte Trassen plastisch, die kombinierte Fassung wäscht
    * genau diese kleinen Formen weg. In BW die Schummerung des LGL (LAND_WMS). */
-  baseRelief = new DopWms({ art: 'relief', maxZoom: 22, maxNativeZoom: BVV_NATIV.relief, attribution: RELIEF_QUELLE });
+  baseRelief = new DopWms({ art: 'relief', className: 'relief-ebene', maxZoom: 22, maxNativeZoom: BVV_NATIV.relief, attribution: RELIEF_QUELLE });
 
   /* Parzellarkarte nur als Umring: Die Farbfassung bringt einen deckend weißen
    * Grund mit (gemessen 0 % durchsichtig) und würde alles darunter verdecken.
@@ -3363,7 +3364,7 @@ function setBase(which, still = false) {
 
   parzFarbeAnpassen();
   applyBaseOpacity();
-  applyDopFarbe();
+  applyBildRegler();
   ordneAuflagen();
   radarZeichnen();      // die Konturen des Radars hängen am Grund (RADAR_LINIE_TON)
   ifgAuflageZeichnen(); // die Linien des DB-Netzes auch
@@ -3388,10 +3389,14 @@ function applyBaseOpacity() {
   if (val) val.textContent = Math.round(o * 100) + ' %';
 }
 
-/* Farbe des DOP20. Die Luftbilder der Länder kommen recht blass, je nach
- * Befliegung verschieden. Den Regler gibt es nur beim DOP20 — das Relief ist grau.
- * Zeichnet Leaflet das Bild, wirkt saturate() per CSS auf die Ebene (.dop-ebene);
- * zeichnet es MapLibre (mit Straßen/Namen), raster-saturation im Stil (glStil). */
+/* Farbe und Helligkeit der Bilder. Die Luftbilder der Länder kommen recht blass,
+ * je nach Befliegung verschieden; den Farbregler gibt es nur beim DOP20 — das
+ * Relief ist grau. Die Helligkeit gilt für beide und geht nur nach unten (bis 30 %), damit Parzellen, Bahn-Layer und
+ * Pins auf hellem Acker besser stehen. Zeichnet Leaflet das Bild, wirken
+ * saturate() und brightness() per CSS auf die Ebene (.dop-ebene, .relief-ebene);
+ * zeichnet es MapLibre (mit Straßen/Namen), raster-saturation und
+ * raster-brightness-max im Stil (glStil). Beides multipliziert jeden Farbwert
+ * mit demselben Faktor, sieht also gleich aus. Die Straßen bleiben hell. */
 function dopFarbe() {
   return (prefs.dopFarbe == null ? 100 : prefs.dopFarbe) / 100;
 }
@@ -3403,14 +3408,23 @@ function glSaettigung(g) {
   return g >= 1 ? 1.001 - 1 / g : g - 1;
 }
 
-function applyDopFarbe() {
-  const g = dopFarbe();
+function bildHell() {
+  return (prefs.bildHell == null ? 100 : prefs.bildHell) / 100;
+}
+
+function applyBildRegler() {
+  const g = dopFarbe(), b = prefs.base || 'osm';
   $('#map').style.setProperty('--dop-farbe', String(g));
+  $('#map').style.setProperty('--bild-hell', String(bildHell()));
   if (gl) glStilSetzen();
   const zeile = $('#dopFarbeZeile');
-  if (zeile) zeile.hidden = (prefs.base || 'osm') !== 'dop';
+  if (zeile) zeile.hidden = b !== 'dop';
   const val = $('#dopFarbeVal');
   if (val) val.textContent = Math.round(g * 100) + ' %';
+  const hZeile = $('#bildHellZeile');
+  if (hZeile) hZeile.hidden = b !== 'dop' && b !== 'relief';
+  const hVal = $('#bildHellVal');
+  if (hVal) hVal.textContent = Math.round(bildHell() * 100) + ' %';
 }
 
 /* Straßen und Ortsnamen zeichnet MapLibre, über Dunkel und den Bildern. In der
@@ -12683,10 +12697,16 @@ function bind() {
   setVal('#dopFarbe', prefs.dopFarbe == null ? 100 : prefs.dopFarbe);
   on('#dopFarbe', 'input', ev => {
     prefs.dopFarbe = Number(ev.target.value);
-    applyDopFarbe();
+    applyBildRegler();
   });
   on('#dopFarbe', 'change', saveStore);
-  applyDopFarbe();
+  setVal('#bildHell', prefs.bildHell == null ? 100 : prefs.bildHell);
+  on('#bildHell', 'input', ev => {
+    prefs.bildHell = Number(ev.target.value);
+    applyBildRegler();
+  });
+  on('#bildHell', 'change', saveStore);
+  applyBildRegler();
 
   on('#northBtn', 'click', () => {
     if (map.setBearing) map.setBearing(0);

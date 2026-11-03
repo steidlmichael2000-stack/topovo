@@ -135,8 +135,9 @@ body {
    und damit hatte die Fläche die Höhe 0 */
 #glKarte { position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--bg); }
 #glKarte[hidden] { display: none; }
-/* Sättigung des DOP20, wenn Leaflet es zeichnet (applyDopFarbe) */
-.dop-ebene { filter: saturate(var(--dop-farbe, 1)); }
+/* Farbe und Abdunkeln der Bilder, wenn Leaflet sie zeichnet (applyBildRegler) */
+.dop-ebene { filter: saturate(var(--dop-farbe, 1)) brightness(var(--bild-hell, 1)); }
+.relief-ebene { filter: brightness(var(--bild-hell, 1)); }
 #map.gl-grund { background: transparent !important; }
 
 /* Maßstab und Attribution stehen nicht mehr in der Karte, sondern in der
