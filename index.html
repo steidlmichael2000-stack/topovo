@@ -223,13 +223,6 @@
   </div>
 
   <!-- ---------- Menü ---------- -->
-  <!-- Skala der Höhenfarben (hoehenSkalaZeigen): oben hoch, unten tief -->
-  <div id="hoehenSkala" class="hoehen-skala" hidden aria-live="polite">
-    <div class="hoehen-balken" aria-hidden="true"></div>
-    <div class="hoehen-werte"><span id="hoehenHoch"></span><span id="hoehenMitte"></span><span id="hoehenTief"></span></div>
-    <div id="hoehenSkalaText" class="hoehen-text"></div>
-    <button id="hoehenKnopf" class="seg-btn hoehen-knopf" type="button">Ausschnitt einfärben</button>
-  </div>
   <div id="sheet" class="sheet" hidden>
 
     <details class="sheet-sec" data-sec="karte">
@@ -244,12 +237,20 @@
       </div>
       <div class="seg" role="group" aria-label="Grundkarte, Bild" style="margin-top:7px">
         <button class="seg-btn" type="button" data-base="dop">Luftbild</button>
-        <button class="seg-btn" type="button" data-base="relief">Relief</button>
+        <!-- Tippen wählt das Relief, lange drücken oder Rechtsklick öffnet darunter
+             die Wahl Grau oder Höhenfarben — wie bei DB-Netz und Festpunkten. -->
+        <button class="seg-btn parz-knopf" type="button" data-base="relief" id="reliefBtn" aria-controls="reliefWahl"
+                aria-expanded="false" title="Lange drücken oder Rechtsklick: grau oder Höhenfarben"><svg
+                class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg>Relief</button>
       </div>
-      <!-- Nur beim Relief: das Schräglicht der Länder oder Höhenfarben aus dem DGM1 -->
-      <div class="seg seg-paar" id="reliefArt" role="group" aria-label="Darstellung des Reliefs" style="margin-top:7px" hidden>
-        <button class="seg-btn" type="button" data-relief="grau">Schräglicht</button>
-        <button class="seg-btn" type="button" data-relief="farbe">Höhenfarben</button>
+      <div class="parz-wahl" id="reliefWahl" hidden>
+        <p class="pal-label">Relief zeigen</p>
+        <div class="seg seg-paar" role="group" aria-label="Darstellung des Reliefs">
+          <button class="seg-btn" type="button" data-relief="grau">Grau</button>
+          <button class="seg-btn" type="button" data-relief="farbe">Höhenfarben</button>
+        </div>
+        <p class="fine wahl-hinweis">Höhenfarben färben einen Ausschnitt nach der Geländehöhe aus dem DGM1 —
+        nur in Bayern und Baden-Württemberg, auf Knopfdruck in der Leiste unten.</p>
       </div>
       <p class="pal-label">Auflagen</p>
       <div class="seg" role="group" aria-label="Auflagen">
@@ -318,7 +319,7 @@
       <div class="erkl" id="erklKarte" hidden>
       <p class="fine">Ganz nach links heruntergezogen bleibt nur der Bahn- bzw. WMS-Layer stehen.</p>
       <p class="fine"><strong>Farbe</strong> gibt es nur beim Luftbild: Die DOP20 der Länder kommen recht blass, nach rechts werden sie kräftiger, nach links grauer.</p>
-      <p class="fine"><strong>Höhenfarben</strong> färbt das Relief nach der Geländehöhe aus dem DGM1 — nur den Ausschnitt, in dem man oben rechts auf „Ausschnitt einfärben“ tippt, ab Zoomstufe 16. Blau ist das Tiefste darin, Rot das Höchste. Das lädt je Kilometer 2–4 MB, danach liegt es im Vorrat.</p>
+      <p class="fine"><strong>Höhenfarben</strong> (lange drücken oder Rechtsklick auf Relief) färbt das Relief nach der Geländehöhe aus dem DGM1 — nur den Ausschnitt, in dem man in der Leiste unten auf „Ausschnitt einfärben“ tippt, ab Zoomstufe 16. Blau ist das Tiefste darin, Rot das Höchste. Das lädt je Kilometer 2–4 MB, danach liegt es im Vorrat.</p>
       <p class="fine"><strong>Helligkeit</strong> wirkt auf Luftbild und Relief; etwas dunkler heben sich Parzellen, Bahn-Layer und Pins besser ab.</p>
       <p class="fine"><strong>DB-Netz</strong> zeigt Anlagen aus den Infrastrukturdaten der DB InfraGO:
       Bahnübergänge als Andreaskreuz, Brücken mit Geländern, Tunnel gestrichelt mit Portalen an den
@@ -598,6 +599,22 @@
   <!-- ---------- Abstecken ----------
        Eigene Leiste über der unteren, damit ein Ergebnis dort das Abstecken nicht
        verdrängt. Im Quelltext vor #bottom: Die Abstände hängen an der Reihenfolge. -->
+  <!-- ---------- Höhenfarben ----------
+       Wie die Leisten der Werkzeuge unten (ab 1010 px unten mittig), über dem
+       Abstecken. Skala und Knopf zum Einfärben; × schaltet zurück aufs Schräglicht. -->
+  <div id="hoehenLeiste" class="bar bar-ziel bar-hoehen" hidden>
+    <button type="button" id="hoehenZu" class="bb-close" aria-label="Höhenfarben ausschalten">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="bb-head"><p class="bb-title">Höhenfarben</p></div>
+    <div id="hoehenSkala" class="hoehen-skala" aria-live="polite">
+      <div class="hoehen-balken" aria-hidden="true"></div>
+      <div class="hoehen-werte"><span id="hoehenTief"></span><span id="hoehenMitte"></span><span id="hoehenHoch"></span></div>
+    </div>
+    <p id="hoehenSkalaText" class="bb-note plain"></p>
+    <div class="bb-actions"><button type="button" id="hoehenKnopf" class="maps">Ausschnitt einfärben</button></div>
+  </div>
+
   <div id="ziel" class="bar bar-ziel" hidden></div>
 
   <!-- ---------- untere Leiste ---------- -->

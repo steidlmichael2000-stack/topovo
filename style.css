@@ -183,7 +183,7 @@ body {
   display: flex;
 }
 .bar-bottom, .bar-ziel { order: 2; }
-#ziel[hidden] + #bottom[hidden] + .quellen { margin-bottom: calc(6px + env(safe-area-inset-bottom)); }
+#hoehenLeiste[hidden] + #ziel[hidden] + #bottom[hidden] + .quellen { margin-bottom: calc(6px + env(safe-area-inset-bottom)); }
 /* Bei offenem Menü treten die Leisten zurück (openSheet) — wie ohne Leiste */
 .menue-offen .bar-bottom, .menue-offen .bar-ziel { display: none; }
 .menue-offen .quellen { margin-bottom: calc(6px + env(safe-area-inset-bottom)); }
@@ -341,7 +341,7 @@ body {
   :root { --saeule: var(--gap); --grund: 6px; }
   /* Die Zeile bleibt als Abstandhalter im Fluss — ihr margin-top: auto hält die
      Leisten unten —, ihr Inhalt wandert ins Eck */
-  .quellen, #ziel[hidden] + #bottom[hidden] + .quellen { height: 0; margin-bottom: 0; }
+  .quellen, #hoehenLeiste[hidden] + #ziel[hidden] + #bottom[hidden] + .quellen { height: 0; margin-bottom: 0; }
   .quellen-kasten { position: fixed; left: var(--gap); bottom: calc(6px + env(safe-area-inset-bottom)); }
   /* Der aufgeklappte Quellentext bleibt in seiner Ecke, so breit wie die Seitenleiste */
   .quellen-text {
@@ -391,6 +391,20 @@ body {
   flex: none;
 }
 .bar-ziel:has(+ #bottom[hidden]) { margin-bottom: calc(6px + env(safe-area-inset-bottom)); }
+#hoehenLeiste:has(+ #ziel[hidden] + #bottom[hidden]) { margin-bottom: calc(6px + env(safe-area-inset-bottom)); }
+
+/* Höhenfarben: Skala waagerecht, links tief, rechts hoch — die Farben wie HOEHEN_RAMPE */
+.hoehen-skala { margin-top: 10px; }
+.hoehen-balken {
+  height: 10px; border-radius: 3px;
+  background: linear-gradient(to right, #2c3e94, #2a7dc4, #33b2b0, #7ccc6c, #e6dd55, #f19a3c, #c8382f);
+}
+.hoehen-werte {
+  display: flex; justify-content: space-between; margin-top: 4px;
+  font-size: .76rem; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.hoehen-skala.ohne-skala { display: none; }
+.bar-hoehen .bb-actions .maps:disabled { background: var(--panel-2); color: var(--muted-2); }
 
 /* ---------- Suchzeile ---------- */
 
@@ -555,28 +569,6 @@ body {
 /* Bei offenem Menü steht sie nicht zwischen Suchzeile und Menü */
 .ui:has(> .sheet:not([hidden])) > .radar { display: none; }
 
-/* Skala der Höhenfarben: rechts unter der Suchzeile, am Desktop links neben
-   der Knopfsäule. Oben hoch, unten tief — die Farben wie HOEHEN_RAMPE. */
-.hoehen-skala {
-  flex: none; align-self: flex-end;
-  margin: 8px var(--saeule) 0 0; padding: 8px 10px 7px 8px;
-  display: grid; grid-template-columns: 10px auto; column-gap: 7px; row-gap: 5px;
-  background: var(--glass); border: 1px solid transparent; border-radius: var(--r-knopf);
-  box-shadow: var(--shadow);
-  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-  font-size: .72rem; color: var(--text); font-variant-numeric: tabular-nums;
-}
-.hoehen-balken {
-  height: 120px; border-radius: 3px;
-  background: linear-gradient(to top, #2c3e94, #2a7dc4, #33b2b0, #7ccc6c, #e6dd55, #f19a3c, #c8382f);
-}
-.hoehen-werte { display: flex; flex-direction: column; justify-content: space-between; text-align: right; line-height: 1; }
-.hoehen-text { grid-column: 1 / -1; color: var(--muted); font-size: .66rem; text-align: right; }
-.hoehen-skala.ohne-skala { grid-template-columns: auto; }
-.hoehen-skala.ohne-skala .hoehen-balken, .hoehen-skala.ohne-skala .hoehen-werte { display: none; }
-.hoehen-knopf { grid-column: 1 / -1; padding: 6px 10px; font-size: .74rem; }
-.hoehen-skala.ohne-skala .hoehen-text { text-align: left; }
-.ui:has(> .sheet:not([hidden])) > .hoehen-skala { display: none; }
 
 .radar-zeile { display: flex; align-items: center; gap: 8px; }
 .radar-knopf {
@@ -1904,7 +1896,7 @@ input[type="range"] { min-width: 0; }
   .bar-bottom:not([data-art="werkzeug"]) { margin: 8px auto 0; border-top: 1px solid var(--line); border-radius: 0; }
   .bar-bottom:not([hidden]):not([data-art="werkzeug"]) { animation-name: von-oben; }
   /* Die Quellenzeile ist nur noch Abstandhalter, ihr Inhalt steht unten in der Leiste */
-  .quellen, #ziel[hidden] + #bottom[hidden] + .quellen, .menue-offen .quellen { order: 3; height: 0; margin: 0; }
+  .quellen, #hoehenLeiste[hidden] + #ziel[hidden] + #bottom[hidden] + .quellen, .menue-offen .quellen { order: 3; height: 0; margin: 0; }
   /* Unten in der Leiste so breit wie die Suche und gefüllt wie sie — kein Glas auf Glas;
      zugeklappt wieder als kleiner Kasten aus Glas über der Karte */
   .quellen-kasten {
@@ -1940,8 +1932,6 @@ input[type="range"] { min-width: 0; }
 
   /* Knöpfe oben rechts: Standort, Abstecken, Nord */
   .maploc, .mapziel, .north { top: 16px; right: 16px; bottom: auto; }
-  .hoehen-skala:not([hidden]) { position: fixed; top: 16px; right: 68px; margin: 0; }
-  .ui:has(> .sheet:not([hidden])) > .hoehen-skala:not([hidden]) { display: grid; }
   .mapziel, .mapziel[hidden] ~ .north { top: 68px; }
   .mapziel:not([hidden]) ~ .north { top: 120px; bottom: auto; }
   /* Messen läuft über die Werkzeugleiste */

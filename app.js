@@ -3433,8 +3433,6 @@ function applyBildRegler() {
   if (zeile) zeile.hidden = b !== 'dop';
   const val = $('#dopFarbeVal');
   if (val) val.textContent = Math.round(g * 100) + ' %';
-  const reliefArt = $('#reliefArt');
-  if (reliefArt) reliefArt.hidden = b !== 'relief';
   document.querySelectorAll('[data-relief]').forEach(k => {
     const an = (k.dataset.relief === 'farbe') === !!prefs.reliefFarbe;
     k.classList.toggle('is-on', an);
@@ -3622,29 +3620,35 @@ function hoehenSkalaErneuern() {
   hoehenSkalaZeigen();
 }
 
-/** Der Kasten rechts oben: Farbbalken mit Höhen, darunter der Knopf zum
- *  Einfärben — oder der Hinweis, näher heranzugehen. */
+/** Die Leiste unten (wie beim Querprofil): Farbbalken mit Höhen, darunter
+ *  der Knopf zum Einfärben — oder der Hinweis, näher heranzugehen. */
 function hoehenSkalaZeigen() {
-  const kasten = $('#hoehenSkala');
-  if (!kasten || !map) return;
-  kasten.hidden = !hoehenFarbenAn();
-  if (kasten.hidden) return;
+  const leiste = $('#hoehenLeiste');
+  if (!leiste || !map) return;
+  const vorher = leiste.hidden;
+  leiste.hidden = !hoehenFarbenAn();
+  if (leiste.hidden !== vorher) updateBH();
+  if (leiste.hidden) return;
   const nah = map.getZoom() >= DGM_ZOOM;
   const skala = hoehenGezeichnet() && !!hoehenSkala;
-  kasten.classList.toggle('ohne-skala', !skala);
+  $('#hoehenSkala').classList.toggle('ohne-skala', !skala);
   const knopf = $('#hoehenKnopf');
-  knopf.hidden = !nah || dgmLaeuft > 0;
-  knopf.textContent = hoehenBereich ? 'Hier neu einfärben' : 'Ausschnitt einfärben';
+  // Ausgegraut statt weg, damit die Leiste beim Laden nicht in der Höhe springt
+  knopf.disabled = !nah || dgmLaeuft > 0;
+  knopf.textContent = dgmLaeuft ? 'Höhen laden …' : hoehenBereich ? 'Hier neu einfärben' : 'Ausschnitt einfärben';
+  knopf.classList.toggle('maps', !hoehenBereich);   // Signalfarbe nur für das erste Einfärben
   const text = $('#hoehenSkalaText');
-  if (dgmLaeuft) text.textContent = 'Höhen laden …';
-  else if (!nah) text.textContent = 'Zum Einfärben näher heran';
-  else text.textContent = skala ? 'm ü. NHN' : '';
+  if (!nah) text.textContent = 'Zum Einfärben näher heran.';
+  else if (!skala) text.textContent = 'Färbt den Ausschnitt nach der Geländehöhe: Blau ist das Tiefste darin, Rot das Höchste.';
+  else text.textContent = '';
   text.hidden = !text.textContent;
+  const hoehe = leiste.getBoundingClientRect().height;
+  if (Math.abs(hoehe - (leiste._hoehe || 0)) > 1) { leiste._hoehe = hoehe; updateBH(); }
   if (!skala) return;
   const { tief, hoch } = hoehenSkala;
   const stellen = hoch - tief < 20 ? 1 : 0;
   const m = v => v.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
-  $('#hoehenHoch').textContent = m(hoch);
+  $('#hoehenHoch').textContent = m(hoch) + ' m';
   $('#hoehenMitte').textContent = m((hoch + tief) / 2);
   $('#hoehenTief').textContent = m(tief);
 }
@@ -6223,7 +6227,7 @@ function ifgWahlZeigen(an) {
 
 /** Tippen schaltet die Auflage, lange drücken oder Rechtsklick öffnet ihre
  *  Auswahl — genau wie parzKnopfBinden. Für DB-Netz und Festpunkte. */
-function auswahlKnopfBinden(kennung, wahlBox, zeigen) {
+function auswahlKnopfBinden(kennung, wahlBox, zeigen, tippen = () => toggleOverlay(kennung)) {
   const btn = $(`#${kennung}Btn`);
   if (!btn) return;
   let timer = 0, lang = false, zuletzt = 0;
@@ -6243,11 +6247,22 @@ function auswahlKnopfBinden(kennung, wahlBox, zeigen) {
   btn.addEventListener('contextmenu', ev => { ev.preventDefault(); wahl(); });
   btn.addEventListener('click', () => {
     if (lang) { lang = false; return; }
-    toggleOverlay(kennung);
+    tippen();
   });
 }
 
 function ifgKnopfBinden() { auswahlKnopfBinden('ifg', '#ifgWahl', ifgWahlZeigen); }
+
+/* Das Relief: Tippen wählt es als Grundkarte, lange drücken öffnet die Wahl
+ * Grau oder Höhenfarben (reliefWahl). Sie steckt bewusst dort und nicht als
+ * eigene Reihe unter den Grundkarten: So sah sie wie zwei weitere Grundkarten
+ * aus (Nutzer, 03.11.2026). */
+function reliefWahlZeigen(an) {
+  const box = $('#reliefWahl'), btn = $('#reliefBtn');
+  if (box) box.hidden = !an;
+  if (btn) btn.setAttribute('aria-expanded', an ? 'true' : 'false');
+}
+function reliefKnopfBinden() { auswahlKnopfBinden('relief', '#reliefWahl', reliefWahlZeigen, () => setBase('relief')); }
 
 /* ============================ Auflage Festpunkte (BW) ============================
  *
@@ -10772,7 +10787,7 @@ function updateBH() {
   // (Profil, Polygon …) zuunterst, darüber Abstecken und Live; das Radar steht oben mittig
   if (SEITENLEISTE.matches) {
     const b = $('#bottom');
-    const stapel = [b.dataset.art === 'werkzeug' ? b : null, $('#ziel'), $('#live')]
+    const stapel = [b.dataset.art === 'werkzeug' ? b : null, $('#ziel'), $('#hoehenLeiste'), $('#live')]
       .filter(el => el && !el.hidden);
     // Unten am Rand; die Werkzeugleiste steht hochkant rechts daneben
     let y = 16;
@@ -10784,7 +10799,7 @@ function updateBH() {
   let grundlinie = UNTEN_RAND;
   // Bei offenem Menü sind die Leisten ausgeblendet (openSheet) und zählen nicht
   if (!document.body.classList.contains('menue-offen')) {
-    for (const el of [$('#bottom'), $('#ziel')]) {
+    for (const el of [$('#bottom'), $('#ziel'), $('#hoehenLeiste')]) {
       if (el && !el.hidden) grundlinie += el.getBoundingClientRect().height + 8;
     }
   }
@@ -12887,11 +12902,14 @@ function bind() {
   on('#km', 'focus', closeSuggest);
   on('#km', 'input', felderAufQ);
 
-  document.querySelectorAll('[data-base]').forEach(b => b.addEventListener('click', () => setBase(b.dataset.base)));
+  document.querySelectorAll('[data-base]').forEach(b => {
+    if (b.id !== 'reliefBtn') b.addEventListener('click', () => setBase(b.dataset.base));   // Relief: reliefKnopfBinden
+  });
   on('#ormBtn', 'click', () => toggleOverlay('orm'));
   parzKnopfBinden();
   buildParzRow();
   ifgKnopfBinden();
+  reliefKnopfBinden();
   ifgWahlBauen();
   fpKnopfBinden();
   fpWahlBauen();
@@ -12929,10 +12947,12 @@ function bind() {
   });
   on('#bildHell', 'change', saveStore);
   on('#hoehenKnopf', 'click', hoehenEinfaerben);
+  on('#hoehenZu', 'click', () => document.querySelector('[data-relief="grau"]').click());
   document.querySelectorAll('[data-relief]').forEach(k => k.addEventListener('click', () => {
     prefs.reliefFarbe = k.dataset.relief === 'farbe';
     hoehenBereich = null;          // eingefärbt wird erst wieder auf Knopfdruck
     hoehenSkala = null;
+    if ((prefs.base || 'osm') !== 'relief') setBase('relief');   // wer Höhenfarben wählt, will das Relief
     grundAnwenden();
     applyBildRegler();
     hoehenSkalaZeigen();
