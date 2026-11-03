@@ -3050,7 +3050,10 @@ async function dopKachel(art, z, x, y, signal) {
        * Weiß dahinter, weit herausgezoomt stand sonst ein heller Strich auf
        * jeder Landesgrenze. */
       quelle = !fastLeer(daten[zust], i) ? zust : daten.findIndex(d => !fastLeer(d, i));
-      if (quelle < 0) { quelle = daten[zust] ? zust : daten.findIndex(Boolean); luecke.push(i); }
+      /* Fiel der Dienst des Landes aus, bleibt seine Fläche durchsichtig: Die
+       * Nachbarn sind dort weiß, und eine weiße Fläche sah aus wie ein Fehler
+       * im Bild statt wie ein fehlendes (SH und ST unter localhost). */
+      if (quelle < 0 && daten[zust]) { quelle = zust; luecke.push(i); }
     } else {
       quelle = daten.findIndex(d => !fastLeer(d, i));
     }
@@ -5391,7 +5394,7 @@ function kmlListe() {
         </button>
         <button class="kml-tog${a.sichtbar ? ' is-on' : ''}" type="button" data-ktog="${i}"
                 aria-pressed="${a.sichtbar ? 'true' : 'false'}">
-          <span class="kml-txt"><span class="kml-nm">${esc(a.name)}</span><small>${esc(unter)}</small></span>
+          <span class="kml-txt"><span class="kml-nm" title="${esc(a.name)}">${esc(a.name).replace(/([_.-])/g, '$1<wbr>')}</span><small>${esc(unter)}</small></span>
         </button>
         <button class="kml-ic" type="button" data-kzoom="${i}" aria-label="Auf ${esc(a.name)} zoomen">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5M15 4h5v5M15 20h5v-5M9 20H4v-5"/></svg>
@@ -6936,6 +6939,8 @@ function messLeiste() {
 function messStart(art = 'polygon') {
   if (routeAn) routeEnde(false);
   if (profModus) profEnde();
+  // Die Mappe teilt sich #bottom mit dem Messen; offen gelassen blieb ihr Knopf an
+  if (mappeOffen) { mappeOffen = false; mappeStand = ''; mappeFertig = null; }
   messModus = true;
   messArt = art === 'live' ? 'live' : 'polygon';
   messPunkte = [];
@@ -10464,7 +10469,9 @@ function kartePassen(grenzen, o = {}) {
   const links = seitenBreite();
   if (links) {
     const tl = o.paddingTopLeft || o.padding || [30, 30], br = o.paddingBottomRight || o.padding || [30, 30];
-    o = { ...o, paddingTopLeft: [links + tl[0], 30], paddingBottomRight: [Math.max(br[0], 76), untenBelegt()] };
+    const radar = $('#radar');
+    const oben = radar.hidden ? 30 : Math.round(radar.getBoundingClientRect().bottom) + 20;
+    o = { ...o, paddingTopLeft: [links + tl[0], oben], paddingBottomRight: [Math.max(br[0], 100), untenBelegt()] };
     delete o.padding;
   } else if (!$('#routeKopf').hidden) {
     // Am Handy stehen Start und Ziel oben über der Karte, „Mit dem Auto" unten
@@ -10478,8 +10485,8 @@ function kartePassen(grenzen, o = {}) {
 
 /** Wie viel unten von Anwendungen und Werkzeugleiste belegt ist (ab 1010 px). */
 function untenBelegt() {
-  let oben = window.innerHeight - 16 - 60;
-  for (const el of [$('#bottom'), $('#ziel'), $('#radar'), $('#live')]) {
+  let oben = window.innerHeight - 16;
+  for (const el of [$('#bottom'), $('#ziel'), $('#live')]) {      // das Radar steht oben
     if (el.hidden || getComputedStyle(el).position !== 'fixed') continue;
     oben = Math.min(oben, el.getBoundingClientRect().top);
   }
@@ -10498,17 +10505,13 @@ function sichtSetzen(ll, z = map.getZoom()) {
 
 function updateBH() {
   // Ab 1010 px: Anwendungen unten mittig übereinander, die zuletzt geöffnete
-  // (Profil, Polygon …) zuunterst, darüber Abstecken, Radar, Live
+  // (Profil, Polygon …) zuunterst, darüber Abstecken und Live; das Radar steht oben mittig
   if (SEITENLEISTE.matches) {
     const b = $('#bottom');
-    const stapel = [b.dataset.art === 'werkzeug' ? b : null, $('#ziel'), $('#radar'), $('#live')]
+    const stapel = [b.dataset.art === 'werkzeug' ? b : null, $('#ziel'), $('#live')]
       .filter(el => el && !el.hidden);
-    // Unten am Rand wie die Werkzeugleiste; nur wenn das Fenster so schmal ist,
-    // dass die Anwendungen bis an sie heranreichen, stehen sie über ihr
-    const wz = $('#werkzeuge').getBoundingClientRect();
-    const frei = !stapel.length || document.body.classList.contains('werkzeuge-zu')
-      || stapel[0].getBoundingClientRect().right + 12 <= wz.left;
-    let y = frei ? 16 : 16 + 60 + 12;    // 60: --werkzeug-h
+    // Unten am Rand; die Werkzeugleiste steht hochkant rechts daneben
+    let y = 16;
     for (const el of stapel) {
       el.style.setProperty('--unten', y + 'px');
       y += Math.round(el.getBoundingClientRect().height) + 8;

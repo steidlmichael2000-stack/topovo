@@ -85,9 +85,10 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Das Ergebnis',
-    text: 'Unten steht, wo der Kilometer liegt — mit der Genauigkeit und der Geländehöhe. Daneben ' +
-      'Google Maps, das i für Koordinate und Herkunft der Rechnung und Teilen. Der orange Knopf zeichnet ' +
-      'das Profil am Gleis. Die Kilometer der Strecke stehen beschriftet auf der Karte.',
+    text: 'Hier steht, wo der Kilometer liegt — mit der Genauigkeit und der Geländehöhe. Oben neben dem × ' +
+      'das i für Koordinate und Herkunft der Rechnung und Teilen. Darunter Google Maps, die Route mit dem ' +
+      'Auto und der orange Knopf für das Profil am Gleis. Die Kilometer der Strecke stehen beschriftet auf ' +
+      'der Karte.',
     ziel: () => tourSichtbar('#bottom'),
     vorher: async lauf => {
       if ($('#q').value.trim() !== TOUR_BEISPIEL) await tourTippen(TOUR_BEISPIEL, lauf);
@@ -119,13 +120,20 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Messen und Profil',
-    text: 'Der Messknopf öffnet vier Werkzeuge. Profil: der Geländeschnitt zwischen zwei getippten ' +
-      'Punkten. Profilmappe: Querprofile an einer Liste von Kilometern, als ein PDF. Polygon: Strecken ' +
-      'und — geschlossen — Flächen. Live: die Entfernung vom Startpunkt zum Fadenkreuz. Ein zweiter ' +
-      'Tipp auf den Messknopf beendet, was gerade läuft.',
-    ziel: () => tourSichtbar('#messMenue'),
-    vorher: () => messMenueAuf(true),
-    nachher: () => messMenueAuf(false)
+    /* Ab 1010 px gibt es keinen Messknopf: Die Werkzeuge stehen hochkant rechts unten */
+    get text() {
+      return (SEITENLEISTE.matches
+        ? 'Die Werkzeugleiste rechts unten. '
+        : 'Der Messknopf öffnet vier Werkzeuge. ') +
+        'Profil: der Geländeschnitt zwischen zwei getippten Punkten. Profilmappe: Querprofile an einer ' +
+        'Liste von Kilometern, als ein PDF. Polygon: Strecken und — geschlossen — Flächen. Live: die ' +
+        'Entfernung vom Startpunkt zum Fadenkreuz. ' + (SEITENLEISTE.matches
+        ? 'Dazu Regenradar und KML. Ein zweiter Klick auf ein Werkzeug beendet es.'
+        : 'Ein zweiter Tipp auf den Messknopf beendet, was gerade läuft.');
+    },
+    ziel: () => SEITENLEISTE.matches ? tourSichtbar('#werkzeuge') : tourSichtbar('#messMenue'),
+    vorher: () => { if (!SEITENLEISTE.matches) messMenueAuf(true); },
+    nachher: () => { if (!SEITENLEISTE.matches) messMenueAuf(false); }
   },
   {
     titel: 'Das Geländeprofil',
@@ -164,9 +172,12 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Karten und Auflagen',
-    text: 'Hinter dem Regler-Symbol: Karte, dunkle Karte, das amtliche Luftbild (DOP20) und ' +
-      'das Geländerelief. Darüber lassen sich Bahn-Layer, Parzellen, Straßen und Ortsnamen legen — ' +
-      'lange drücken auf „Parzellen" wählt ihre Farbe. Unter „Erklärung" steht zu jedem mehr.',
+    get text() {
+      return (SEITENLEISTE.matches ? 'Unter „Karte“ in der Spalte links: ' : 'Hinter dem Regler-Symbol: ') +
+        'Karte, dunkle Karte, das amtliche Luftbild (DOP20) und das Geländerelief. Darüber lassen sich ' +
+        'Bahn-Layer, Parzellen, Straßen und Ortsnamen legen — lange drücken (am Rechner: Rechtsklick) auf ' +
+        '„Parzellen" wählt ihre Farbe. Unter „Erklärung" steht zu jedem mehr.';
+    },
     ziel: () => tourSichtbar('#sheet'),
     vorher: () => tourAbschnitt('karte'),
     nachher: () => closeSheet()

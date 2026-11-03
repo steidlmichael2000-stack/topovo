@@ -376,10 +376,13 @@ Symbolspalte `#schiene` ganz links (wie BayernAtlas, 64 px), daneben `.ui` als f
 (Glas als `.ui::before` — auf `.ui` selbst würde es die festen Anwendungen an der Leiste statt am
 Fenster ausrichten). In der Leiste: Suche, Ergebnis und der über die Spalte gewählte Menüabschnitt
 (`schieneWaehlen`, `#sheet[data-nur]`). Anwendungen (Profil, Polygon, Live, Mappe, Abstecken,
-Radar, Live-Zeile) stehen unten mittig über der Karte, gestapelt von `updateBH` über `--unten` — unten am Rand, nur bei schmalem Fenster über der Werkzeugleiste.
+Live-Zeile) stehen unten mittig über der Karte, gestapelt von `updateBH` über `--unten`, zwischen Leiste
+und Werkzeugleiste. Das **Regenradar oben mittig** (03.11.2026, so gewünscht: kam unten den Werkzeugen in
+die Quere); `kartePassen` hält oben seinen Platz frei.
 `#bottom[data-art="werkzeug"]` unterscheidet Werkzeug von Ergebnis — wer eine neue Leiste in
 `#bottom` schreibt, setzt oder löscht das. Standort, Abstecken, Nord oben rechts;
-`#werkzeuge` (Messen über `data-messart`, Radar, KML; Knopf `#werkzeugeBtn` unten in der Spalte blendet sie aus, `body.werkzeuge-zu`, gemerkt in `prefs.werkzeugeAus`) unten rechts; Messknopf und Messmenü sind aus.
+`#werkzeuge` (Messen über `data-messart`, Radar, KML; Knopf `#werkzeugeBtn` unten in der Spalte blendet sie aus, `body.werkzeuge-zu`, gemerkt in `prefs.werkzeugeAus`) **hochkant** unten rechts (`--werkzeug-b`, seit 03.11.2026 —
+quer stieß sie an die Anwendungen); Messknopf und Messmenü sind aus, die Tour zeigt dort auf `#werkzeuge`.
 
 Der Griff `#leisteGriff` mittig an der Kante oder ein Tipp aufs gewählte Symbol klappt die Leiste zu (`leisteZu`, `body.leiste-zu`), jedes Symbol
 und jedes neue Ergebnis (`renderBottom`, `showStatus`, `showError`, `showPicker`, `openSheet`) wieder auf.
@@ -417,9 +420,10 @@ MESSWERK bleibt, aber gerundet und mit Glas. Alles hängt an Tokens oben in `sty
 - Aufklapp-Animationen (`von-oben`, `von-unten`, `vom-knopf`, `einblenden`, Kurve `--auf`) nur mit
   transform/opacity, sonst stimmen die Höhen in `updateBH` nicht. Die Tour misst nach `animationend`.
 
-**Offen (Stand 01.11.2026, Feintuning folgt):** Die Tour zeigt am Desktop auf Knöpfe, die dort aus
-sind (Menü-, Messknopf). Polygon, Live, Mappe und Abstecken sind am Desktop nicht einzeln
-durchgeklickt. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfeile an Leisten
+**Stand 03.11.2026:** Desktop durchgeklickt (Suche, Leiste zu/auf, alle Abschnitte, Grundkarten, Hell,
+Profil, Mappe, Polygon, Live, Radar, Route, Tour mit allen 11 Zielen, KML-Import mit sieben Dateien des
+Nutzers, ~890 Objekte, und Abstecken mit vorgetäuschtem Standort). KML-Namen brechen zweizeilig nach
+„_“/„-“/„.“ um (`<wbr>` in der Liste), am Desktop stand sonst nur „AP_PS-Punk…“. Der Nutzer will Schalter als Knopf in der Symbolspalte, keine Pfeile an Leisten
 (der Pfeil an der Werkzeugleiste wurde verworfen), und kein Plus/Minus.
 
 ## November 2026, Rückmeldungen vom Handy
