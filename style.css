@@ -1964,7 +1964,6 @@ body { font-variant-numeric: tabular-nums; }
 }
 
 /* Start der Route als Adresse: Feld wie die Suchzeile, Treffer klappen darunter auf */
-.route-start { margin-top: 9px; }
 #routeStartFeld {
   width: 100%; box-sizing: border-box;
   padding: 10px 12px; border: 1px solid transparent; border-radius: var(--r-knopf);
@@ -1988,21 +1987,43 @@ body { font-variant-numeric: tabular-nums; }
 @keyframes route-ort-puls { to { opacity: .35; } }
 #routeStartFeld::placeholder { color: var(--muted-2); opacity: 1; }
 #routeStartFeld:focus { border-color: var(--accent); }
-.route-vorschlag { border-top: none; padding: 4px 0 0; max-height: 34vh; }
+.route-vorschlag { margin-left: -4px; padding: 4px 0 2px; max-height: 40vh; }
 /* Unter 16 px zoomt Safari auf dem iPhone beim Antippen ins Feld */
 @media (pointer: coarse) { #routeStartFeld { font-size: 1rem; } }
 
-/* Route am Handy oben statt der Suchzeile, wie in Google Maps: Startfeld oben,
-   die Karte darunter bleibt frei für Start und Linie. Ab 1010 px steht sie
-   ohnehin in der Leiste links unter der Suche. */
+/* Route wie in Google Maps: oben Start und Ziel (#routeKopf), unten „Mit dem Auto" */
+.bar-route { flex: none; padding: 6px 10px 6px 14px; }
+.rk-zeile { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.rk-zeile .route-feld { flex: 1 1 auto; min-width: 0; }
+.rk-weg + .rk-zeile .rk-text { border-top: 1px solid var(--line); }
+/* Start: Punkt mit weißem Rand wie der Startgriff auf der Karte; Ziel: Marke in der Signalfarbe */
+.rk-start {
+  flex: none; width: 14px; height: 14px; margin: 0 2px; box-sizing: border-box;
+  border-radius: 50%; border: 3px solid var(--accent); background: #fff;
+}
+.rk-ziel { flex: none; width: 18px; height: 18px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+/* Gepunktet vom Start zum Ziel, wie die Zeichnung in Google Maps */
+.rk-weg {
+  display: block; width: 2px; height: 8px; margin: -6px 0 -6px 8px;
+  background: radial-gradient(circle, var(--muted-2) 1px, transparent 1.2px) 0 0 / 2px 4px;
+}
+.rk-text {
+  margin: 0; flex: 1 1 auto; min-width: 0; padding: 10px 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .92rem; color: var(--text);
+}
+.bar-route #routeStartFeld { background: none; padding-left: 0; border-radius: 0; border: 0; }
+.bar-route #routeStartFeld:focus { border: 0; }
+.route-zeit { margin: 6px 0 2px; font-size: 1.5rem; font-weight: 650; }
+.route-zeit small { font-size: 1rem; font-weight: 500; color: var(--muted); }
+
 @media (max-width: 1009.98px) {
-  .ui:has(> #bottom[data-art="route"]:not([hidden])) > :is(.bar-top, #suggest) { display: none; }
-  .bar-bottom[data-art="route"] {
-    order: -1;
-    margin-top: calc(var(--gap) + env(safe-area-inset-top)); margin-bottom: 0;
-  }
-  .bar-bottom[data-art="route"]:not([hidden]) { animation-name: von-oben; }
-  .ui:has(> #ziel[hidden]):has(> #bottom[data-art="route"]) > .quellen {
-    margin-bottom: calc(6px + env(safe-area-inset-bottom));
-  }
+  /* Am Handy statt der Suchzeile oben */
+  .ui:has(> #routeKopf:not([hidden])) > :is(.bar-top, #suggest) { display: none; }
+  .bar-route { order: -1; margin-top: calc(var(--gap) + env(safe-area-inset-top)); }
+  .bar-route:not([hidden]) { animation: von-oben .3s var(--auf); }
+}
+@media (min-width: 1010px) {
+  /* In der Leiste flach unter der Suche, wie die Suche gefüllt */
+  .bar-route { margin: 8px auto 0; background: var(--panel-2); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: var(--r-knopf); }
 }

@@ -463,15 +463,15 @@ von Valhalla beim FOSSGIS (`ROUTE_DIENST`, höchstens eine Anfrage je Sekunde, `
 Service Worker lässt den Dienst durch. Start: Standort, Tipp auf die Karte, Ziehen oder eine Adresse im
 Startfeld (`routeSuchen` über `searchOrt`, Treffer in `#routeVorschlag`). Den Standort nimmt das Fadenkreuz
 rechts im Feld (`#routeOrt`) oder „Mein Standort" oben in der Liste bei leerem Feld — einen eigenen Knopf
-„Vom Standort" fand der Nutzer nicht elegant. `routeLeiste` zeichnet die
-Leiste neu und gibt dem Feld Fokus und Cursor zurück — wer sie umbaut, erhält das, sonst springt beim
-Tippen die Tastatur weg. Die Routenleiste hat keinen Google-Maps-Knopf (der Nutzer: den wählt man vor der
+„Vom Standort" fand der Nutzer nicht elegant. Die Routenleiste hat keinen Google-Maps-Knopf (der Nutzer: den wählt man vor der
 Route); in der Ergebnisleiste heißt er nur „Google Maps" („In Google Maps öffnen" brach neben den Symbolen
 dreizeilig um). Info und Teilen stehen klein im Kopf neben dem × (`.bb-eck`), unten nur
 Google Maps, Route, Profil — so bleibt die Ergebnisleiste auf 375 px bei 136 px.
-Die Leiste trägt `data-art="route"` (nicht `werkzeug`): ab 1010 px steht sie links unter der Suche, am
-Handy oben **statt** der Suchzeile wie in Google Maps (`style.css` am Ende; `updateBH` zählt sie unten
-nicht mit, `kartePassen` hält oben ihren Platz frei).
+Aufgebaut wie die Route in Google Maps (Bildschirmfoto des Nutzers, 03.11.2026): oben `#routeKopf` mit Start
+(Feld) und Ziel (Punkt an der Strecke), am Handy **statt** der Suchzeile; unten `#bottom` mit
+`data-art="route"` (nicht `werkzeug`) als „Mit dem Auto" mit Dauer, Länge, Hinweisen. Ab 1010 px stehen beide
+in der Leiste unter der Suche. `routeKopfZeichnen` baut den Kopf nicht neu, solange im Feld getippt wird.
+`kartePassen` hält am Handy oben den Kopf und unten `--bh` frei.
 
 ## Service Worker: nichts vor dem Ausliefern abwarten (November 2026)
 

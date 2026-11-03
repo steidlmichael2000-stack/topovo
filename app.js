@@ -10038,6 +10038,9 @@ function routeEnde(zeigen = true) {
   routeErg = null;
   routeWartetAufOrt = false;
   if (routeLayer) { routeLayer.clearLayers(); map.removeLayer(routeLayer); }
+  const k = $('#routeKopf');
+  k.hidden = true;
+  k.innerHTML = '';
   if (map.doubleClickZoom) map.doubleClickZoom.enable();
   syncButtons();
   if (zeigen) renderBottom();
@@ -10277,35 +10280,28 @@ function routeZeichnen() {
   }
 }
 
+/* Aufgebaut wie die Route in Google Maps: oben Start und Ziel (#routeKopf,
+ * am Handy statt der Suchzeile), unten „Mit dem Auto" mit Dauer und Länge. */
 function routeLeiste() {
   if (!routeAn) return;
+  routeKopfZeichnen();
   const b = $('#bottom');
-  // Ab 1010 px in der Leiste links unter der Suche wie das Ergebnis, nicht unten mittig:
-  // Startfeld und Treffer gehören zur Suche, und die Route verdeckt sonst die Karte
+  // Ab 1010 px in der Leiste links unter der Suche wie das Ergebnis, nicht unten mittig
   b.dataset.art = 'route';
   b.hidden = false;
   const e = routeErg;
   const notizen = [];
-  let zahl = '—';
+  let zahl = '';
   if (e) {
-    zahl = `${esc(routeDauer(e.dauer))} <small>· ${esc(routeKm(e.laenge))}` +
-      `${routeLaedt ? ' · wird neu gerechnet …' : ''}</small>`;
-    // Eine Zeile, was die Route ist; eine, was man mit ihr tun kann — der Rest steht hinter dem ?
+    zahl = `${esc(routeDauer(e.dauer))} <small>(${esc(routeKm(e.laenge))})</small>`;
     const rest = ellipsoidAbstand(e.ende, routeZiel);
-    // Eine eingegebene Adresse steht schon im Feld darunter
-    notizen.push([!routeVomOrt && !routeStartName && 'Vom gewählten Start',
+    notizen.push([routeLaedt && 'wird neu gerechnet …',
       e.autobahn && 'Autobahn', e.maut && 'Maut', e.faehre && 'Fähre',
       rest >= 10 && `zu Fuß noch ${messText(rest)}`].filter(Boolean).join(' · '));
   }
   if (routeFehler) notizen.push({ warn: routeFehler });
-  else if (!routeStart) {
-  } else if (!e) notizen.push('Route wird gerechnet …');
-
-  // Das Startfeld überlebt das Neuzeichnen (Ergebnis kommt, Standort trifft ein)
-  const altFeld = $('#routeStartFeld');
-  const fokus = altFeld && document.activeElement === altFeld;
-  const cursor = fokus ? altFeld.selectionStart : null;
-
+  else if (!routeStart) notizen.push(routeWartetAufOrt ? 'Standort wird bestimmt …' : 'Start oben eingeben oder auf die Karte tippen.');
+  else if (!e) notizen.push('Route wird gerechnet …');
 
   b.innerHTML = `
     <button type="button" id="bbClose" class="bb-close" aria-label="Route schließen">
@@ -10313,30 +10309,49 @@ function routeLeiste() {
     </button>
     ${hilfeKnopf('route', 'Route')}
     <div class="bb-head">
-      <p class="bb-title">Route</p>
-      <span class="tag">Auto</span>
+      <p class="bb-title">Mit dem Auto</p>
     </div>
-    ${routeZielName ? `<p class="bb-sub">nach ${esc(routeZielName)}</p>` : ''}
-    <p class="bb-coord mess-zahl">${zahl}</p>
+    ${zahl ? `<p class="route-zeit mess-zahl">${zahl}</p>` : ''}
     ${notizen.map(t => typeof t === 'string'
       ? `<p class="bb-note plain">${esc(t)}</p>` : `<p class="bb-note">${esc(t.warn)}</p>`).join('')}
-    <div class="route-start">
+    <p class="prof-quelle">${ROUTE_QUELLE}</p>`;
+  b.querySelector('#bbClose').addEventListener('click', () => routeEnde());
+  updateBH();
+}
+
+/* Start und Ziel. Während im Startfeld getippt wird, nicht neu aufbauen —
+ * sonst springt die Tastatur weg —, nur das Fadenkreuz nachführen. */
+function routeKopfZeichnen() {
+  const k = $('#routeKopf');
+  k.hidden = false;
+  const altFeld = $('#routeStartFeld');
+  const ortKnopf = $('#routeOrt');
+  const platzhalter = routeWartetAufOrt ? 'Standort wird bestimmt …' : 'Start: Adresse oder Ort';
+  if (altFeld && document.activeElement === altFeld) {
+    ortKnopf.classList.toggle('is-on', routeVomOrt);
+    ortKnopf.classList.toggle('wartet', routeWartetAufOrt);
+    altFeld.placeholder = platzhalter;
+    return;
+  }
+  k.innerHTML = `
+    <div class="rk-zeile">
+      <span class="rk-start" aria-hidden="true"></span>
       <div class="route-feld">
         <input id="routeStartFeld" type="search" enterkeyhint="search" autocomplete="off" spellcheck="false"
-               aria-label="Start als Adresse oder Ort" value="${esc(routeSuchText)}"
-               placeholder="${routeWartetAufOrt ? 'Standort wird bestimmt …' : 'Start: Adresse oder auf Karte tippen'}">
+               aria-label="Start als Adresse oder Ort" value="${esc(routeSuchText)}" placeholder="${platzhalter}">
         <button type="button" id="routeOrt" class="route-ort${routeVomOrt ? ' is-on' : ''}${routeWartetAufOrt ? ' wartet' : ''}"
                 aria-label="Start am eigenen Standort" title="Start am eigenen Standort">${IKON_STANDORT}</button>
       </div>
-      <div id="routeVorschlag" class="suggest route-vorschlag" role="listbox" hidden></div>
     </div>
-    <!-- Kein Google Maps hier: Dafür ist der Knopf in der Ergebnisleiste, vor der Route -->
-    <p class="prof-quelle">${ROUTE_QUELLE}</p>`;
+    <span class="rk-weg" aria-hidden="true"></span>
+    <div class="rk-zeile">
+      <svg class="rk-ziel" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.5C7.8 16.6 5.5 13.3 5.5 10a6.5 6.5 0 1 1 13 0c0 3.3-2.3 6.6-6.5 11.5z"/><circle cx="12" cy="10" r="2.3"/></svg>
+      <p class="rk-text">${esc(routeZielName || 'Punkt an der Strecke')}</p>
+    </div>
+    <div id="routeVorschlag" class="suggest route-vorschlag" role="listbox" hidden></div>`;
 
-  const an = (sel, f) => { const el = b.querySelector(sel); if (el) el.addEventListener('click', f); };
-  an('#bbClose', () => routeEnde());
-  an('#routeOrt', routeVomStandort);
-  const feld = b.querySelector('#routeStartFeld');
+  k.querySelector('#routeOrt').addEventListener('click', routeVomStandort);
+  const feld = k.querySelector('#routeStartFeld');
   feld.addEventListener('input', () => routeSuchen(feld.value));
   // Steht schon ein Start drin, ersetzt das Tippen ihn ganz
   feld.addEventListener('focus', () => { if (feld.value) feld.select(); routeTrefferZeigen(); });
@@ -10344,10 +10359,12 @@ function routeLeiste() {
     if (ev.key === 'Enter') { ev.preventDefault(); routeTrefferNehmen(routeTreffer[0]); }
     else if (ev.key === 'Escape') { routeTreffer = []; routeTrefferZeigen(); feld.blur(); }
   });
-  feld.addEventListener('blur', () => { if (feld.isConnected) { routeTreffer = []; routeTrefferZeigen(); } });
-  if (fokus) { feld.focus(); feld.setSelectionRange(cursor, cursor); }
-  if (routeTreffer.length || fokus) routeTrefferZeigen();
-  updateBH();
+  feld.addEventListener('blur', () => {
+    if (!routeAn) return;
+    routeTreffer = [];
+    routeTrefferZeigen();
+    routeKopfZeichnen();     // was beim Tippen liegen blieb (Wert, Platzhalter)
+  });
 }
 
 function bindBottom() {
@@ -10445,15 +10462,14 @@ function seitenBreite() {
 
 function kartePassen(grenzen, o = {}) {
   const links = seitenBreite();
-  const b = $('#bottom');
   if (links) {
     const tl = o.paddingTopLeft || o.padding || [30, 30], br = o.paddingBottomRight || o.padding || [30, 30];
     o = { ...o, paddingTopLeft: [links + tl[0], 30], paddingBottomRight: [Math.max(br[0], 76), untenBelegt()] };
     delete o.padding;
-  } else if (b.dataset.art === 'route' && !b.hidden) {
-    // Am Handy steht die Route oben über der Karte
+  } else if (!$('#routeKopf').hidden) {
+    // Am Handy stehen Start und Ziel oben über der Karte, „Mit dem Auto" unten
     const p = o.padding || [30, 30];
-    o = { ...o, paddingTopLeft: [p[0], Math.round(b.getBoundingClientRect().bottom) + p[1]],
+    o = { ...o, paddingTopLeft: [p[0], Math.round($('#routeKopf').getBoundingClientRect().bottom) + p[1]],
       paddingBottomRight: [p[0], parseInt(getComputedStyle(document.documentElement).getPropertyValue('--bh')) + p[1]] };
     delete o.padding;
   }
@@ -10501,9 +10517,7 @@ function updateBH() {
   let grundlinie = UNTEN_RAND;
   // Bei offenem Menü sind die Leisten ausgeblendet (openSheet) und zählen nicht
   if (!document.body.classList.contains('menue-offen')) {
-    // Die Route steht am Handy oben (style.css) und belegt unten nichts
-    const routeOben = $('#bottom').dataset.art === 'route';
-    for (const el of [routeOben ? null : $('#bottom'), $('#ziel')]) {
+    for (const el of [$('#bottom'), $('#ziel')]) {
       if (el && !el.hidden) grundlinie += el.getBoundingClientRect().height + 8;
     }
   }
