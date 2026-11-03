@@ -223,6 +223,13 @@
   </div>
 
   <!-- ---------- Menü ---------- -->
+  <!-- Skala der Höhenfarben (hoehenSkalaZeigen): oben hoch, unten tief -->
+  <div id="hoehenSkala" class="hoehen-skala" hidden aria-live="polite">
+    <div class="hoehen-balken" aria-hidden="true"></div>
+    <div class="hoehen-werte"><span id="hoehenHoch"></span><span id="hoehenMitte"></span><span id="hoehenTief"></span></div>
+    <div id="hoehenSkalaText" class="hoehen-text"></div>
+    <button id="hoehenKnopf" class="seg-btn hoehen-knopf" type="button">Ausschnitt einfärben</button>
+  </div>
   <div id="sheet" class="sheet" hidden>
 
     <details class="sheet-sec" data-sec="karte">
@@ -238,6 +245,11 @@
       <div class="seg" role="group" aria-label="Grundkarte, Bild" style="margin-top:7px">
         <button class="seg-btn" type="button" data-base="dop">Luftbild</button>
         <button class="seg-btn" type="button" data-base="relief">Relief</button>
+      </div>
+      <!-- Nur beim Relief: das Schräglicht der Länder oder Höhenfarben aus dem DGM1 -->
+      <div class="seg seg-paar" id="reliefArt" role="group" aria-label="Darstellung des Reliefs" style="margin-top:7px" hidden>
+        <button class="seg-btn" type="button" data-relief="grau">Schräglicht</button>
+        <button class="seg-btn" type="button" data-relief="farbe">Höhenfarben</button>
       </div>
       <p class="pal-label">Auflagen</p>
       <div class="seg" role="group" aria-label="Auflagen">
@@ -306,6 +318,7 @@
       <div class="erkl" id="erklKarte" hidden>
       <p class="fine">Ganz nach links heruntergezogen bleibt nur der Bahn- bzw. WMS-Layer stehen.</p>
       <p class="fine"><strong>Farbe</strong> gibt es nur beim Luftbild: Die DOP20 der Länder kommen recht blass, nach rechts werden sie kräftiger, nach links grauer.</p>
+      <p class="fine"><strong>Höhenfarben</strong> färbt das Relief nach der Geländehöhe aus dem DGM1 — nur den Ausschnitt, in dem man oben rechts auf „Ausschnitt einfärben“ tippt, ab Zoomstufe 16. Blau ist das Tiefste darin, Rot das Höchste. Das lädt je Kilometer 2–4 MB, danach liegt es im Vorrat.</p>
       <p class="fine"><strong>Helligkeit</strong> wirkt auf Luftbild und Relief; etwas dunkler heben sich Parzellen, Bahn-Layer und Pins besser ab.</p>
       <p class="fine"><strong>DB-Netz</strong> zeigt Anlagen aus den Infrastrukturdaten der DB InfraGO:
       Bahnübergänge als Andreaskreuz, Brücken mit Geländern, Tunnel gestrichelt mit Portalen an den

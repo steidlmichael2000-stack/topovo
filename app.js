@@ -1887,6 +1887,7 @@ let prefs = {
   theme: 'auto', palette: 'lapis', base: 'osm', orm: true, baseOpacity: 100,
   dopFarbe: 100,                         // Sättigung des DOP20 in %, 100 = wie geliefert
   bildHell: 100,                         // Helligkeit von DOP20 und Relief in %, 100 = wie geliefert
+  reliefFarbe: false,                    // Relief als Höhenfarben aus dem DGM1 statt Schräglicht
   abSort: 'nah',                         // Abstecken: Punktliste nach Entfernung, Name oder Datei
   abKompass: false,                      // Abstecken: Pfeil nach dem Handy statt nach der Karte
   parzFarbe: 'auto',                     // 'auto' (nach Grundkarte) oder '#rrggbb'
@@ -2078,7 +2079,7 @@ let glQuellenZuletzt = [];
 function glGebraucht() {
   if (glKaputt) return false;
   const b = prefs.base || 'osm';
-  return b === 'dark' || (!!GL_BILDER[b] && (!!prefs.str || !!prefs.ort));
+  return b === 'dark' || (!!GL_BILDER[b] && (!!prefs.str || !!prefs.ort)) || hoehenGezeichnet();
 }
 
 /* Straßen und Namen über dem Bild: helle Linien mit dunklem Umriss, damit sie
@@ -2231,12 +2232,14 @@ function glStil() {
     version: 8, glyphs: OFM_GLYPHEN,
     sources: {
       bild: { type: 'raster', tiles: [bild.url], tileSize: 256, maxzoom: bild.maxzoom },
+      ...(hoehenGezeichnet() ? { dgm: glDgmQuelle() } : {}),
       ofm: { type: 'vector', url: OFM_KACHELN }
     },
     layers: [
       { id: 'hintergrund', type: 'background', paint: { 'background-color': glDeckung < 1 ? '#ffffff' : grund } },
       { id: 'bild', type: 'raster', source: 'bild', paint: { 'raster-opacity': glDeckung, 'raster-fade-duration': 0,
         'raster-saturation': b === 'dop' ? glSaettigung(dopFarbe()) : 0, 'raster-brightness-max': bildHell() } },
+      ...(hoehenGezeichnet() ? glHoehenEbenen() : []),
       ...(prefs.ort ? glGrenzen() : []),
       ...(prefs.str ? glStrassen() : []),
       ...(prefs.ort ? glOrte() : [])
@@ -2262,7 +2265,9 @@ function glStilSetzen() {
  * Parzellen und die des DOP20 heben sich also nicht gegenseitig auf. */
 function glQuellenErneuern() {
   const b = prefs.base || 'osm';
-  const neu = !glAn ? [] : b === 'dark' ? [OFM_QUELLE] : [GL_BILDER[b].quelle, OFM_QUELLE].filter(Boolean);
+  const ofm = prefs.str || prefs.ort ? OFM_QUELLE : null;
+  const neu = !glAn ? [] : b === 'dark' ? [OFM_QUELLE]
+    : [GL_BILDER[b].quelle, hoehenGezeichnet() ? DGM_QUELLE : null, ofm].filter(Boolean);
   if (neu.join('|') === glQuellenZuletzt.join('|')) return;
   for (const q of glQuellenZuletzt) map.attributionControl.removeAttribution(q);
   for (const q of neu) map.attributionControl.addAttribution(q);
@@ -2319,6 +2324,11 @@ async function glLaden() {
       maplibregl.addProtocol('land', async (anfrage, abbruch) => {
         const [art, z, x, y] = anfrage.url.slice('land://'.length).split('/');
         return { data: await (await dopKachel(art, +z, +x, +y, abbruch.signal)).arrayBuffer() };
+      });
+      // Höhen aus dem DGM1 als Terrarium-Kachel (dgmKachel)
+      maplibregl.addProtocol('dgm', async (anfrage, abbruch) => {
+        const [z, x, y] = anfrage.url.slice('dgm://'.length).split('/');
+        return { data: await dgmKachel(+z, +x, +y, abbruch.signal) };
       });
       const stil = glStil();
       glStilZuletzt = typeof stil === 'string' ? stil : JSON.stringify(stil);
@@ -2453,6 +2463,7 @@ function initMap() {
   // Alle Länder, je Kachel entschieden (DopWms); die Quelle setzt dopQuelleErneuern nach Ausschnitt
   baseDop = new DopWms({ maxZoom: 22, maxNativeZoom: BVV_NATIV.dop, className: 'dop-ebene' });
   map.on('moveend', dopQuelleErneuern);
+  map.on('moveend', () => hoehenSkalaZeigen());
 
   /* Schräglicht und nicht die kombinierte Darstellung: Das Schräglicht zeigt
    * Dämme, Einschnitte und alte Trassen plastisch, die kombinierte Fassung wäscht
@@ -3365,6 +3376,7 @@ function setBase(which, still = false) {
   parzFarbeAnpassen();
   applyBaseOpacity();
   applyBildRegler();
+  hoehenSkalaZeigen();
   ordneAuflagen();
   radarZeichnen();      // die Konturen des Radars hängen am Grund (RADAR_LINIE_TON)
   ifgAuflageZeichnen(); // die Linien des DB-Netzes auch
@@ -3421,10 +3433,220 @@ function applyBildRegler() {
   if (zeile) zeile.hidden = b !== 'dop';
   const val = $('#dopFarbeVal');
   if (val) val.textContent = Math.round(g * 100) + ' %';
+  const reliefArt = $('#reliefArt');
+  if (reliefArt) reliefArt.hidden = b !== 'relief';
+  document.querySelectorAll('[data-relief]').forEach(k => {
+    const an = (k.dataset.relief === 'farbe') === !!prefs.reliefFarbe;
+    k.classList.toggle('is-on', an);
+    k.setAttribute('aria-pressed', String(an));
+  });
   const hZeile = $('#bildHellZeile');
   if (hZeile) hZeile.hidden = b !== 'dop' && b !== 'relief';
   const hVal = $('#bildHellVal');
   if (hVal) hVal.textContent = Math.round(bildHell() * 100) + ' %';
+}
+
+/* ===================== Höhenfarben =====================
+ *
+ * Das Relief als Farbe: tief blau, hoch rot, darüber eine Schummerung — beides
+ * zeichnet MapLibre aus einer Höhenquelle (raster-dem), die die App selbst aus
+ * dem DGM1 baut (dgmKachel, Protokoll dgm://, gerechnet in dgm-werk.js).
+ * Dieselben Kacheln wie im Profil, also Bayern und Baden-Württemberg.
+ *
+ * Nur auf Knopfdruck und nur für den Ausschnitt, in dem er fiel (hoehenBereich).
+ * Zuerst lief es von selbst bei jedem Verschieben: Auf Stufe 15 brauchte ein
+ * Desktop-Bildschirm bei Ermetzhofen rund 30 Kilometerkacheln, 83 MB, und
+ * füllte fast den ganzen Vorrat (HOEHEN_VORRAT_MAX); jede Kartenkachel kostete
+ * dazu rund 190 ms im Hauptfaden. Das war es nicht wert.
+ *
+ * Gerechnet wird immer auf Zoomstufe 16 (1,5 m je Bildpunkt); näher heran
+ * vergrößert MapLibre. Weiter weg verschwinden die Farben, das graue Relief
+ * bleibt. Die Skala gilt für den eingefärbten Bereich: das tiefste Prozent ist
+ * Blau, das höchste Rot. Im Flachland trennen so schon Dezimeter die Farben. */
+const DGM_ZOOM = 16;
+const DGM_KEIN = -32768;                 // „keine Höhe" — in Terrarium alle Kanäle 0
+const DGM_QUELLE = landQuelle('Höhen DGM1', ['by', 'bw']);
+/* Von Tief nach Hoch, dieselben Töne wie .hoehen-balken. Bewusst ohne Weiß und
+ * Schwarz am Ende: Parzellen, Bahn-Layer und Pins müssen auf beiden noch stehen. */
+const HOEHEN_RAMPE = ['#2c3e94', '#2a7dc4', '#33b2b0', '#7ccc6c', '#e6dd55', '#f19a3c', '#c8382f'];
+const dgmProben = new Map();             // "x/y" → 32 × 32 Höhen einer Kachel, alle 8 Bildpunkte (für die Skala)
+let hoehenBereich = null;                // { w, s, o, n } in Grad — der eingefärbte Ausschnitt
+let hoehenSkala = null;                  // { tief, hoch } in m
+let dgmLaeuft = 0;                       // Kacheln, die gerade gerechnet werden
+let dgmLeer = null;                      // die Kachel ohne Höhen, einmal gebaut
+let dgmWerk = null, dgmNr = 0;
+const dgmWartet = new Map();             // Auftrag → { gut, schlecht }
+
+/** Ist „Höhenfarben" gewählt (das Relief zeigt sie, sobald eingefärbt ist)? */
+function hoehenFarbenAn() {
+  return !glKaputt && (prefs.base || 'osm') === 'relief' && !!prefs.reliefFarbe;
+}
+
+/** Zeichnet MapLibre gerade Höhenfarben? */
+function hoehenGezeichnet() {
+  return hoehenFarbenAn() && !!hoehenBereich;
+}
+
+function dgmRechnen(z, x, y) {
+  if (!dgmWerk) {
+    dgmWerk = new Worker('dgm-werk.js');
+    dgmWerk.onmessage = ev => {
+      const w = dgmWartet.get(ev.data.id);
+      if (!w) return;
+      dgmWartet.delete(ev.data.id);
+      if (ev.data.fehler) w.schlecht(new Error(ev.data.fehler));
+      else w.gut(ev.data);
+    };
+  }
+  const id = ++dgmNr;
+  return new Promise((gut, schlecht) => {
+    dgmWartet.set(id, { gut, schlecht });
+    dgmWerk.postMessage({ id, z, x, y });
+  });
+}
+
+/** Eine Höhenkachel (Terrarium-PNG) für MapLibre. Außerhalb von Bayern und
+ *  Baden-Württemberg gleich die leere, ohne den Worker zu fragen. */
+async function dgmKachel(z, x, y, signal) {
+  const n = 2 ** z;
+  const lon = x / n * 360 - 180, lonO = (x + 1) / n * 360 - 180;
+  const lat = v => Math.atan(Math.sinh(Math.PI * (1 - 2 * v / n))) * 180 / Math.PI;
+  const latN = lat(y), latS = lat(y + 1);
+  const drin = ['by', 'bw'].some(l => {
+    const r = HOEHEN_RAHMEN[l];
+    return latS <= r.n && latN >= r.s && lon <= r.o && lonO >= r.w;
+  });
+  if (!drin) {
+    if (!dgmLeer) {
+      const c = new OffscreenCanvas(256, 256), g = c.getContext('2d');
+      g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256);   // Terrarium 0, 0, 0 = DGM_KEIN
+      dgmLeer = await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer();
+    }
+    return dgmLeer.slice(0);
+  }
+  if (signal && signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
+  dgmLaeuft++;
+  hoehenSkalaZeigen();
+  try {
+    const { png, probe } = await dgmRechnen(z, x, y);
+    dgmProben.set(`${x}/${y}`, probe);
+    return png;
+  } finally {
+    dgmLaeuft--;
+    hoehenSkalaSpaeter();
+  }
+}
+
+function glDgmQuelle() {
+  const { w, s, o, n } = hoehenBereich;
+  return { type: 'raster-dem', tiles: ['dgm://{z}/{x}/{y}'], tileSize: 256, encoding: 'terrarium',
+    minzoom: DGM_ZOOM, maxzoom: DGM_ZOOM, bounds: [w, s, o, n] };
+}
+
+/** Die Farbrampe im Stil: unter −9000 m (keine Höhe) durchsichtig, darüber
+ *  von tief bis hoch über die Farben verteilt; was darunter oder darüber
+ *  liegt, behält die Endfarbe. */
+function hoehenRampe() {
+  const { tief, hoch } = hoehenSkala || { tief: 0, hoch: 1000 };
+  const stufen = ['interpolate', ['linear'], ['elevation'], DGM_KEIN, 'rgba(0, 0, 0, 0)', -9000, 'rgba(0, 0, 0, 0)',
+    -8999, HOEHEN_RAMPE[0]];
+  HOEHEN_RAMPE.forEach((f, i) => stufen.push(tief + (hoch - tief) * i / (HOEHEN_RAMPE.length - 1), f));
+  return stufen;
+}
+
+/* Die Farben liegen zu 70 % über dem grauen Schräglicht der Länder (Ebene
+ * bild), darüber die eigene Schummerung. Deckend wirkten sie flach — als
+ * fehlten die Schatten (Nutzer, 03.11.2026); so kommt die Form vom
+ * Schräglicht und die Höhe von der Farbe. */
+function glHoehenEbenen() {
+  return [
+    { id: 'hoehen-farbe', type: 'color-relief', source: 'dgm',
+      paint: { 'color-relief-color': hoehenRampe(), 'color-relief-opacity': 0.7 * glDeckung } },
+    { id: 'hoehen-schatten', type: 'hillshade', source: 'dgm',
+      paint: { 'hillshade-exaggeration': glDeckung, 'hillshade-shadow-color': '#000000',
+        'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#000000' } }
+  ];
+}
+
+/** Den Ausschnitt einfärben (Knopf in der Skala). Ein neuer Druck ersetzt
+ *  den alten Bereich. */
+function hoehenEinfaerben() {
+  if (map.getZoom() < DGM_ZOOM) return;
+  const b = map.getBounds();
+  hoehenBereich = { w: b.getWest(), s: b.getSouth(), o: b.getEast(), n: b.getNorth() };
+  hoehenSkala = null;
+  dgmProben.clear();
+  grundAnwenden();     // braucht jetzt MapLibre; setzt den Stil samt Quelle
+  glStilSetzen();
+  hoehenSkalaZeigen();
+}
+
+let hoehenSkalaUhr = 0;
+function hoehenSkalaSpaeter() {
+  clearTimeout(hoehenSkalaUhr);
+  hoehenSkalaUhr = setTimeout(hoehenSkalaErneuern, 150);
+}
+
+/** Die Skala aus den Proben im eingefärbten Bereich — die Kacheln am Rand
+ *  ragen hinaus, und eine Kuppe dort ließe sie bis zu Höhen reichen, die
+ *  gar nicht eingefärbt sind. */
+function hoehenSkalaErneuern() {
+  if (hoehenGezeichnet()) {
+    const n = 256 * 2 ** DGM_ZOOM, { w, s, o, n: nb } = hoehenBereich;
+    const px = lon => (lon + 180) / 360 * n;
+    const py = lat => (1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * n;
+    const x0 = px(w), x1 = px(o), y0 = py(nb), y1 = py(s);
+    const werte = [];
+    for (const [k, p] of dgmProben) {
+      const [x, y] = k.split('/').map(Number);
+      for (let j = 0; j < 32; j++) {
+        const gy = y * 256 + 8 * j + 4;
+        if (gy < y0 || gy > y1) continue;
+        for (let i = 0; i < 32; i++) {
+          const gx = x * 256 + 8 * i + 4, v = p[j * 32 + i];
+          if (gx >= x0 && gx <= x1 && Number.isFinite(v)) werte.push(v);
+        }
+      }
+    }
+    if (werte.length) {
+      werte.sort((a, c) => a - c);
+      let tief = werte[Math.floor(werte.length * 0.01)], hoch = werte[Math.floor(werte.length * 0.99)];
+      // Ganz flach: wenigstens einen Meter Spanne, sonst rauscht jeder Zentimeter in den Farben
+      if (hoch - tief < 1) { const m = (hoch + tief) / 2; tief = m - 0.5; hoch = m + 0.5; }
+      if (!hoehenSkala || Math.abs(hoehenSkala.tief - tief) > 0.05 || Math.abs(hoehenSkala.hoch - hoch) > 0.05) {
+        hoehenSkala = { tief, hoch };
+        glStilSetzen();
+      }
+    }
+  }
+  hoehenSkalaZeigen();
+}
+
+/** Der Kasten rechts oben: Farbbalken mit Höhen, darunter der Knopf zum
+ *  Einfärben — oder der Hinweis, näher heranzugehen. */
+function hoehenSkalaZeigen() {
+  const kasten = $('#hoehenSkala');
+  if (!kasten || !map) return;
+  kasten.hidden = !hoehenFarbenAn();
+  if (kasten.hidden) return;
+  const nah = map.getZoom() >= DGM_ZOOM;
+  const skala = hoehenGezeichnet() && !!hoehenSkala;
+  kasten.classList.toggle('ohne-skala', !skala);
+  const knopf = $('#hoehenKnopf');
+  knopf.hidden = !nah || dgmLaeuft > 0;
+  knopf.textContent = hoehenBereich ? 'Hier neu einfärben' : 'Ausschnitt einfärben';
+  const text = $('#hoehenSkalaText');
+  if (dgmLaeuft) text.textContent = 'Höhen laden …';
+  else if (!nah) text.textContent = 'Zum Einfärben näher heran';
+  else text.textContent = skala ? 'm ü. NHN' : '';
+  text.hidden = !text.textContent;
+  if (!skala) return;
+  const { tief, hoch } = hoehenSkala;
+  const stellen = hoch - tief < 20 ? 1 : 0;
+  const m = v => v.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+  $('#hoehenHoch').textContent = m(hoch);
+  $('#hoehenMitte').textContent = m((hoch + tief) / 2);
+  $('#hoehenTief').textContent = m(tief);
 }
 
 /* Straßen und Ortsnamen zeichnet MapLibre, über Dunkel und den Bildern. In der
@@ -12706,6 +12928,16 @@ function bind() {
     applyBildRegler();
   });
   on('#bildHell', 'change', saveStore);
+  on('#hoehenKnopf', 'click', hoehenEinfaerben);
+  document.querySelectorAll('[data-relief]').forEach(k => k.addEventListener('click', () => {
+    prefs.reliefFarbe = k.dataset.relief === 'farbe';
+    hoehenBereich = null;          // eingefärbt wird erst wieder auf Knopfdruck
+    hoehenSkala = null;
+    grundAnwenden();
+    applyBildRegler();
+    hoehenSkalaZeigen();
+    saveStore();
+  }));
   applyBildRegler();
 
   on('#northBtn', 'click', () => {
