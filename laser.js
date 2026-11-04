@@ -182,7 +182,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
 
   // EDL: erst in ein Ziel mit Tiefe, dann über eine Fläche auf den Schirm
   const ziel = new THREE.WebGLRenderTarget(1, 1, { depthTexture: new THREE.DepthTexture(1, 1) });
-  ziel.depthTexture.type = THREE.UnsignedIntType;
+  /* Tiefe als Gleitkommazahl: Am Handy (Xiaomi 15T Pro, 04.11.2026) war die
+   * ganzzahlige Tiefe so grob, dass die Kantenschattierung bei hoher Stärke
+   * ihre Stufen als Linien über den Boden zog. Dazu der enge Bereich in
+   * tiefeAnpassen. */
+  ziel.depthTexture.type = THREE.FloatType;
   const edl = new THREE.ShaderMaterial({
     vertexShader: EDL_VS, fragmentShader: EDL_FS, depthTest: false, depthWrite: false, transparent: true,
     uniforms: { farbe: { value: ziel.texture }, tiefe: { value: ziel.depthTexture }, pixel: { value: new THREE.Vector2() },
@@ -500,12 +504,25 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   groesseSetzen();
 
   const v = new THREE.Vector3();
+  /* Nah- und Fernebene eng um die Wolke: Die Genauigkeit der Tiefe verteilt
+   * sich auf diesen Bereich, und 0,5 m bis 5 km verschenkte fast alles. */
+  const kugelWolke = geo.boundingSphere;
+  function tiefeAnpassen() {
+    const abstand = kamera.position.distanceTo(kugelWolke.center), r = kugelWolke.radius;
+    kamera.near = Math.max(0.1, (abstand - r) * 0.9, abstand * 0.002);
+    kamera.far = abstand + r * 1.1;
+    kamera.updateProjectionMatrix();
+    edl.uniforms.nah.value = kamera.near;
+    edl.uniforms.fern.value = kamera.far;
+  }
+
   function bild() {
     if (!laeuft) return;
     requestAnimationFrame(bild);
     steuerung.update();
     if (!neu) return;
     neu = false;
+    tiefeAnpassen();
     // Messkugeln bleiben auf dem Schirm gleich groß
     for (const k of kugeln) k.scale.setScalar(kamera.position.distanceTo(k.position) * 0.006);
     renderer.setRenderTarget(ziel);
