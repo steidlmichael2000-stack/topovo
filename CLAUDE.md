@@ -381,7 +381,7 @@ und Werkzeugleiste. Das **Regenradar oben mittig** (03.11.2026, so gewünscht: k
 die Quere); `kartePassen` hält oben seinen Platz frei.
 `#bottom[data-art="werkzeug"]` unterscheidet Werkzeug von Ergebnis — wer eine neue Leiste in
 `#bottom` schreibt, setzt oder löscht das. Standort, Abstecken, Nord oben rechts;
-`#werkzeuge` (Messen über `data-messart`, Radar, KML; Knopf `#werkzeugeBtn` unten in der Spalte blendet sie aus, `body.werkzeuge-zu`, gemerkt in `prefs.werkzeugeAus`) **hochkant** unten rechts (`--werkzeug-b`, seit 03.11.2026 —
+`#werkzeuge` (nur Messwerkzeuge über `data-messart` — Radar und KML seit 04.11.2026 nicht mehr, sie laufen über Wetter und KML; Knopf `#werkzeugeBtn` „Profil“ in der Spalte blendet sie aus, `body.werkzeuge-zu`, gemerkt in `prefs.werkzeugeAus`) **hochkant** unten rechts (`--werkzeug-b`, seit 03.11.2026 —
 quer stieß sie an die Anwendungen); Messknopf und Messmenü sind aus, die Tour zeigt dort auf `#werkzeuge`.
 
 Der Griff `#leisteGriff` mittig an der Kante oder ein Tipp aufs gewählte Symbol klappt die Leiste zu (`leisteZu`, `body.leiste-zu`), jedes Symbol
@@ -486,9 +486,19 @@ gemessen 0,8–1,8 s statt 0,3–0,45 s je neuer Ansicht, in Firefox schlimmer (
 `vendor/` kommt „erst Cache“ (MapLibre 1,1 MB wurde vorher bei jedem Start neu geholt), Stil und
 `/planet` von OpenFreeMap aus dem Vorrat und nebenher erneuert (`vorratDannNetz`).
 
+## Kacheln nach Netzfehler neu holen (`kachelnNeu`, 04.11.2026)
+
+Leaflet und MapLibre fragen eine fehlgeschlagene Kachel **nie von selbst** neu an. Nach dem
+Wiederöffnen der App mit noch schlafendem Netz blieb so das Luftbild leer, bis man die Grundkarte
+wechselte (nachgestellt: 17 von 17 Kacheln „errored“). Jetzt: ein Init-Hook an `L.GridLayer` merkt
+`tileerror` (`_fehler`), MapLibre-Fehler je Quelle in `glFehlerQuellen`; `kachelnNeu` zeichnet
+Leaflet-Ebenen neu (`redraw`) und setzt bei MapLibre die Adressen neu (`setTiles` bzw. `setUrl`) —
+bei `online`, bei `visibilitychange` und sonst mit Pause 3–30 s. Gilt für alle Ebenen. `dopBild`
+wiederholt Netzfehler zusätzlich zweimal. Nicht entfernen: der Fehler zeigt sich nur am Handy.
+
 ## Laserpunkte in 3D (`laser…`, November 2026)
 
-Messmenü → *Laserpunkte* (`laserStart`, `laserLeiste` in `app.js`), entpackt in `laser-werk.js`,
+Eigener Einstieg (seit 04.11.2026, so gewünscht — nicht im Messmenü): am Handy der runde Knopf `#mapLaserBtn` über dem Messen (Abstecken und Nord eine Stufe höher), am Desktop das Feld „Laser“ `#laserSchieneBtn` in der Symbolspalte unter „Profil“ (Spalte seit 04.11.2026: Suche, Karte, Profil, Laser, Wetter, KML, WMS, Ansicht, unten Hinweise) (`laserStart`, `laserLeiste` in `app.js`), entpackt in `laser-werk.js`,
 angezeigt in `laser.js` (Modul, three.js aus `vendor/three/`, laz-perf aus `vendor/copc/`). Einzelheiten
 und Messwerte in der README (*Laserpunkte in 3D*).
 
@@ -508,15 +518,34 @@ und Messwerte in der README (*Laserpunkte in 3D*).
 - Der Rahmen wird über die Pointer-Ereignisse des Pfads gezogen (`laserZiehenBinden`), Lage über
   `map.mouseEventToLatLng` (samt Drehung). Ein Tipp direkt nach dem Ziehen setzt nicht neu
   (`laserGezogen`).
-- Bedienung der Ansicht wie im PW-Viewer: Einstellungen links oben, × rechts oben, Messen links
-  unten (Distanz, Fläche, Höhe, Löschen), Vollbild und Startansicht rechts unten. „Normalen“ ist
+- Bedienung der Ansicht am Handy wie im PW-Viewer: Darstellung links oben, × rechts oben, Messen
+  links unten (Distanz, Fläche, Höhe, Löschen), Startansicht rechts unten. **Ab 1010 px wie Topovo**:
+  Symbolspalte (Zurück, Darstellung, Messen, Ansicht) und Glasleiste links (`anordnen` hängt Tafel,
+  Messwahl und Messleiste dorthin um), Tipp aufs gewählte Symbol klappt zu, die Wolke rückt per
+  `setViewOffset` in die freie Fläche. Kein Vollbildknopf (so gewünscht). „Normalen“ ist
   graue Schummerung, nicht die Richtung als Farbe (die war fast überall lila, so verworfen).
+  Hintergrund „Verlauf | Schwarz | Weiß“ wie im PW-Viewer („Wie die App“ war unklar); der Verlauf ist
+  **immer dunkel**, auch im hellen Modus (hell sah flau aus); `.laser-ansicht` setzt dafür die dunklen
+  Glas- und Schrift-Tokens selbst, Messlinien fest in #ff9f0a. Kleine Löcher zwischen Punkten füllt `EDL_FS`. Die Pflichtangabe steht oben mittig (`.lz-fuss`), Bedienung, Kachel, Zeiten in der Tafel (`.lz-info`).
 - Lokal: `laser-probe/` (in `.gitignore`) wird vor dem Worker gefragt.
+- **Kamera Perspektive | Orthografisch** (wie PW-Viewer): zwei Kameras, `kamera` ist die aktive,
+  `steuerung.object` wird umgehängt. Orthografisch braucht eigene Punktgröße (`orthoSkala`) und lineare
+  Tiefe in `EDL_FS` (`ortho`-Uniform) — wer an Shader oder Kamera dreht, prüft beide.
+- Nach Code-Durchsicht (04.11.2026) behoben: Leiste beim Laden nicht neu bauen (`laserFortschritt`,
+  sonst geht „Abbrechen“ verloren), Tipp nur mit einem Finger, `forceContextLoss` beim Schließen,
+  Kachel erst nach Kopfprüfung in den Vorrat, `Content-Encoding` → ohne Länge, WebGL2-Prüfung.
 - **Netzabbruch:** `mitWiederholung` in `laser-werk.js` wiederholt nur Netzfehler (TypeError), 2…15 s
   oder beim `online`-Ereignis, bis `NETZ_VERSUCHE`; die Kachel lädt von vorn. Unten in der Ansicht
   stehen die Zeiten je Schritt (`zeiten`), um „lädt ewig“ zuordnen zu können.
-- **EDL-Tiefe als Float und Nah/Fern eng um die Wolke** (`tiefeAnpassen`): mit ganzzahliger Tiefe
-  und 0,5 m – 5 km zog die Kantenschattierung am Handy Linien über den Boden.
+- **EDL liest mit `texelFetch` an ganzen Bildpunkten** (`EDL_FS`), das Ziel genau so groß wie die
+  Zeichenfläche (`getDrawingBufferSize`). Über Bildkoordinaten 0…1 lagen am Handy bei hoher Stärke
+  Linien fest im Bild (drehten nicht mit) — nicht auf Flugstreifen schieben, das war es nicht. Dazu
+  Float-Tiefe, Nah/Fern eng um die Wolke (`tiefeAnpassen`) und 5 cm `schwelle`.
+- **Messen wie Potree im PW-Viewer:** Höhe = Δh zweier Punkte (waagerecht oben, senkrecht am tieferen, Neigung in %),
+  Distanz = Linienzug mit Abschnitten und Σ, Fläche mit Seitenlängen; Punkte lassen sich ziehen
+  (`messpunktAn`, Einfangphase an der Wurzel vor OrbitControls). Messfarbe `--warn` wie in der App. Regler „Schatten“ (nicht „Licht“), Intensität per Histogrammausgleich (`iRang`).
+- Namensnennung CC BY 4.0: `LASER_QUELLE` (unten in der Ansicht, mit „ausgeschnitten und
+  ausgedünnt") und `LASER_ATTR` (Kartenattribution, solange Laserpunkte offen ist).
 
 ## Beim Deployen
 

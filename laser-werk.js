@@ -81,8 +81,12 @@ async function mitWiederholung(LP, url, melden, behalten, vorratMax, wartenMelde
     try {
       return await herunterladen(LP, url, melden, behalten, vorratMax);
     } catch (err) {
-      // Nur Netzfehler (TypeError) wiederholen; HTTP-Fehler und Abbrechen nicht
+      /* Nur Netzfehler (TypeError) wiederholen; HTTP-Fehler und Abbrechen nicht. Ein
+       * TypeError gleich beim Abruf bei bestehender Verbindung ist meist kein Funkloch,
+       * sondern eine Antwort ohne CORS (etwa 5xx vom Worker) — dann nach zwei Versuchen
+       * aufgeben statt fünf Minuten „Verbindung unterbrochen“ zu zeigen. */
       if (abbruch.signal.aborted || !(err instanceof TypeError) || versuch >= NETZ_VERSUCHE) throw err;
+      if (!err.mittendrin && navigator.onLine && versuch >= 2) throw err;
       const ms = Math.min(15000, 1000 * 2 ** versuch);
       wartenMelden(versuch, Math.round(ms / 1000));
       await warten(ms);
@@ -97,7 +101,8 @@ async function herunterladen(LP, url, melden, behalten, vorratMax) {
   if (r.status === 404) return null;
   if (!r.ok) throw new Error(`Laserkachel: HTTP ${r.status}`);
   if (!r.body) throw new Error('Laserkachel: keine Daten');
-  const gesamt = Number(r.headers.get('Content-Length')) || 0;
+  // Gepackt unterwegs: Content-Length ist dann die gepackte Größe, nicht die der Datei
+  const gesamt = r.headers.get('Content-Encoding') ? 0 : Number(r.headers.get('Content-Length')) || 0;
   const leser = r.body.getReader();
   if (!gesamt) return ohneLaenge(LP, leser, melden, behalten, vorratMax);
   platzMachen(LP, gesamt, behalten, vorratMax);
@@ -108,10 +113,11 @@ async function herunterladen(LP, url, melden, behalten, vorratMax) {
   let o = 0, gemeldet = 0;
   for (;;) {
     let stueck;
-    try { stueck = await leser.read(); } catch (err) { LP._free(zeiger); throw err; }
+    try { stueck = await leser.read(); } catch (err) { LP._free(zeiger); err.mittendrin = true; throw err; }
     const { done, value } = stueck;
     if (done) break;
-    const n = Math.min(value.byteLength, gesamt - o);
+    if (value.byteLength > gesamt - o) { LP._free(zeiger); leser.cancel(); throw new Error('Laserkachel länger als angekündigt.'); }
+    const n = value.byteLength;
     LP.HEAPU8.set(value.subarray(0, n), zeiger + o);
     o += n;
     if (o - gemeldet > 1 << 20 || o === gesamt) {
@@ -130,7 +136,9 @@ async function ohneLaenge(LP, leser, melden, behalten, vorratMax) {
   const teile = [];
   let o = 0, gemeldet = 0;
   for (;;) {
-    const { done, value } = await leser.read();
+    let stueck;
+    try { stueck = await leser.read(); } catch (err) { err.mittendrin = true; throw err; }
+    const { done, value } = stueck;
     if (done) break;
     teile.push(value);
     o += value.byteLength;
@@ -180,9 +188,19 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
       if (!v) { fehlen.push(kachel); continue; }
       zeiten.megabyte += v.groesse / 1e6;
     }
+    // Erst prüfen, dann merken: Eine Fehlerseite mit Status 200 bliebe sonst als „im Speicher“ hängen
+    let kopf;
+    try {
+      if (v.groesse < 375) throw new Error('Keine LAS-Datei');
+      kopf = kopfLesen(LP.HEAPU8.subarray(v.zeiger, v.zeiger + 375));
+    } catch (err) {
+      LP._free(v.zeiger);
+      vorratMelden();
+      throw new Error(`Laserkachel ${kachel} ist beschädigt oder keine LAS-Datei.`);
+    }
     vorrat.set(kachel, v);
     vorratMelden();
-    da.push({ kachel, ...v, kopf: kopfLesen(LP.HEAPU8.subarray(v.zeiger, v.zeiger + 375)) });
+    da.push({ kachel, ...v, kopf });
   }
   if (!da.length) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
   zeiten.laden = (performance.now() - uhr) / 1000;
@@ -264,6 +282,7 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
   const dichte = n / Math.max(1, (e1 - e0) * (n1 - n0));
   const normalen = normalenRechnen(xyz, n, Math.max(0.8, Math.sqrt(12 / (Math.PI * dichte))));
   zeiten.normalen = (performance.now() - uhr) / 1000;
+  if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);     // abgebrochen, während die Normalen liefen
   const ergebnis = {
     art: 'fertig', anzahl: n, schritt, fehlen, zeiten,
     mitte: [ce, cn], zMin, zMax, iMax,

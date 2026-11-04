@@ -226,7 +226,7 @@ body {
 .north {
   position: fixed;
   right: var(--saeule);
-  bottom: calc(var(--grund) + 96px + env(safe-area-inset-bottom));
+  bottom: calc(var(--grund) + 144px + env(safe-area-inset-bottom));
   z-index: 450;
   width: 42px; height: 42px;
   display: grid; place-items: center; gap: 0;
@@ -316,7 +316,7 @@ body {
 .mapziel {
   position: fixed;
   right: var(--saeule);
-  bottom: calc(var(--grund) + 96px + env(safe-area-inset-bottom));
+  bottom: calc(var(--grund) + 144px + env(safe-area-inset-bottom));
   z-index: 450;
   width: 42px; height: 42px;
   display: grid; place-items: center;
@@ -328,7 +328,26 @@ body {
 }
 .mapziel svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
 .mapziel.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--glass)); }
-.mapziel:not([hidden]) ~ .north { bottom: calc(var(--grund) + 144px + env(safe-area-inset-bottom)); }
+.mapziel:not([hidden]) ~ .north { bottom: calc(var(--grund) + 192px + env(safe-area-inset-bottom)); }
+
+/* Laserpunkte in 3D — eigener Knopf über dem Messen (seit November 2026; Abstecken
+   und Nord stehen deshalb eine Stufe höher). Am Desktop in der Symbolspalte. */
+.maplaser {
+  position: fixed;
+  right: var(--saeule);
+  bottom: calc(var(--grund) + 96px + env(safe-area-inset-bottom));
+  z-index: 450;
+  width: 42px; height: 42px;
+  display: grid; place-items: center;
+  border-radius: 50%; border: 1px solid transparent;
+  background: var(--glass); color: var(--muted-2);
+  box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  cursor: pointer;
+}
+.maplaser svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.maplaser svg .voll { fill: currentColor; stroke: none; }
+.maplaser.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--glass)); }
 
 /* ---------- Große Bildschirme: ©-Kasten und Knöpfe in die Ecken ----------
    Neben der 640 px breiten Bedienspalte ist dann Platz. Der ©-Kasten steht
@@ -1846,10 +1865,10 @@ input[type="range"] { min-width: 0; }
   .schiene .sec-ikon .voll { fill: currentColor; }
   .schiene button:hover { background: var(--panel-2); color: var(--text); }
   .schiene button.is-on { background: var(--accent); color: var(--accent-ink); }
-  /* Werkzeuge: ein Schalter, kein Bereich — abgesetzt durch einen Strich, an nur in der Signalfarbe */
-  .schiene .schiene-werkzeuge { margin-top: 6px; position: relative; }
-  .schiene .schiene-werkzeuge::before { content: ""; position: absolute; left: 10px; right: 10px; top: -6px; height: 1px; background: var(--line); }
+  /* Querprofil (die Messwerkzeuge): ein Schalter, kein Bereich — an nur in der Signalfarbe */
   .schiene .schiene-werkzeuge.is-on { background: none; color: var(--accent); }
+  /* Hinweise ganz unten (so gewünscht, 04.11.2026) */
+  .schiene .schiene-unten { margin-top: auto; }
   .schiene .schiene-werkzeuge.is-on:hover { background: var(--panel-2); }
 
   /* Feste Leiste: .ui ist die Spalte, ihr Glas liegt als ::before dahinter —
@@ -1935,7 +1954,7 @@ input[type="range"] { min-width: 0; }
   .mapziel, .mapziel[hidden] ~ .north { top: 68px; }
   .mapziel:not([hidden]) ~ .north { top: 120px; bottom: auto; }
   /* Messen läuft über die Werkzeugleiste */
-  .mapmess, .mess-menue { display: none; }
+  .mapmess, .mess-menue, .maplaser { display: none; }
 
   /* Werkzeugleiste hochkant unten rechts (03.11.2026): quer lag sie den Anwendungen
      unten mittig im Weg, die mussten bei schmalem Fenster über sie ausweichen */
@@ -1955,7 +1974,6 @@ input[type="range"] { min-width: 0; }
   .werkzeuge svg .voll { fill: currentColor; stroke: none; }
   .werkzeuge button:hover { background: var(--panel-2); color: var(--text); }
   .werkzeuge button.is-on { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
-  .werkzeuge button[data-werkzeug="radar"].is-on { background: var(--accent); color: var(--accent-ink); }
   /* Über den Knopf „Werkzeuge“ der Symbolspalte ausgeblendet */
   .werkzeuge-zu .werkzeuge { display: none; }
 }
@@ -2063,6 +2081,9 @@ body { font-variant-numeric: tabular-nums; }
    die Einstellungen als Tafel unter dem Knopf links oben. */
 .laser-lade { height: 6px; margin-top: 10px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
 .laser-lade-balken { height: 100%; background: var(--accent); transition: width .2s; }
+/* Ohne bekannte Größe (durch den Worker die Regel): ein Stück läuft durch */
+.laser-lade.unbestimmt .laser-lade-balken { width: 35%; animation: laser-lauf 1.3s ease-in-out infinite; }
+@keyframes laser-lauf { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 .bar-bottom .seg-btn:disabled { opacity: .55; }
 .laser-kachel-name {
   transform: translate(-50%, -50%); white-space: nowrap; text-align: center;
@@ -2073,84 +2094,169 @@ body { font-variant-numeric: tabular-nums; }
 #laserLadenBtn:disabled { background: var(--panel-2); color: var(--muted-2); }
 
 .laser-ansicht {
+  /* Topovo-Glas und -Knöpfe; der Grund ein dunkler Verlauf mit einem Schimmer
+     von oben wie Himmel über dem Gelände. Messlinien in --warn wie das Messmenü. */
   position: fixed; inset: 0; z-index: 3000;
-  color: #eef1f4; font-size: .84rem;
-  background: radial-gradient(ellipse at 50% 35%, #2b3440 0%, #12161c 75%);
-  --lz-glas: rgba(18, 22, 28, .72);
+  color: var(--text); font-size: .84rem;
+  /* Der Verlauf ist immer dunkel, auch im hellen Modus der App (so gewünscht,
+     04.11.2026): Auf Hell sah die Punktwolke flau aus. Weiß gibt es nur ausdrücklich. */
+  background: radial-gradient(ellipse 120% 80% at 50% 0%, #182434 0%, #06070b 70%);
+  /* Weil der Grund dunkel ist, auch Glas und Schrift immer wie im Dunkelmodus —
+     helles Glas über dunklem Grund wirkte grau. Die Signalfarbe bleibt die der App. */
+  color-scheme: dark;
+  --glass: rgba(18, 20, 28, .62);
+  --glass-dicht: rgba(18, 20, 28, .72);
+  --schiene-grund: rgba(6, 7, 11, .82);
+  --panel-2: rgba(255, 255, 255, .08);
+  --line: rgba(255, 255, 255, .12);
+  --text: #e9ebf1;
+  --muted: #8a90a3;
+  --muted-2: rgba(255, 255, 255, .52);
+  --warn: #ff9f0a;
+  --bg: #06070b;
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, .12), inset 0 0 0 .5px rgba(255, 255, 255, .08),
+            0 8px 24px rgba(0, 0, 0, .35);
 }
+/* Verlauf (Standard, immer dunkel); Schwarz und Weiß einfarbig, wie im PW-Viewer */
 .laser-ansicht[data-grund="schwarz"] { background: #000; }
-.laser-ansicht[data-grund="weiss"] { background: #f4f5f7; color: #1b1f24; --lz-glas: rgba(255, 255, 255, .8); }
+.laser-ansicht[data-grund="weiss"] { background: #fff; }
 .lz-flaeche { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.lz-flaeche.zieht { cursor: grabbing; }
 .lz-knopf {
-  position: absolute; z-index: 2; width: 46px; height: 46px; padding: 0;
+  position: absolute; z-index: 2; width: 42px; height: 42px; padding: 0;
   display: grid; place-items: center; cursor: pointer;
   border: 1px solid transparent; border-radius: 50%;
-  background: var(--lz-glas); color: inherit; box-shadow: var(--shadow);
+  background: var(--glass); color: var(--muted); box-shadow: var(--shadow);
   backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
-.lz-knopf svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.lz-knopf.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--lz-glas)); }
-.lz-einst { left: 14px; top: calc(14px + env(safe-area-inset-top)); }
-.lz-zu { right: 14px; top: calc(14px + env(safe-area-inset-top)); }
-.lz-messen { left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
-.lz-voll { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
-.lz-heim { right: 14px; bottom: calc(68px + env(safe-area-inset-bottom)); }
+.lz-knopf svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.lz-knopf.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--glass)); }
+.lz-messen.is-on { color: var(--warn); background: color-mix(in srgb, var(--warn) 18%, var(--glass)); }
+.lz-einst { left: var(--gap); top: calc(var(--gap) + env(safe-area-inset-top)); }
+.lz-zu { right: var(--gap); top: calc(var(--gap) + env(safe-area-inset-top)); }
+.lz-messen { left: var(--gap); bottom: calc(var(--gap) + env(safe-area-inset-bottom)); }
+.lz-heim { right: var(--gap); bottom: calc(var(--gap) + env(safe-area-inset-bottom)); }
 .lz-tafel {
-  position: absolute; z-index: 2; left: 14px; top: calc(68px + env(safe-area-inset-top));
-  width: min(300px, calc(100vw - 28px)); max-height: calc(100vh - 160px); overflow: auto;
-  padding: 12px 14px 14px; border-radius: var(--r);
-  background: var(--lz-glas); box-shadow: var(--shadow);
+  position: absolute; z-index: 2; left: var(--gap); top: calc(var(--gap) + 50px + env(safe-area-inset-top));
+  width: min(320px, calc(100vw - 2 * var(--gap))); max-height: calc(100% - 130px); overflow: auto;
+  padding: 2px 14px 14px; border: 1px solid transparent; border-radius: var(--r);
+  background: var(--glass); box-shadow: var(--shadow);
   backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
-.lz-tafel .seg-btn { padding: 8px 6px; font-size: .8rem; }
-.laser-ansicht[data-grund="weiss"] .lz-tafel .seg-btn:not(.is-on) { background: rgba(0, 0, 0, .06); color: inherit; }
+.lz-tafel:not([hidden]) { animation: von-oben .24s var(--auf); }
 .lz-faerbung { display: grid; grid-template-columns: 1fr 1fr; }
-.lz-titel { margin: 12px 0 6px; font-size: .7rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
-.lz-titel:first-child { margin-top: 0; }
-.lz-tafel .slider-row { color: inherit; }
-.lz-klasse { display: grid; grid-template-columns: 18px 12px 1fr auto; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
-.lz-klasse input { margin: 0; accent-color: var(--accent); }
-.lz-feld { width: 12px; height: 12px; border-radius: 3px; }
-.lz-zahl { opacity: .6; font-size: .74rem; font-variant-numeric: tabular-nums; }
+.lz-klassen { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.lz-klasse { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 8px 10px; text-align: left; white-space: normal; }
+.lz-klasse .lz-name { flex: 1; min-width: 0; font-size: .78rem; line-height: 1.2; }
+.lz-klasse small { font-size: .66rem; opacity: .7; font-variant-numeric: tabular-nums; }
+.lz-feld { flex: none; width: 10px; height: 10px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); }
 .lz-skala {
-  position: absolute; z-index: 2; left: 50%; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%);
-  width: min(320px, calc(100vw - 150px)); padding: 9px 12px 8px; border-radius: var(--r-knopf);
-  background: var(--lz-glas); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-}
-.lz-skala .hoehen-werte { color: inherit; }
-.lz-mess-hinweis {
-  position: absolute; z-index: 2; left: 70px; bottom: calc(20px + env(safe-area-inset-bottom));
-  padding: 6px 11px; border-radius: var(--r-knopf); background: var(--lz-glas); font-size: .78rem;
-}
-.lz-mess-menue {
-  position: absolute; z-index: 3; left: 14px; bottom: calc(68px + env(safe-area-inset-bottom));
-  width: 190px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
-  border-radius: var(--r); background: var(--lz-glas); box-shadow: var(--shadow);
+  position: absolute; z-index: 2; left: 50%; top: calc(var(--gap) + 52px + env(safe-area-inset-top)); transform: translateX(-50%);
+  width: min(320px, calc(100vw - 130px)); padding: 9px 12px 8px;
+  border: 1px solid transparent; border-radius: var(--r-knopf);
+  background: var(--glass); box-shadow: var(--shadow);
   backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
-.lz-mess-menue[hidden] { display: none; }
-.lz-mess-wahl {
-  padding: 9px 12px; border: 1px solid transparent; border-radius: var(--r-knopf); cursor: pointer; text-align: left;
-  font: inherit; font-size: .82rem; font-weight: 600; background: rgba(255, 255, 255, .08); color: inherit;
+/* Das Messmenü wie in der App, nur links unten über dem Knopf */
+.lz-mess-menue.mess-menue {
+  position: absolute; z-index: 3; right: auto; left: var(--gap); bottom: calc(var(--gap) + 50px + env(safe-area-inset-bottom));
+  transform-origin: left bottom;
 }
-.laser-ansicht[data-grund="weiss"] .lz-mess-wahl { background: rgba(0, 0, 0, .06); }
-.lz-mess-wahl.is-on { background: var(--accent); color: var(--accent-ink); }
-.lz-mess-wahl:disabled { opacity: .45; cursor: default; }
-.lz-mess-hinweis { display: flex; align-items: center; gap: 10px; }
-.lz-mess-hinweis[hidden] { display: none; }
-.lz-fertig {
-  padding: 4px 10px; border: 0; border-radius: var(--r-klein); cursor: pointer;
-  font: inherit; font-size: .76rem; font-weight: 650; background: var(--accent); color: var(--accent-ink);
+.lz-mess-menue button.is-on { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.lz-mess-menue button:disabled { opacity: .45; cursor: default; }
+/* Die laufende Messung: Leiste wie die Werkzeuge der App, unten zwischen den Knöpfen */
+.lz-leiste {
+  position: absolute; z-index: 2; left: calc(var(--gap) + 50px); right: calc(var(--gap) + 50px);
+  bottom: calc(var(--gap) + env(safe-area-inset-bottom)); max-width: 460px; margin: 0 auto;
+  padding: 12px 14px 13px; border: 1px solid transparent; border-radius: var(--r);
+  background: var(--glass); box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
+.lz-leiste:not([hidden]) { animation: von-unten .3s var(--auf); }
+.lz-leiste .bb-coord { margin-top: 6px; font-size: .86rem; }
+.lz-leiste .bb-actions { margin-top: 10px; }
+.lz-leiste .bb-actions button { padding: 10px 8px; }
+.lz-leiste .bb-actions button:disabled { opacity: .5; cursor: default; }
+.lz-leiste .bb-actions .maps:disabled { background: var(--panel-2); color: var(--muted-2); }
 .lz-marken { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .lz-marke {
-  position: absolute; left: 0; top: 0; padding: 5px 9px; border-radius: var(--r-klein);
-  background: rgba(10, 12, 16, .82); color: #fff; white-space: nowrap; text-align: center; line-height: 1.3;
+  position: absolute; left: 0; top: 0; padding: 3px 8px; border-radius: var(--r-klein);
+  background: var(--glass-dicht); color: var(--text); box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  font-size: .72rem; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.lz-marke b { display: block; font-size: .86rem; }
-.lz-marke span { font-size: .7rem; opacity: .8; }
+.lz-marke.gross { padding: 4px 9px; font-size: .8rem; color: var(--warn); }
+.lz-marke b { font-weight: 650; }
 .lz-fuss {
-  position: absolute; z-index: 1; left: 70px; right: 70px; bottom: calc(6px + env(safe-area-inset-bottom));
-  margin: 0; text-align: center; font-size: .66rem; opacity: .65; pointer-events: none;
+  /* Die Quellenangabe (CC BY) oben mittig zwischen den Knöpfen — unten stehen
+     Messleiste und Hinweis (so gewünscht, 04.11.2026) */
+  position: absolute; z-index: 1; left: 64px; right: 64px; top: calc(var(--gap) + 13px + env(safe-area-inset-top));
+  margin: 0; text-align: center; font-size: .62rem; line-height: 1.4; color: var(--muted); pointer-events: none;
 }
-.lz-mess-hinweis:not([hidden]) ~ .lz-fuss { display: none; }
+/* Bedienung beim Öffnen, verblasst nach einigen Sekunden */
+.lz-tipp {
+  position: absolute; z-index: 1; left: 50%; bottom: calc(var(--gap) + 4px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 130px); margin: 0; padding: 6px 12px;
+  border-radius: var(--r-knopf); background: var(--glass); box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  font-size: .72rem; text-align: center; color: var(--text); pointer-events: none;
+  transition: opacity .6s;
+}
+.lz-tipp.weg { opacity: 0; }
+.lz-leiste:not([hidden]) ~ .lz-tipp { display: none; }
+.lz-info .fine { margin: 3px 0 0; font-size: .74rem; color: var(--muted); }
+
+/* Spalte und Leiste gibt es nur am Desktop */
+.lz-schiene, .lz-seite { display: none; }
+@media (min-width: 1010px) {
+  /* Wie Topovo ab 1010 px: Symbolspalte (64 px) und Glasleiste (320 px) links */
+  .lz-schiene {
+    position: absolute; z-index: 3; left: 0; top: 0; bottom: 0; width: 64px;
+    display: flex; flex-direction: column; gap: 4px; padding: 10px 6px;
+    background: var(--schiene-grund); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+    box-shadow: inset -.5px 0 0 var(--line);
+  }
+  .lz-schiene button {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    height: 52px; flex: none; padding: 0;
+    border: 0; border-radius: var(--r-knopf); background: none; color: var(--muted); cursor: pointer;
+    font: inherit; font-size: .6rem; font-weight: 600;
+  }
+  .lz-schiene svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .lz-schiene button:hover { background: var(--panel-2); color: var(--text); }
+  .lz-schiene button.is-on { background: var(--accent); color: var(--accent-ink); }
+  /* „Karte“ oben abgesetzt wie der Werkzeugschalter in Topovo, „Ansicht“ unten */
+  .lz-schiene [data-lz="karte"] { margin-bottom: 8px; position: relative; }
+  .lz-schiene [data-lz="karte"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -6px; height: 1px; background: var(--line); }
+  .lz-schiene-heim { margin-top: auto; }
+  .lz-seite {
+    display: block; position: absolute; z-index: 2; left: 64px; top: 0; bottom: 0; width: 320px;
+    padding: 14px 16px 20px; overflow: auto;
+    background: var(--glass-dicht); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+    box-shadow: inset -.5px 0 0 var(--line), 8px 0 24px rgba(0, 0, 0, .18);
+    transition: transform .3s var(--auf), opacity .3s var(--auf);
+  }
+  .seite-zu .lz-seite { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+  .lz-seite-kopf { padding: 2px 0 12px; border-bottom: 1px solid var(--line); }
+  .lz-seite-kopf .bb-sub { margin-top: 3px; }
+  .lz-seite-titel { margin: 14px 0 4px; font-size: .74rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  /* Was am Handy schwebt, steht hier flach in der Leiste */
+  .lz-seite .lz-tafel, .lz-seite .lz-mess-menue.mess-menue, .lz-seite .lz-leiste {
+    position: static; width: auto; max-width: none; max-height: none; margin: 0; padding: 0;
+    background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+    border-radius: 0; animation: none; overflow: visible;
+  }
+  /* Topovo blendet .mess-menue am Desktop aus (dort Werkzeugleiste) — hier gebraucht */
+  .lz-seite .lz-mess-menue.mess-menue { display: block; margin: 4px -16px 0; }
+  .lz-seite .lz-mess-menue.mess-menue[hidden] { display: none; }
+  .lz-seite .lz-mess-menue button { padding: 10px 16px; }
+  .lz-seite .lz-leiste { margin-top: 12px; padding: 12px 14px 13px; border-radius: var(--r); background: var(--panel-2); position: relative; left: auto; right: auto; bottom: auto; }
+  /* Die runden Knöpfe der Ecken übernimmt die Spalte */
+  .lz-einst, .lz-messen, .lz-heim, .lz-zu { display: none; }
+  /* Fußzeile, Hinweis und Farbskala in der Mitte der freien Fläche */
+  .lz-fuss { left: calc(384px + 16px); right: 16px; top: 16px; }
+  .lz-tipp { left: calc(50% + 192px); max-width: calc(100% - 440px); }
+  .lz-skala { left: calc(50% + 192px); }
+  .seite-zu .lz-fuss { left: calc(64px + 16px); }
+  .seite-zu .lz-tipp, .seite-zu .lz-skala { left: calc(50% + 32px); }
+}

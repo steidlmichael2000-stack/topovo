@@ -1367,12 +1367,13 @@ einem echten Paar, dass die geschätzte Bewegung das nächste Bild besser trifft
 
 ## Laserpunkte in 3D
 
-Messmenü bzw. Werkzeugleiste → **Laserpunkte**. Solange das offen ist, zeigt die Karte das Raster
+Am Handy der runde Knopf mit der Punktwolke über dem Messknopf, am Desktop „Laser“ in der Symbolspalte. Solange das offen ist, zeigt die Karte das Raster
 der Laserkacheln (1 × 1 km); ein Tipp setzt einen Rahmen, der sich ziehen und von 50 bis 1000 m
 vergrößern lässt. Berührt er mehrere Kacheln (an einer Ecke vier), werden alle geladen. „Nur Boden“
 lässt Bewuchs und Gebäude weg. Die 3D-Ansicht (`laser.js`, three.js) färbt nach Klasse, Höhe,
 Intensität oder Normalen (graue Schummerung mit Licht von Nordwesten, für Böschungskanten), blendet
-Klassen ein und aus und misst Distanz, Fläche und Höhe (NHN mit E/N in UTM32).
+Klassen ein und aus, zeigt perspektivisch oder orthografisch und misst wie Potree Distanz
+(Linienzug), Fläche und Höhe (Δh zweier Punkte mit Neigung); Messpunkte lassen sich ziehen.
 
 **Daten:** Laserpunkte der Bayerischen Vermessungsverwaltung (CC BY 4.0),
 `geodaten.bayern.de/odd_data/laser/{O}_{N}.laz`. Am 04.11.2026 nachgesehen: LAS 1.2, Punktformat 1

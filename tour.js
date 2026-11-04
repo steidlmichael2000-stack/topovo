@@ -123,12 +123,12 @@ const TOUR_SCHRITTE = [
     /* Ab 1010 px gibt es keinen Messknopf: Die Werkzeuge stehen hochkant rechts unten */
     get text() {
       return (SEITENLEISTE.matches
-        ? 'Die Werkzeugleiste rechts unten. '
+        ? 'Die Messwerkzeuge rechts unten (ein- und ausblenden mit „Profil“ in der Spalte links). '
         : 'Der Messknopf öffnet vier Werkzeuge. ') +
         'Profil: der Geländeschnitt zwischen zwei getippten Punkten. Profilmappe: Querprofile an einer ' +
         'Liste von Kilometern, als ein PDF. Polygon: Strecken und — geschlossen — Flächen. Live: die ' +
         'Entfernung vom Startpunkt zum Fadenkreuz. ' + (SEITENLEISTE.matches
-        ? 'Dazu Regenradar und KML. Ein zweiter Klick auf ein Werkzeug beendet es.'
+        ? 'Ein zweiter Klick auf ein Werkzeug beendet es.'
         : 'Ein zweiter Tipp auf den Messknopf beendet, was gerade läuft.');
     },
     ziel: () => SEITENLEISTE.matches ? tourSichtbar('#werkzeuge') : tourSichtbar('#messMenue'),

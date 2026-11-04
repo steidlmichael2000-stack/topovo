@@ -2338,6 +2338,7 @@ async function glLaden() {
         fadeDuration: 0, maxZoom: 21,
         ...glLage()
       });
+      gl.on('error', ev => { if (ev.sourceId) { glFehlerQuellen.add(ev.sourceId); kachelnNeuSpaeter(); } });
       glDeckungSetzen();
       return gl;
     })();
@@ -2929,7 +2930,16 @@ const DOP_VERSUCHE = 4;
 
 async function dopBild(url, signal) {
   for (let versuch = 1; ; versuch++) {
-    const r = await fetch(url, versuch > 1 ? { signal, cache: 'reload' } : { signal });
+    let r;
+    try {
+      r = await fetch(url, versuch > 1 ? { signal, cache: 'reload' } : { signal });
+    } catch (err) {
+      /* Netzfehler (TypeError) noch zweimal: Beim Wiederöffnen der App ist das Netz
+       * oft noch nicht wach — ohne Wiederholung blieb das Luftbild leer (04.11.2026). */
+      if (signal?.aborted || !(err instanceof TypeError) || versuch >= 3) throw err;
+      await new Promise(fertig => setTimeout(fertig, versuch === 1 ? 500 : 1500));
+      continue;
+    }
     if (!r.ok) throw new Error(`Luftbild/Relief: HTTP ${r.status}`);
     if (/^image\//.test(r.headers.get('content-type') || '')) return r.blob();
     if (versuch >= DOP_VERSUCHE) throw new Error('Luftbild/Relief: Dienst meldet einen Fehler');
@@ -3007,6 +3017,43 @@ async function dopQuelleErneuern() {
 }
 
 let dopNichts = null;   // die durchsichtige Kachel für außerhalb aller Länder, einmal gebaut
+
+/* Kacheln nach einem Fehler neu holen — alle Ebenen, nicht nur das Luftbild.
+ * Eine fehlgeschlagene Kachel fragen weder Leaflet noch MapLibre von selbst wieder
+ * an: Nach dem Wiederöffnen der App mit noch schlafendem Netz blieb das Luftbild
+ * leer, bis man die Grundkarte wechselte (nachgestellt 04.11.2026: 17 von 17
+ * Kacheln „errored“, Sekunden nachdem das Netz zurück war). Dasselbe traf die
+ * Karte, Parzellen, Bahn-Layer, WMS und die Vektorkacheln von MapLibre.
+ * Leaflet: jede Kachelebene merkt sich einen Fehler (Init-Hook an L.GridLayer)
+ * und zeichnet neu; MapLibre: die Quelle mit Fehler bekommt ihre Adressen neu.
+ * Ausgelöst, sobald wieder Netz da ist oder die App in den Vordergrund kommt,
+ * sonst mit wachsender Pause (3 s, 6 s … höchstens 30 s). */
+const glFehlerQuellen = new Set();
+let kachelnNeuUhr = 0, kachelnVersuche = 0;
+function kachelnNeuSpaeter(ms) {
+  clearTimeout(kachelnNeuUhr);
+  kachelnNeuUhr = setTimeout(kachelnNeu, ms ?? Math.min(30000, 3000 * 2 ** kachelnVersuche));
+}
+function kachelnNeu() {
+  if (!navigator.onLine) return;              // 'online' holt es nach
+  let neu = false;
+  for (const id of glFehlerQuellen) {
+    const q = gl && gl.getSource(id);
+    if (q && q.setTiles && q.tiles) q.setTiles(q.tiles);        // Raster: gleiche Adressen, alle Kacheln neu
+    else if (q && q.setUrl && q.url) q.setUrl(q.url);           // Vektor (OpenFreeMap) über die Beschreibung
+    neu = neu || !!q;
+  }
+  glFehlerQuellen.clear();
+  if (map) map.eachLayer(l => { if (l._fehler && l.redraw) { l._fehler = false; l.redraw(); neu = true; } });
+  if (neu) kachelnVersuche++;
+}
+L.GridLayer.addInitHook(function () {
+  this.on('tileerror', () => { this._fehler = true; kachelnNeuSpaeter(); });
+  // Erfolg setzt die Pause zurück, damit ein späterer Ausfall wieder schnell nachlädt
+  this.on('load', () => { if (!this._fehler) kachelnVersuche = 0; });
+});
+window.addEventListener('online', () => { kachelnVersuche = 0; kachelnNeuSpaeter(300); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { kachelnVersuche = 0; kachelnNeuSpaeter(800); } });
 
 /** Eine Kachel (art 'dop' oder 'relief') als Bild-Blob: aus einem Dienst
  *  durchgereicht, wo es geht; sonst je Bildpunkt aus dem zuständigen Land, Löcher
@@ -7347,7 +7394,10 @@ const LASER_MAX_PUNKTE = 2000000;
 // Gepackte Kacheln im Speicher: am Handy die Hälfte
 const LASER_VORRAT = (matchMedia('(pointer: coarse)').matches ? 400 : 800) * 1e6;
 const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
-const LASER_QUELLE = 'Bayerische Vermessungsverwaltung (CC BY 4.0)';
+/* CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen: in der
+ * Ansicht unten (LASER_QUELLE), auf der Karte in der Quellenangabe (LASER_ATTR). */
+const LASER_QUELLE = 'Bayerische Vermessungsverwaltung (CC BY 4.0), bearbeitet';
+const LASER_ATTR = landQuelle('Laserpunkte', ['by']);
 let laserAn = false;
 let laserStelle = null;      // { e, n } — Mitte des Rahmens in UTM32
 let laserSeite = 200;
@@ -7369,10 +7419,12 @@ function laserStart() {
   laserAn = true;
   laserStelle = null;
   laserFehler = '';
+  laserLaedt = null;
   map.closePopup();
   if (!laserRasterLayer) laserRasterLayer = L.layerGroup().addTo(map);
   if (!laserLayer) laserLayer = L.layerGroup().addTo(map);
   map.on('moveend', laserRasterZeichnen);
+  map.attributionControl.addAttribution(LASER_ATTR);
   laserRasterZeichnen();
   laserLeiste();
   closeSheet();
@@ -7387,6 +7439,7 @@ function laserEnde(zeigen = true) {
   if (laserWerk) { laserWerk.terminate(); laserWerk = null; }
   laserImSpeicher = new Set();
   map.off('moveend', laserRasterZeichnen);
+  map.attributionControl.removeAttribution(LASER_ATTR);
   if (laserLayer) laserLayer.clearLayers();
   if (laserRasterLayer) laserRasterLayer.clearLayers();
   laserRahmen = null;
@@ -7535,6 +7588,7 @@ async function laserLaden() {
   const namen = laserKacheln().filter(k => laserGroessen.get(k) !== 0);
   if (!namen.length) return;
   const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel) })));
+  if (!laserAn || !laserStelle || laserLaedt) return;     // inzwischen beendet oder schon gestartet
   const seite = laserSeite;
   laserLaedt = { art: 'laden', nr: 0, von: kacheln.length, wert: 0, gesamt: 0 };
   laserFehler = '';
@@ -7543,23 +7597,32 @@ async function laserLaden() {
   laserWerk.onmessage = async ev => {
     const m = ev.data;
     if (m.art === 'vorrat') { laserImSpeicher = new Set(m.kacheln); laserRasterZeichnen(); return; }
+    const stufeVorher = laserLaedt && laserLaedt.art;
     if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt };
     else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
     else if (m.art === 'normalen') laserLaedt = { art: 'normalen', wert: m.fertig, gesamt: m.gesamt };
     else if (m.art === 'warten') laserLaedt = { art: 'warten', nr: m.nr, von: m.von, wert: 0, gesamt: 0, sekunden: m.sekunden };
+    if (laserLaedt && m.art !== 'fertig' && m.art !== 'fehler' && m.art !== 'abgebrochen') {
+      /* Nur Balken und Text nachführen, die Leiste nicht neu bauen: Bei dutzenden
+       * Meldungen je Sekunde ginge ein Tipp auf „Abbrechen“ sonst zwischen Drücken
+       * und Loslassen verloren (wie bei der Sprungreihe des Profils). */
+      if (stufeVorher && laserFortschritt()) return;
+      laserLeiste();
+      return;
+    }
+    laserLaedt = null;
+    if (m.art === 'fehler') laserFehler = m.text;
+    else if (m.art === 'abgebrochen') laserFehler = '';
     else {
-      laserLaedt = null;
-      if (m.art === 'fehler') laserFehler = m.text;
-      else if (m.art === 'abgebrochen') laserFehler = '';
-      else {
-        try {
-          const { laserAnsicht } = await import('./laser.js');
-          const da = namen.filter(k => !m.fehlen.includes(k));
-          laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden: laserNurBoden });
-        } catch (err) {
-          console.warn(err);
-          laserFehler = '3D-Ansicht ließ sich nicht öffnen (WebGL?).';
-        }
+      try {
+        const { laserAnsicht } = await import('./laser.js');
+        if (!laserAn) return;                // beim ersten Mal lädt three.js — inzwischen beendet?
+        const da = namen.filter(k => !m.fehlen.includes(k));
+        laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden: laserNurBoden });
+      } catch (err) {
+        console.warn(err);
+        laserFehler = err && err.message === 'WebGL2' ? 'Dieses Gerät kann die 3D-Ansicht nicht zeigen (kein WebGL2).'
+          : '3D-Ansicht ließ sich nicht öffnen.';
       }
     }
     laserLeiste();
@@ -7568,6 +7631,28 @@ async function laserLaden() {
 }
 
 const laserMB = b => `${(b / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 0 })} MB`;
+
+/** Stand des Ladens: Anteil (null = unbekannt, der Balken läuft dann durch) und Text. */
+function laserStand(L_) {
+  const anteil = L_.gesamt ? ((L_.nr || 0) + L_.wert / L_.gesamt) / (L_.von || 1) : null;
+  const kachelNr = L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : '';
+  const text = L_.art === 'laden' ? `Laden${kachelNr} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
+    : L_.art === 'lesen' ? `Entpacken${kachelNr} …`
+    : L_.art === 'warten' ? `Verbindung unterbrochen — neuer Versuch in ${L_.sekunden} s oder sobald wieder Netz da ist. Die Kachel lädt dann von vorn.`
+    : 'Normalen rechnen …';
+  return { anteil, text };
+}
+
+/** Balken und Text in der stehenden Leiste nachführen; false, wenn es sie nicht gibt. */
+function laserFortschritt() {
+  const balken = $('#laserLadeBalken'), text = $('#laserLadeText');
+  if (!balken || !text || !laserLaedt) return false;
+  const { anteil, text: t } = laserStand(laserLaedt);
+  balken.parentElement.classList.toggle('unbestimmt', anteil == null);
+  balken.style.width = anteil == null ? '' : Math.round(anteil * 100) + '%';
+  text.textContent = t;
+  return true;
+}
 
 /** „2 Kacheln · 230 MB zu laden" — was der Rahmen kostet. */
 function laserKosten() {
@@ -7597,11 +7682,7 @@ function laserLeiste() {
     inhalt = `<p class="bb-note${laserFehler ? '' : ' plain'}">${esc(laserFehler || 'Tippe auf die Stelle, die du dir ansehen willst. Das Raster zeigt die Kacheln zu 1 × 1 km.')}</p>`;
   } else {
     const L_ = laserLaedt;
-    const anteil = L_ && L_.gesamt ? ((L_.nr || 0) + L_.wert / L_.gesamt) / (L_.von || 1) : 0;
-    const stufe = !L_ ? '' : L_.art === 'laden' ? `Laden${L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : ''} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
-      : L_.art === 'lesen' ? `Entpacken${L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : ''} …`
-      : L_.art === 'warten' ? `Verbindung unterbrochen — neuer Versuch in ${L_.sekunden} s oder sobald wieder Netz da ist. Die Kachel lädt dann von vorn.`
-      : 'Normalen rechnen …';
+    const { anteil, text: stufe } = L_ ? laserStand(L_) : { anteil: 0, text: '' };
     const keine = laserKacheln().every(k => laserGroessen.get(k) === 0);
     inhalt = `
       <p class="bb-sub" id="laserKosten">${esc(laserKosten())}</p>
@@ -7613,8 +7694,8 @@ function laserLeiste() {
         <button type="button" class="seg-btn${laserNurBoden ? '' : ' is-on'}" data-laser-boden="0"${L_ ? ' disabled' : ''}>Alle Punkte</button>
         <button type="button" class="seg-btn${laserNurBoden ? ' is-on' : ''}" data-laser-boden="1"${L_ ? ' disabled' : ''}>Nur Boden</button>
       </div>
-      ${L_ ? `<div class="laser-lade"><div class="laser-lade-balken" style="width:${Math.round(anteil * 100)}%"></div></div>
-        <p class="bb-note plain">${esc(stufe)}</p>` : ''}
+      ${L_ ? `<div class="laser-lade${anteil == null ? ' unbestimmt' : ''}"><div class="laser-lade-balken" id="laserLadeBalken"${anteil == null ? '' : ` style="width:${Math.round(anteil * 100)}%"`}></div></div>
+        <p class="bb-note plain" id="laserLadeText">${esc(stufe)}</p>` : ''}
       ${laserFehler ? `<p class="bb-note">${esc(laserFehler)}</p>` : ''}
       ${!L_ && !laserFehler ? '<p class="bb-note plain">Rahmen ziehen zum Verschieben, Tipp daneben setzt ihn neu.</p>' : ''}
       <div class="bb-actions">${L_ ? '<button type="button" id="laserAbbrechenBtn">Abbrechen</button>'
@@ -13004,20 +13085,25 @@ function syncButtons() {
   const mb = $('#mapMessBtn');
   if (mb) {
     // Auch bei offener Profilmappe: Der Knopf schließt sie dann wie ein laufendes Messen
-    const aktiv = messModus || profModus || mappeOffen || laserAn;     // die Route gehört nicht zum Messen
+    const aktiv = messModus || profModus || mappeOffen;     // die Route und die Laserpunkte gehören nicht zum Messen
     mb.classList.toggle('is-on', aktiv);
     mb.setAttribute('aria-pressed', String(aktiv));
   }
-  // Werkzeugleiste (ab 1010 px): das laufende Werkzeug und das Radar markiert
-  document.querySelectorAll('#werkzeuge :is([data-messart], [data-werkzeug])').forEach(b => {
-    const w = b.dataset.messart || b.dataset.werkzeug;
-    const an = w === 'profil' ? profModus : w === 'mappe' ? mappeOffen : w === 'laser' ? laserAn
-      : w === 'radar' ? !!($('#radarBtn') && $('#radarBtn').classList.contains('is-on'))
-      : w === 'kml' ? false : messModus && messArt === w;
+  /* Werkzeugleiste „Messen“ (ab 1010 px): das laufende Werkzeug markiert. Radar und
+   * KML standen bis November 2026 auch hier — keine Messwerkzeuge (raus auf Wunsch,
+   * erreichbar über Wetter und KML in der Symbolspalte). */
+  document.querySelectorAll('#werkzeuge [data-messart]').forEach(b => {
+    const w = b.dataset.messart;
+    const an = w === 'profil' ? profModus : w === 'mappe' ? mappeOffen : messModus && messArt === w;
     b.classList.toggle('is-on', !!an);
     b.setAttribute('aria-pressed', String(!!an));
   });
   abKnopf();
+  // Laserpunkte: runder Knopf am Handy, Feld in der Symbolspalte am Desktop
+  for (const id of ['#mapLaserBtn', '#laserSchieneBtn']) {
+    const k = $(id);
+    if (k) { k.classList.toggle('is-on', laserAn); k.setAttribute('aria-pressed', String(laserAn)); }
+  }
 
   const kn = $('#kmlNamenBtn');
   if (kn) kn.classList.toggle('is-on', prefs.kmlNamen !== false);
@@ -13314,9 +13400,6 @@ function bind() {
     const b = ev.target.closest('button');
     if (!b) return;
     if (!$('#sheet').hidden) closeSheet();
-    const w = b.dataset.werkzeug;
-    if (w === 'radar') { ev.stopPropagation(); toggleOverlay('radar'); syncButtons(); return; }
-    if (w === 'kml') { ev.stopPropagation(); $('#kmlFile').click(); return; }
     if (!b.classList.contains('is-on')) return;
     ev.stopPropagation();
     if (messModus) messEnde(); else if (profModus) profEnde(); else if (mappeOffen) mappeEnde();
@@ -13325,6 +13408,7 @@ function bind() {
     b.addEventListener('click', () => schieneWaehlen(b.dataset.schiene)));
   on('#leisteGriff', 'click', () => leisteZu(!document.body.classList.contains('leiste-zu')));
   on('#werkzeugeBtn', 'click', () => { prefs.werkzeugeAus = !prefs.werkzeugeAus; saveStore(); werkzeugeSync(); });
+  for (const id of ['#mapLaserBtn', '#laserSchieneBtn']) on(id, 'click', () => { if (laserAn) laserEnde(); else laserStart(); });
   werkzeugeSync();
   // Anwendungen unten mittig stapeln sich nach ihrer Höhe (updateBH)
   if (window.ResizeObserver) {
@@ -13337,7 +13421,6 @@ function bind() {
     messMenueAuf(false);
     if (b.dataset.messart === 'profil') profStart();
     else if (b.dataset.messart === 'mappe') mappeStart();
-    else if (b.dataset.messart === 'laser') laserStart();
     else messStart(b.dataset.messart);
   }));
   // In der Einfangphase, damit Leaflet die Pfeiltasten nicht zum Verschieben bekommt
