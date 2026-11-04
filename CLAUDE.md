@@ -331,13 +331,14 @@ den Rückweg).
 Das ? im ©-Kasten startet sie; beim ersten Start einmal angeboten (`prefs.tourAngeboten`). Die
 Tour führt vor, indem sie dieselben Funktionen aufruft wie die Knöpfe: `search`, `merkPunkt`,
 `messMenueAuf`, `profStart`/`profGeaendert`/`profEnde`, `gpStart`, `openSheet`/`closeSheet`, `suchAuf`,
-`closeSuggest` und die Variablen `view`, `profDgm`, `profLaedt`, `profFehler`. **Wer davon etwas
+`closeSuggest`, `laserEnde` und die Variablen `view`, `profDgm`, `profLaedt`, `profFehler`, `laserAn`,
+`laserStelle`. **Wer davon etwas
 umbenennt oder neue Funktionen einbaut, zieht die Schritte in `TOUR_SCHRITTE` nach** — sonst
 erklärt die Tour eine App, die es so nicht mehr gibt.
 
 - Das ? macht den ©-Kasten 21 px breiter; die Grenze für die Ecken-Anordnung (1010 px) hängt daran.
 - **Werkzeug-Touren** (`HILFE` in `tour.js`, Knopf `hilfeKnopf` in `app.js`): das ? links neben dem ×
-  in den Leisten von Profil, Profilmappe, Polygon, Live und Abstecken. Die Schritte zielen auf
+  in den Leisten von Profil, Profilmappe, Polygon, Live, Abstecken, Route und Laserpunkte. Die Schritte zielen auf
   Elemente der Leisten (`#profBild`, `.prof-ebenen`, `#profWeite`, `#mappeText`, `.ab-richtung` …).
   Wer eine Leiste umbaut, zieht `HILFE` nach — Schritte ohne Ziel fallen still heraus, ein
   umbenanntes Element fehlt dann in der Erklärung, ohne dass es auffällt.

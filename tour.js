@@ -102,7 +102,7 @@ const TOUR_SCHRITTE = [
   {
     titel: 'Lange drücken setzt einen Punkt',
     text: 'Lange auf die Karte drücken (am Rechner: Rechtsklick) setzt einen Punkt — mit Koordinate, ' +
-      'Google Maps und „Kilometer bestimmen". Ein kurzer Tipp tut absichtlich nichts: Im Gelände tippt ' +
+      'Google Maps, „Kilometer bestimmen" und der Route mit dem Auto. Ein kurzer Tipp tut absichtlich nichts: Im Gelände tippt ' +
       'man oft aus Versehen.',
     ziel: () => tourSichtbar('.leaflet-popup'),
     vorher: async () => {
@@ -171,6 +171,17 @@ const TOUR_SCHRITTE = [
     nachher: () => { if (profModus) profEnde(); }
   },
   {
+    titel: 'Laserpunkte in 3D',
+    get text() {
+      return (SEITENLEISTE.matches ? '„Laser“ in der Spalte links ' : 'Dieser Knopf ') +
+        'zeigt die Punktwolke der Befliegung: Boden, Bewuchs, Gebäude, Leitungen. Auf der Karte erscheint ' +
+        'das Raster der Kacheln zu 1 × 1 km; ein Tipp setzt den Ausschnitt, der Rahmen lässt sich ziehen, ' +
+        '„Nur Boden“ lässt alles darüber weg. Im 3D-Bild drehen, einfärben und messen — Distanz, ' +
+        'Fläche, Höhe. Nur in Bayern; eine Kachel hat meist 40 bis 250 MB.';
+    },
+    ziel: () => SEITENLEISTE.matches ? tourSichtbar('#laserSchieneBtn') : tourSichtbar('#mapLaserBtn')
+  },
+  {
     titel: 'Karten und Auflagen',
     get text() {
       return (SEITENLEISTE.matches ? 'Unter „Karte“ in der Spalte links: ' : 'Hinter dem Regler-Symbol: ') +
@@ -198,6 +209,18 @@ const TOUR_SCHRITTE = [
       'Wunsch nach dem Kompass des Handys.',
     ziel: () => tourSichtbar('#sheet [data-sec="kml"]'),
     vorher: () => tourAbschnitt('kml'),
+    nachher: () => closeSheet()
+  },
+  {
+    titel: 'Ansicht und eigener WMS',
+    get text() {
+      return 'Unter „Ansicht“: hell, dunkel oder wie das Gerät, und die Signalfarbe für Punkt und Knöpfe. ' +
+        'Unter „' + (SEITENLEISTE.matches ? 'WMS' : 'Eigener WMS-Layer') + '“ lässt sich ein beliebiger ' +
+        'WMS-Dienst über die Karte legen, mit Deckkraft und Anmeldung für geschützte Dienste.';
+    },
+    // Der WMS-Abschnitt bleibt zu: aufgeklappt reicht er über den Schirm hinaus
+    ziel: () => [tourSichtbar('#sheet [data-sec="ansicht"]'), tourSichtbar('#sheet [data-sec="wms"] > summary')].filter(Boolean),
+    vorher: () => tourAbschnitt('ansicht'),
     nachher: () => closeSheet()
   },
   {
@@ -399,6 +422,46 @@ const HILFE = {
     }
   ],
 
+  laser: () => [
+    {
+      titel: 'Stelle wählen',
+      text: 'Auf der Karte liegt das Raster der Kacheln zu 1 × 1 km, beschriftet mit ihrer Nummer. Ein Tipp ' +
+        'setzt den Ausschnitt dorthin.',
+      ziel: () => !laserStelle && tourSichtbar('#bottom .bb-note')
+    },
+    {
+      titel: 'Größe',
+      text: 'Die Kantenlänge des Ausschnitts, 50 m bis 1 km. Der Rahmen auf der Karte lässt sich ziehen; ein ' +
+        'Tipp daneben setzt ihn neu. Gezeigt werden nur die Punkte im Rahmen, geladen aber die ganzen Kacheln, ' +
+        'die er berührt.',
+      ziel: () => tourRegler('laserSeite')
+    },
+    {
+      titel: 'Was es kostet',
+      text: 'Wie viele Kacheln der Rahmen berührt und wie viel davon noch zu laden ist — meist 40 bis 250 MB ' +
+        'je Kachel. Geladene Kacheln bleiben im Speicher, bis die Laserpunkte beendet werden; auf der Karte ' +
+        'steht dann „im Speicher“.',
+      ziel: () => tourSichtbar('#laserKosten')
+    },
+    {
+      titel: 'Alle Punkte oder nur Boden',
+      text: '„Nur Boden“ lässt Bewuchs, Gebäude und alles andere über dem Gelände weg — gut für Böschungen ' +
+        'und Gräben unter Bäumen.',
+      ziel: () => { const k = tourSichtbar('#bottom [data-laser-boden]'); return k && k.parentElement; }
+    },
+    {
+      titel: 'In 3D ansehen',
+      text: 'Lädt, entpackt und öffnet die 3D-Ansicht. Dort links die Darstellung (Färbung nach Klasse, Höhe, ' +
+        'Intensität oder Normalen, Klassen ein und aus) und Messen: Distanz, Fläche, Höhe.',
+      ziel: () => tourSichtbar('#laserLadenBtn')
+    },
+    {
+      titel: 'Abbrechen',
+      text: 'Hält das Laden an. Bricht das Netz ab, versucht es die App selbst noch einmal.',
+      ziel: () => tourSichtbar('#laserAbbrechenBtn')
+    }
+  ],
+
   route: () => [
     {
       titel: 'Dauer und Länge',
@@ -475,6 +538,7 @@ function tourStart() {
   if (messModus) messEnde();
   if (profModus) profEnde();
   if (mappeOffen) mappeEnde();
+  if (laserAn) laserEnde();
   messMenueAuf(false);
   closeSheet();
   map.closePopup();

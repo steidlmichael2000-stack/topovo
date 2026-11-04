@@ -294,8 +294,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const halb = info.seite / 2, hoch = d.zMax - d.zMin;
   function heim() {
     steuerung.target.set(0, 0, hoch / 3);
-    // Von Süden, schräg von oben, der ganze Ausschnitt im Bild
-    kamera.position.set(-halb * 0.5, -halb * 2.3, hoch / 3 + halb * 1.7);
+    /* Von Süden, schräg von oben, der ganze Ausschnitt im Bild. Hochkant (Handy)
+     * ist das Bild schmaler als hoch: dann weiter weg, sonst fehlen links und rechts. */
+    const w = wurzel.clientWidth, h = wurzel.clientHeight;
+    const weiter = w && h ? Math.max(1, 1.1 * h / w) : 1;
+    kamera.position.set(-halb * 0.5 * weiter, -halb * 2.3 * weiter, hoch / 3 + halb * 1.7 * weiter);
     if (kamera === orthoKamera) { orthoKamera.zoom = 1; orthoRahmen(); }
     steuerung.update();
   }
@@ -399,10 +402,15 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
 
   /* ---------- Bedienung ---------- */
   const tafel = $('.lz-tafel'), einst = $('.lz-einst');
+  function tafelZeigen(an) {
+    tafel.hidden = !an;
+    einst.setAttribute('aria-expanded', String(an));
+    einst.classList.toggle('is-on', an);
+  }
   einst.addEventListener('click', () => {
-    tafel.hidden = !tafel.hidden;
-    einst.setAttribute('aria-expanded', String(!tafel.hidden));
-    einst.classList.toggle('is-on', !tafel.hidden);
+    tafelZeigen(tafel.hidden);
+    // Am Handy liegen Tafel und Messmenü übereinander: immer nur eins offen
+    if (!tafel.hidden) menueZeigen(false);
   });
   wurzel.querySelectorAll('[data-faerbung]').forEach(b => b.addEventListener('click', () => {
     faerbung = b.dataset.faerbung;
@@ -614,6 +622,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   }
   function menueZeigen(an) {
     if (desktop.matches) an = true;          // in der Leiste steht die Wahl immer da
+    else if (an) tafelZeigen(false);
     menue.hidden = !an;
     $('.lz-messen').setAttribute('aria-expanded', String(an));
   }

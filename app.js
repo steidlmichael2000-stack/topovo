@@ -7596,7 +7596,14 @@ async function laserLaden() {
   if (!laserWerk) laserWerk = new Worker('laser-werk.js');
   laserWerk.onmessage = async ev => {
     const m = ev.data;
-    if (m.art === 'vorrat') { laserImSpeicher = new Set(m.kacheln); laserRasterZeichnen(); return; }
+    if (m.art === 'vorrat') {
+      laserImSpeicher = new Set(m.kacheln);
+      laserRasterZeichnen();
+      // Sonst stünde unten noch „… zu laden“, während die Karte schon „im Speicher“ zeigt
+      const kosten = $('#laserKosten');
+      if (kosten) kosten.textContent = laserKosten();
+      return;
+    }
     const stufeVorher = laserLaedt && laserLaedt.art;
     if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt };
     else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
@@ -7705,6 +7712,7 @@ function laserLeiste() {
     <button type="button" id="laserZu" class="bb-close" aria-label="Laserpunkte beenden">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
+    ${hilfeKnopf('laser', 'Laserpunkte')}
     <div class="bb-head"><p class="bb-title">Laserpunkte</p></div>
     ${inhalt}`;
   $('#laserZu').addEventListener('click', () => laserEnde());

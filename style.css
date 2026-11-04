@@ -2146,6 +2146,8 @@ body { font-variant-numeric: tabular-nums; }
 .lz-tafel:not([hidden]) { animation: von-oben .24s var(--auf); }
 .lz-faerbung { display: grid; grid-template-columns: 1fr 1fr; }
 .lz-klassen { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+/* Steht die letzte Klasse allein in ihrer Zeile, nimmt sie die ganze Breite — „Objekte, Bewuchs“ brach sonst um */
+.lz-klasse:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .lz-klasse { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 8px 10px; text-align: left; white-space: normal; }
 .lz-klasse .lz-name { flex: 1; min-width: 0; font-size: .78rem; line-height: 1.2; }
 .lz-klasse small { font-size: .66rem; opacity: .7; font-variant-numeric: tabular-nums; }
