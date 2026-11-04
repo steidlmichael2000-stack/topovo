@@ -2057,3 +2057,100 @@ body { font-variant-numeric: tabular-nums; }
   /* In der Leiste flach unter der Suche, wie die Suche gefüllt */
   .bar-route { margin: 8px auto 0; background: var(--panel-2); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: var(--r-knopf); }
 }
+
+/* ---------- Laserpunkte (laser.js) ----------
+   Ganz über der Karte, angelehnt an den PW-Viewer: runde Glasknöpfe in den Ecken,
+   die Einstellungen als Tafel unter dem Knopf links oben. */
+.laser-lade { height: 6px; margin-top: 10px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.laser-lade-balken { height: 100%; background: var(--accent); transition: width .2s; }
+.bar-bottom .seg-btn:disabled { opacity: .55; }
+.laser-kachel-name {
+  transform: translate(-50%, -50%); white-space: nowrap; text-align: center;
+  font-size: .68rem; font-weight: 650; line-height: 1.25; color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, .9), 0 0 6px rgba(0, 0, 0, .6);
+}
+.laser-rahmen { cursor: move; touch-action: none; }
+#laserLadenBtn:disabled { background: var(--panel-2); color: var(--muted-2); }
+
+.laser-ansicht {
+  position: fixed; inset: 0; z-index: 3000;
+  color: #eef1f4; font-size: .84rem;
+  background: radial-gradient(ellipse at 50% 35%, #2b3440 0%, #12161c 75%);
+  --lz-glas: rgba(18, 22, 28, .72);
+}
+.laser-ansicht[data-grund="schwarz"] { background: #000; }
+.laser-ansicht[data-grund="weiss"] { background: #f4f5f7; color: #1b1f24; --lz-glas: rgba(255, 255, 255, .8); }
+.lz-flaeche { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.lz-knopf {
+  position: absolute; z-index: 2; width: 46px; height: 46px; padding: 0;
+  display: grid; place-items: center; cursor: pointer;
+  border: 1px solid transparent; border-radius: 50%;
+  background: var(--lz-glas); color: inherit; box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-knopf svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.lz-knopf.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--lz-glas)); }
+.lz-einst { left: 14px; top: calc(14px + env(safe-area-inset-top)); }
+.lz-zu { right: 14px; top: calc(14px + env(safe-area-inset-top)); }
+.lz-messen { left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
+.lz-voll { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
+.lz-heim { right: 14px; bottom: calc(68px + env(safe-area-inset-bottom)); }
+.lz-tafel {
+  position: absolute; z-index: 2; left: 14px; top: calc(68px + env(safe-area-inset-top));
+  width: min(300px, calc(100vw - 28px)); max-height: calc(100vh - 160px); overflow: auto;
+  padding: 12px 14px 14px; border-radius: var(--r);
+  background: var(--lz-glas); box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-tafel .seg-btn { padding: 8px 6px; font-size: .8rem; }
+.laser-ansicht[data-grund="weiss"] .lz-tafel .seg-btn:not(.is-on) { background: rgba(0, 0, 0, .06); color: inherit; }
+.lz-faerbung { display: grid; grid-template-columns: 1fr 1fr; }
+.lz-titel { margin: 12px 0 6px; font-size: .7rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; opacity: .7; }
+.lz-titel:first-child { margin-top: 0; }
+.lz-tafel .slider-row { color: inherit; }
+.lz-klasse { display: grid; grid-template-columns: 18px 12px 1fr auto; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
+.lz-klasse input { margin: 0; accent-color: var(--accent); }
+.lz-feld { width: 12px; height: 12px; border-radius: 3px; }
+.lz-zahl { opacity: .6; font-size: .74rem; font-variant-numeric: tabular-nums; }
+.lz-skala {
+  position: absolute; z-index: 2; left: 50%; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%);
+  width: min(320px, calc(100vw - 150px)); padding: 9px 12px 8px; border-radius: var(--r-knopf);
+  background: var(--lz-glas); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-skala .hoehen-werte { color: inherit; }
+.lz-mess-hinweis {
+  position: absolute; z-index: 2; left: 70px; bottom: calc(20px + env(safe-area-inset-bottom));
+  padding: 6px 11px; border-radius: var(--r-knopf); background: var(--lz-glas); font-size: .78rem;
+}
+.lz-mess-menue {
+  position: absolute; z-index: 3; left: 14px; bottom: calc(68px + env(safe-area-inset-bottom));
+  width: 190px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  border-radius: var(--r); background: var(--lz-glas); box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-mess-menue[hidden] { display: none; }
+.lz-mess-wahl {
+  padding: 9px 12px; border: 1px solid transparent; border-radius: var(--r-knopf); cursor: pointer; text-align: left;
+  font: inherit; font-size: .82rem; font-weight: 600; background: rgba(255, 255, 255, .08); color: inherit;
+}
+.laser-ansicht[data-grund="weiss"] .lz-mess-wahl { background: rgba(0, 0, 0, .06); }
+.lz-mess-wahl.is-on { background: var(--accent); color: var(--accent-ink); }
+.lz-mess-wahl:disabled { opacity: .45; cursor: default; }
+.lz-mess-hinweis { display: flex; align-items: center; gap: 10px; }
+.lz-mess-hinweis[hidden] { display: none; }
+.lz-fertig {
+  padding: 4px 10px; border: 0; border-radius: var(--r-klein); cursor: pointer;
+  font: inherit; font-size: .76rem; font-weight: 650; background: var(--accent); color: var(--accent-ink);
+}
+.lz-marken { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lz-marke {
+  position: absolute; left: 0; top: 0; padding: 5px 9px; border-radius: var(--r-klein);
+  background: rgba(10, 12, 16, .82); color: #fff; white-space: nowrap; text-align: center; line-height: 1.3;
+}
+.lz-marke b { display: block; font-size: .86rem; }
+.lz-marke span { font-size: .7rem; opacity: .8; }
+.lz-fuss {
+  position: absolute; z-index: 1; left: 70px; right: 70px; bottom: calc(6px + env(safe-area-inset-bottom));
+  margin: 0; text-align: center; font-size: .66rem; opacity: .65; pointer-events: none;
+}
+.lz-mess-hinweis:not([hidden]) ~ .lz-fuss { display: none; }

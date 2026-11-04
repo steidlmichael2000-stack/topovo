@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v96';
+const VERSION = 'v97';
 const SHELL = `topovo-shell-${VERSION}`;
 const TILES = `topovo-tiles-${VERSION}`;
 const DATA = `topovo-data-${VERSION}`;
@@ -202,6 +202,10 @@ self.addEventListener('fetch', event => {
   /* Routen (Valhalla beim FOSSGIS e.V.) gehören nicht in den Vorrat: Jede Anfrage
    * hat ihre eigenen Punkte, und eine alte Route wäre offline falsch statt fehlend. */
   if (url.hostname === 'valhalla1.openstreetmap.de') return;
+
+  /* Laserkacheln (laser-werk.js) sind 60–1000 MB groß und werden je Ansicht
+   * einmal gelesen — nie in den Vorrat, auch nicht die lokale Probe. */
+  if (url.pathname.endsWith('.laz')) return;
 
   if (url.origin === self.location.origin) {
     /* Die Nachbar-Apps teilen die Herkunft, nicht diesen Vorrat: Was außerhalb

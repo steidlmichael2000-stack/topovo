@@ -29,6 +29,10 @@
  *   GET /bw/dgm1/513_5402.zip    →  …lgl-bw.de/data/dgm/dgm1_32_513_5402_2_bw.zip
  *   GET /bw/dom1/513_5402.zip    →  …lgl-bw.de/data/dom1/dom1_32_513_5402_2_bw.zip
  *   GET /bw/lod2/513_5402.zip    →  …lgl-bw.de/data/lod2/LoD2_32_513_5402_2_bw.zip
+ *   GET /laser/614_5478.laz      →  geodaten.bayern.de/odd_data/laser/614_5478.laz
+ *
+ * Seit November 2026 auch die Laserpunkte der BVV (LAZ, 1 × 1 km, CC BY 4.0,
+ * 58 MB bis 1 GB je Kachel) für die 3D-Ansicht. Ebenfalls ohne CORS.
  *
  * Einrichten über das Dashboard: Worker öffnen → „Edit code" → diese Datei
  * hineinkopieren → „Deploy". Die Adresse (…workers.dev) gehört danach in
@@ -40,15 +44,17 @@
 
 const QUELLE = 'https://download1.bayernwolke.de/a';
 const LGL = 'https://opengeodata.lgl-bw.de/data';
+const LASER = 'https://geodaten.bayern.de/odd_data/laser';
 const ZIELE = {
   dgm1: (e, n) => `${QUELLE}/dgm/dgm1/${e}_${n}.tif`,
   dom20: (e, n) => `${QUELLE}/dom20/DOM/32${e}_${n}_20_DOM.tif`,
   lod2: (e, n) => `${QUELLE}/lod2/citygml/${e}_${n}.gml`,
   'bw-dgm1': (e, n) => `${LGL}/dgm/dgm1_32_${e}_${n}_2_bw.zip`,
   'bw-dom1': (e, n) => `${LGL}/dom1/dom1_32_${e}_${n}_2_bw.zip`,
-  'bw-lod2': (e, n) => `${LGL}/lod2/LoD2_32_${e}_${n}_2_bw.zip`
+  'bw-lod2': (e, n) => `${LGL}/lod2/LoD2_32_${e}_${n}_2_bw.zip`,
+  laser: (e, n) => `${LASER}/${e}_${n}.laz`
 };
-const PFAD = /^\/(?:(dgm1|dom20)\/(\d{3})_(\d{4})\.tif|(lod2)\/(\d{3})_(\d{4})\.gml|bw\/(dgm1|dom1|lod2)\/(\d{3})_(\d{4})\.zip)$/;
+const PFAD = /^\/(?:(dgm1|dom20)\/(\d{3})_(\d{4})\.tif|(lod2)\/(\d{3})_(\d{4})\.gml|bw\/(dgm1|dom1|lod2)\/(\d{3})_(\d{4})\.zip|(laser)\/(\d{3})_(\d{4})\.laz)$/;
 const BEREICH = /^bytes=(\d+-\d*|-\d+)$/;
 
 const HERKUNFT = ['https://steidlmichael2000-stack.github.io'];
@@ -86,7 +92,8 @@ export default {
     const t = PFAD.exec(new URL(request.url).pathname);
     if (!t) return new Response('Unbekannter Pfad', { status: 404, headers: cors });
     // [Pfad, Art, Ost, Nord]
-    const treffer = t[1] ? t : t[4] ? [t[0], t[4], t[5], t[6]] : [t[0], `bw-${t[7]}`, t[8], t[9]];
+    const treffer = t[1] ? t : t[4] ? [t[0], t[4], t[5], t[6]] : t[10] ? [t[0], t[10], t[11], t[12]]
+      : [t[0], `bw-${t[7]}`, t[8], t[9]];
     const lod2 = treffer[1] === 'lod2';
 
     const kopf = new Headers();
@@ -95,6 +102,13 @@ export default {
       if (!BEREICH.test(bereich)) return new Response(null, { status: 416, headers: cors });
       kopf.set('Range', bereich);
     }
+    /* geodaten.bayern.de packt die LAZ-Dateien unterwegs noch einmal mit gzip,
+     * sobald der Abrufer es anbietet — und Cloudflare bietet es immer an. Dann
+     * fehlt Content-Length, und Bytebereiche gehen nicht (am 04.11.2026 so
+     * gesehen). LAZ ist schon gepackt; also ungepackt verlangen. Geholfen hat es
+     * nicht — Cloudflare bietet gzip trotzdem an, die Größe fehlt weiter. Die App
+     * kommt ohne aus (ohneLaenge in laser-werk.js); die Zeile schadet nicht. */
+    if (treffer[1] === 'laser') kopf.set('Accept-Encoding', 'identity');
 
     /* Teilabfragen am Zwischenspeicher von Cloudflare vorbei: Bei einem
      * Fehltreffer holt Cloudflare sonst erst die ganze Datei — beim DOM20 bis
@@ -116,7 +130,9 @@ export default {
       antwort.delete('Content-Length');
       return new Response(null, { status: quelle.status, headers: antwort });
     }
-    antwort.set('Cache-Control', 'public, max-age=604800');
+    /* Laserkacheln (60 MB bis 1 GB) nie im Browser ablegen — der Zwischenspeicher
+     * läge auf dem Gerät. Die App hält sie nur im Arbeitsspeicher. */
+    antwort.set('Cache-Control', treffer[1] === 'laser' ? 'no-store' : 'public, max-age=604800');
     /* LoD2 gepackt: Mit Content-Encoding gzip packt die Laufzeit des Workers den
      * Körper selbst (encodeBody „automatic"); die Länge ist dann eine andere. */
     if (lod2 && !bereich && /gzip/.test(request.headers.get('Accept-Encoding') || '')) {

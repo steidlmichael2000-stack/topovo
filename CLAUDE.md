@@ -486,6 +486,33 @@ gemessen 0,8–1,8 s statt 0,3–0,45 s je neuer Ansicht, in Firefox schlimmer (
 `vendor/` kommt „erst Cache“ (MapLibre 1,1 MB wurde vorher bei jedem Start neu geholt), Stil und
 `/planet` von OpenFreeMap aus dem Vorrat und nebenher erneuert (`vorratDannNetz`).
 
+## Laserpunkte in 3D (`laser…`, November 2026)
+
+Messmenü → *Laserpunkte* (`laserStart`, `laserLeiste` in `app.js`), entpackt in `laser-werk.js`,
+angezeigt in `laser.js` (Modul, three.js aus `vendor/three/`, laz-perf aus `vendor/copc/`). Einzelheiten
+und Messwerte in der README (*Laserpunkte in 3D*).
+
+- **Kacheln der BVV sind keine COPC** (LAS 1.2, Format 1, Fluglinien-Reihenfolge): jeder Ausschnitt
+  lädt die ganzen Kacheln. Nicht versuchen, per Bytebereich nur Teile zu holen — durch den Worker
+  kommen weder Größe noch Bereiche an (der BVV-Server gzippt, sobald Cloudflare gzip anbietet;
+  `Accept-Encoding: identity` im Worker half nicht). `ohneLaenge` in `laser-werk.js` ist deshalb
+  der Normalfall, nicht der Rückfall.
+- **Kacheln nur im Arbeitsspeicher** (`vorrat` im Worker, `LASER_VORRAT`), weg mit `laserEnde`. Nicht in
+  IndexedDB oder Cache Storage legen; `sw.js` lässt `.laz` durch, der Worker schickt `no-store`.
+- **Abbrechen** über `{ art: 'abbrechen' }`: die Entpackschleife gibt alle 2^20 Punkte den Faden frei
+  (`setTimeout`), sonst käme die Nachricht nicht an.
+- **CSP:** `script-src` trägt `'wasm-unsafe-eval'` — nur dafür (laz-perf). Nicht auf `unsafe-eval`
+  ausweiten.
+- `laser.js`, `laser-werk.js` und `vendor/three|copc` stehen bewusst **nicht** in `SHELL_FILES`:
+  ohne Netz gibt es keine Laserkacheln. `vendor/` legt der Service Worker beim ersten Gebrauch ab.
+- Der Rahmen wird über die Pointer-Ereignisse des Pfads gezogen (`laserZiehenBinden`), Lage über
+  `map.mouseEventToLatLng` (samt Drehung). Ein Tipp direkt nach dem Ziehen setzt nicht neu
+  (`laserGezogen`).
+- Bedienung der Ansicht wie im PW-Viewer: Einstellungen links oben, × rechts oben, Messen links
+  unten (Distanz, Fläche, Höhe, Löschen), Vollbild und Startansicht rechts unten. „Normalen“ ist
+  graue Schummerung, nicht die Richtung als Farbe (die war fast überall lila, so verworfen).
+- Lokal: `laser-probe/` (in `.gitignore`) wird vor dem Worker gefragt.
+
 ## Beim Deployen
 
 **Seit 01.11.2026 erst lokal:** Änderungen nicht gleich pushen. Der Nutzer sieht sie in seinem Firefox

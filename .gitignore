@@ -12,3 +12,6 @@ desktop.ini
 # Python-Zwischenstand des Netzbauers
 __pycache__/
 *.pyc
+
+# Laserkacheln für die lokale Vorschau des Laser-Viewers (je 60–250 MB)
+laser-probe/

@@ -1365,6 +1365,38 @@ Prüfen: `node werkzeug/radar-pruefen.mjs` liest ein aktuelles GeoTIFF, vergleic
 mit GetFeatureInfo, verschiebt ein Bild um eine bekannte Strecke und lässt sie finden und prüft an
 einem echten Paar, dass die geschätzte Bewegung das nächste Bild besser trifft als keine.
 
+## Laserpunkte in 3D
+
+Messmenü bzw. Werkzeugleiste → **Laserpunkte**. Solange das offen ist, zeigt die Karte das Raster
+der Laserkacheln (1 × 1 km); ein Tipp setzt einen Rahmen, der sich ziehen und von 50 bis 1000 m
+vergrößern lässt. Berührt er mehrere Kacheln (an einer Ecke vier), werden alle geladen. „Nur Boden“
+lässt Bewuchs und Gebäude weg. Die 3D-Ansicht (`laser.js`, three.js) färbt nach Klasse, Höhe,
+Intensität oder Normalen (graue Schummerung mit Licht von Nordwesten, für Böschungskanten), blendet
+Klassen ein und aus und misst Distanz, Fläche und Höhe (NHN mit E/N in UTM32).
+
+**Daten:** Laserpunkte der Bayerischen Vermessungsverwaltung (CC BY 4.0),
+`geodaten.bayern.de/odd_data/laser/{O}_{N}.laz`. Am 04.11.2026 nachgesehen: LAS 1.2, Punktformat 1
+(Klasse und Intensität, keine Farbe), **nicht** als COPC und in Fluglinien-Reihenfolge — ein
+Ausschnitt braucht deshalb die ganze Kachel, 40–255 MB in Mittelfranken, laut BVV bis 1 GB. Kein
+CORS: über den Worker (`/laser/…`). Der Server packt die Dateien zusätzlich mit gzip, sobald der
+Abrufer es anbietet, und Cloudflare bietet es immer an — durch den Worker kommt deshalb **keine
+Dateigröße** und kein Bytebereich. Die App lädt trotzdem (`ohneLaenge` in `laser-werk.js`), die
+Leiste nennt dann nur die übliche Spanne.
+
+**Laden und Speicher:** `laser-werk.js` entpackt mit laz-perf (WebAssembly) Punkt für Punkt und
+behält, was im Rahmen liegt, ausgedünnt auf höchstens 2 Mio. Punkte. Dazu Normalen je Punkt
+(Hauptachsen der Nachbarn, Umkreis nach der Dichte, mindestens 0,8 m). Geladene Kacheln bleiben
+**nur im Arbeitsspeicher** des Workers (am PC bis 800 MB, am Handy 400 MB, die älteste fliegt
+zuerst) und gehen mit dem Schließen von „Laserpunkte“ verloren — nichts landet auf dem Gerät: der
+Service Worker lässt `.laz` durch, der Worker schickt `no-store`. Laden und Entpacken lassen sich
+abbrechen.
+
+Gemessen am 04.11.2026: Kachel 586_5491 (Gollhofen, 45 MB) über den Worker in 3,9 s geladen; mit
+Entpacken und Normalen 11,7 s bis zur Ansicht (482.000 Punkte auf 200 × 200 m). Eine ganze Kachel
+„nur Boden“ (8,4 Mio. Punkte) aus dem Speicher in 11 s.
+
+Lokal liest die App zuerst `laser-probe/{O}_{N}.laz` (nicht im Repo), sonst den Worker.
+
 ## Eigener WMS-Layer
 
 Im Menü lässt sich ein beliebiger WMS als Overlay einblenden — Adresse, Layer-Name und Deckkraft
@@ -1708,4 +1740,9 @@ Unter `vendor/` liegen [Leaflet](https://leafletjs.com/) (BSD-2-Clause),
 [leaflet-rotate](https://github.com/Raruto/leaflet-rotate) (GPL-3.0) und
 [MapLibre GL JS](https://maplibre.org/) 6.10.0 (BSD-3-Clause, `vendor/maplibre/`) bei, damit die
 App ohne CDN und offline läuft. MapLibre zeichnet die dunkle Karte sowie Straßen und Ortsnamen
-über den Bildern und wird erst geladen, wenn eines davon gewählt ist.
+über den Bildern und wird erst geladen, wenn eines davon gewählt ist. Für die Laserpunkte:
+[three.js](https://threejs.org/) r160 (MIT, `vendor/three/`) und
+[copc.js](https://github.com/connormanning/copc.js) (MIT) mit
+[laz-perf](https://github.com/hobuinc/laz-perf) (Apache-2.0, `vendor/copc/`), aus dem PW-Viewer
+übernommen; beide werden erst geladen, wenn jemand Laserpunkte öffnet. Laserpunkte: Bayerische
+Vermessungsverwaltung (CC BY 4.0).

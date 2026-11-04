@@ -7216,6 +7216,7 @@ function messLeiste() {
 }
 
 function messStart(art = 'polygon') {
+  if (laserAn) laserEnde(false);
   if (routeAn) routeEnde(false);
   if (profModus) profEnde();
   // Die Mappe teilt sich #bottom mit dem Messen; offen gelassen blieb ihr Knopf an
@@ -7321,6 +7322,328 @@ function messMenueDraussen(ev) {
 }
 function messMenueTaste(ev) {
   if (ev.key === 'Escape') messMenueAuf(false);
+}
+
+/* ============================ Laserpunkte ============================
+ *
+ * Messmenü → „Laserpunkte": Stelle antippen, Rahmen ziehen und Größe wählen,
+ * laden; dann öffnet laser.js eine 3D-Ansicht. Die Punkte kommen aus den
+ * LAZ-Kacheln der BVV (1 × 1 km, CC BY 4.0) und werden in laser-werk.js
+ * ausgeschnitten. Nicht als COPC und in Fluglinien-Reihenfolge — jeder
+ * Ausschnitt braucht die ganzen Kacheln, die er berührt (58–255 MB je Kachel
+ * im Landkreis Neustadt/Aisch, laut BVV bis 1 GB), an einer Ecke vier.
+ *
+ * Deshalb: Solange „Laserpunkte" auf ist, zeigt die Karte das Kachelraster;
+ * die Leiste nennt vorher, wie viel zu laden ist, und geladene Kacheln bleiben
+ * gepackt im Worker (LASER_VORRAT), blau hinterlegt. Ein neuer Ausschnitt
+ * daraus kostet nur das Entpacken. „Nur Boden" lässt Bewuchs und Gebäude weg —
+ * dann trägt auch eine ganze Kachel, ohne zu dicht zu werden.
+ *
+ * Der Server der BVV gibt kein CORS frei: live über den Worker (/laser/…).
+ * Auf localhost zuerst laser-probe/ (nicht im Repo), damit sich die Ansicht
+ * zeigen lässt, bevor der Worker den Pfad kennt. */
+const LASER_SEITE = { min: 50, max: 1000, schritt: 50 };   // Kantenlänge des Ausschnitts in m
+const LASER_MAX_PUNKTE = 2000000;
+// Gepackte Kacheln im Speicher: am Handy die Hälfte
+const LASER_VORRAT = (matchMedia('(pointer: coarse)').matches ? 400 : 800) * 1e6;
+const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
+const LASER_QUELLE = 'Bayerische Vermessungsverwaltung (CC BY 4.0)';
+let laserAn = false;
+let laserStelle = null;      // { e, n } — Mitte des Rahmens in UTM32
+let laserSeite = 200;
+let laserNurBoden = false;
+const laserGroessen = new Map();   // Kachel → Bytes; 0 = gibt es nicht, −1 = unbekannt, null = wird geprüft
+const laserAdressen = new Map();   // Kachel → Adresse
+let laserImSpeicher = new Set();
+let laserLaedt = null;       // { art, nr, von, wert, gesamt } während des Ladens
+let laserWerk = null;
+let laserLayer = null, laserRasterLayer = null, laserRahmen = null;
+let laserFehler = '';
+let laserGezogen = 0;        // Zeit des letzten Ziehens — der Tipp danach setzt nicht neu
+
+function laserStart() {
+  if (routeAn) routeEnde(false);
+  if (profModus) profEnde(false);
+  if (messModus) messEnde();
+  if (mappeOffen) { mappeOffen = false; mappeStand = ''; mappeFertig = null; }
+  laserAn = true;
+  laserStelle = null;
+  laserFehler = '';
+  map.closePopup();
+  if (!laserRasterLayer) laserRasterLayer = L.layerGroup().addTo(map);
+  if (!laserLayer) laserLayer = L.layerGroup().addTo(map);
+  map.on('moveend', laserRasterZeichnen);
+  laserRasterZeichnen();
+  laserLeiste();
+  closeSheet();
+  syncButtons();
+}
+
+function laserEnde(zeigen = true) {
+  laserAn = false;
+  laserStelle = null;
+  laserLaedt = null;
+  // Mit dem Worker geht auch der Speicher der Kacheln
+  if (laserWerk) { laserWerk.terminate(); laserWerk = null; }
+  laserImSpeicher = new Set();
+  map.off('moveend', laserRasterZeichnen);
+  if (laserLayer) laserLayer.clearLayers();
+  if (laserRasterLayer) laserRasterLayer.clearLayers();
+  laserRahmen = null;
+  syncButtons();
+  if (zeigen) renderBottom();
+}
+
+function laserBereich() {
+  const { e, n } = laserStelle, h = laserSeite / 2;
+  return { e0: e - h, n0: n - h, e1: e + h, n1: n + h };
+}
+
+/** Die Kacheln, die der Rahmen berührt — eine bis vier. */
+function laserKacheln() {
+  const { e0, n0, e1, n1 } = laserBereich(), aus = [];
+  for (let ke = Math.floor(e0 / 1000); ke <= Math.floor((e1 - 0.001) / 1000); ke++) {
+    for (let kn = Math.floor(n0 / 1000); kn <= Math.floor((n1 - 0.001) / 1000); kn++) aus.push(`${ke}_${kn}`);
+  }
+  return aus;
+}
+
+const laserEcken = (e0, n0, e1, n1) => [[e0, n0], [e1, n0], [e1, n1], [e0, n1]].map(([e, n]) => utm32Zurueck(e, n));
+const laserFarbe = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1761a3';
+
+/** Das Kachelraster im Ausschnitt: dünn gestrichelt, geladene Kacheln blau
+ *  hinterlegt, die des Rahmens kräftig umrandet, ab Zoomstufe 14 mit Namen. */
+function laserRasterZeichnen() {
+  if (!laserAn || !laserRasterLayer) return;
+  laserRasterLayer.clearLayers();
+  if (map.getZoom() < LASER_RASTER_AB) return;
+  const b = map.getBounds();
+  const ecken = [[b.getSouth(), b.getWest()], [b.getSouth(), b.getEast()], [b.getNorth(), b.getWest()], [b.getNorth(), b.getEast()]]
+    .map(([la, lo]) => utm32Hin(la, lo));
+  const ke0 = Math.floor(Math.min(...ecken.map(c => c[0])) / 1000), ke1 = Math.floor(Math.max(...ecken.map(c => c[0])) / 1000);
+  const kn0 = Math.floor(Math.min(...ecken.map(c => c[1])) / 1000), kn1 = Math.floor(Math.max(...ecken.map(c => c[1])) / 1000);
+  if ((ke1 - ke0 + 1) * (kn1 - kn0 + 1) > 400) return;
+  const farbe = laserFarbe(), gewaehlt = new Set(laserStelle ? laserKacheln() : []), namen = map.getZoom() >= 14;
+  for (let ke = ke0; ke <= ke1; ke++) {
+    for (let kn = kn0; kn <= kn1; kn++) {
+      const k = `${ke}_${kn}`, da = laserImSpeicher.has(k), wahl = gewaehlt.has(k);
+      L.polygon(laserEcken(ke * 1000, kn * 1000, ke * 1000 + 1000, kn * 1000 + 1000), {
+        color: wahl ? farbe : '#ffffff', weight: wahl ? 1.5 : 1, opacity: wahl ? 0.9 : 0.55, dashArray: wahl ? null : '4 4',
+        fillColor: farbe, fillOpacity: da ? 0.16 : 0, interactive: false
+      }).addTo(laserRasterLayer);
+      if (namen) {
+        const mitte = utm32Zurueck(ke * 1000 + 500, kn * 1000 + 500);
+        L.marker(mitte, { interactive: false, keyboard: false,
+          icon: L.divIcon({ className: 'laser-kachel-name', html: `${k}${da ? '<br>im Speicher' : ''}`, iconSize: null }) })
+          .addTo(laserRasterLayer);
+      }
+    }
+  }
+}
+
+function laserRahmenZeichnen() {
+  if (!laserLayer) return;
+  if (!laserStelle) { laserLayer.clearLayers(); laserRahmen = null; return; }
+  const { e0, n0, e1, n1 } = laserBereich();
+  const ecken = laserEcken(e0, n0, e1, n1);
+  if (laserRahmen) { laserRahmen.setLatLngs(ecken); return; }
+  laserRahmen = L.polygon(ecken, { color: laserFarbe(), weight: 2.5, fillOpacity: 0.14, className: 'laser-rahmen' }).addTo(laserLayer);
+  laserZiehenBinden();
+}
+
+/* Den Rahmen ziehen: am Pfad selbst greifen, solange gezogen wird, steht die
+ * Karte. Über die Pointer-Ereignisse des Pfads, damit es mit Maus und Finger
+ * gleich geht; die Lage rechnet Leaflet samt Drehung (mouseEventToLatLng). */
+function laserZiehenBinden() {
+  const pfad = laserRahmen.getElement();
+  if (!pfad) return;
+  pfad.addEventListener('pointerdown', ev => {
+    if (laserLaedt) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    const start = utm32Hin(...(ll => [ll.lat, ll.lng])(map.mouseEventToLatLng(ev)));
+    const vorher = { ...laserStelle };
+    map.dragging.disable();
+    pfad.setPointerCapture(ev.pointerId);
+    const ziehen = e => {
+      const p = utm32Hin(...(ll => [ll.lat, ll.lng])(map.mouseEventToLatLng(e)));
+      laserStelle = { e: vorher.e + p[0] - start[0], n: vorher.n + p[1] - start[1] };
+      laserRahmenZeichnen();
+    };
+    const los = () => {
+      pfad.removeEventListener('pointermove', ziehen);
+      pfad.removeEventListener('pointerup', los);
+      pfad.removeEventListener('pointercancel', los);
+      map.dragging.enable();
+      laserGezogen = Date.now();
+      laserNeuGewaehlt();
+    };
+    pfad.addEventListener('pointermove', ziehen);
+    pfad.addEventListener('pointerup', los);
+    pfad.addEventListener('pointercancel', los);
+  });
+}
+
+async function laserAdresse(kachel) {
+  if (laserAdressen.has(kachel)) return laserAdressen.get(kachel);
+  let url = `${HOEHEN.proxy}/laser/${kachel}.laz`;
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    const lokal = `laser-probe/${kachel}.laz`;
+    try { if ((await fetch(lokal, { method: 'HEAD' })).ok) url = lokal; } catch (e) { /* dann der Worker */ }
+  }
+  laserAdressen.set(kachel, url);
+  return url;
+}
+
+/** Größe der Kacheln im Rahmen nachsehen (HEAD), soweit noch unbekannt. */
+function laserGroessenHolen() {
+  for (const k of laserKacheln()) {
+    if (laserGroessen.has(k)) continue;
+    laserGroessen.set(k, null);
+    laserAdresse(k)
+      .then(url => fetch(url, { method: 'HEAD' }))
+      .then(r => laserGroessen.set(k, r.ok ? Number(r.headers.get('Content-Length')) || -1 : r.status === 404 ? 0 : -1))
+      .catch(() => laserGroessen.set(k, -1))
+      .then(() => { if (laserAn && !laserLaedt) laserLeiste(); });
+  }
+}
+
+/** Nach Tippen, Ziehen oder neuer Größe: Rahmen, Raster, Größen, Leiste. */
+function laserNeuGewaehlt() {
+  laserFehler = '';
+  laserRahmenZeichnen();
+  laserRasterZeichnen();
+  laserGroessenHolen();
+  laserLeiste();
+}
+
+function laserTipp(latlng) {
+  if (laserLaedt || Date.now() - laserGezogen < 400) return;
+  const { lat, lng } = L.latLng(latlng);
+  if (!inLandRahmen('by', lat, lng)) {
+    laserFehler = 'Laserpunkte gibt es offen nur in Bayern.';
+    laserLeiste();
+    return;
+  }
+  const [e, n] = utm32Hin(lat, lng);
+  laserStelle = { e, n };
+  laserNeuGewaehlt();
+}
+
+async function laserLaden() {
+  if (!laserStelle || laserLaedt) return;
+  const namen = laserKacheln().filter(k => laserGroessen.get(k) !== 0);
+  if (!namen.length) return;
+  const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel) })));
+  const seite = laserSeite;
+  laserLaedt = { art: 'laden', nr: 0, von: kacheln.length, wert: 0, gesamt: 0 };
+  laserFehler = '';
+  laserLeiste();
+  if (!laserWerk) laserWerk = new Worker('laser-werk.js');
+  laserWerk.onmessage = async ev => {
+    const m = ev.data;
+    if (m.art === 'vorrat') { laserImSpeicher = new Set(m.kacheln); laserRasterZeichnen(); return; }
+    if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt };
+    else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
+    else if (m.art === 'normalen') laserLaedt = { art: 'normalen', wert: m.fertig, gesamt: m.gesamt };
+    else {
+      laserLaedt = null;
+      if (m.art === 'fehler') laserFehler = m.text;
+      else if (m.art === 'abgebrochen') laserFehler = '';
+      else {
+        try {
+          const { laserAnsicht } = await import('./laser.js');
+          const da = namen.filter(k => !m.fehlen.includes(k));
+          laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden: laserNurBoden });
+        } catch (err) {
+          console.warn(err);
+          laserFehler = '3D-Ansicht ließ sich nicht öffnen (WebGL?).';
+        }
+      }
+    }
+    laserLeiste();
+  };
+  laserWerk.postMessage({ kacheln, bereich: laserBereich(), max: LASER_MAX_PUNKTE, nurBoden: laserNurBoden, vorratMax: LASER_VORRAT });
+}
+
+const laserMB = b => `${(b / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 0 })} MB`;
+
+/** „2 Kacheln · 230 MB zu laden" — was der Rahmen kostet. */
+function laserKosten() {
+  const ks = laserKacheln();
+  const fehlt = ks.filter(k => laserGroessen.get(k) === 0).length;
+  const offen = ks.filter(k => laserGroessen.get(k) !== 0 && !laserImSpeicher.has(k));
+  const teile = [`${ks.length - fehlt} ${ks.length - fehlt === 1 ? 'Kachel' : 'Kacheln'}`];
+  if (ks.length === fehlt) return 'Für diese Stelle gibt es keine Laserkachel.';
+  if (!offen.length) teile.push('alle im Speicher');
+  else if (offen.some(k => laserGroessen.get(k) == null)) teile.push('Größe wird geprüft …');
+  else {
+    const summe = offen.reduce((s, k) => s + Math.max(0, laserGroessen.get(k)), 0);
+    const unbekannt = offen.some(k => laserGroessen.get(k) < 0);
+    teile.push(unbekannt && !summe ? 'Größe unbekannt, meist 40–250 MB je Kachel' : `${unbekannt ? 'über ' : ''}${laserMB(summe)} zu laden`);
+    if (offen.length < ks.length - fehlt) teile.push(`${ks.length - fehlt - offen.length} im Speicher`);
+  }
+  return teile.join(' · ');
+}
+
+function laserLeiste() {
+  if (!laserAn) return;
+  const b = $('#bottom');
+  b.dataset.art = 'werkzeug';      // ab 1010 px unten mittig statt in der Leiste
+  b.hidden = false;
+  let inhalt;
+  if (!laserStelle) {
+    inhalt = `<p class="bb-note${laserFehler ? '' : ' plain'}">${esc(laserFehler || 'Tippe auf die Stelle, die du dir ansehen willst. Das Raster zeigt die Kacheln zu 1 × 1 km.')}</p>`;
+  } else {
+    const L_ = laserLaedt;
+    const anteil = L_ && L_.gesamt ? ((L_.nr || 0) + L_.wert / L_.gesamt) / (L_.von || 1) : 0;
+    const stufe = !L_ ? '' : L_.art === 'laden' ? `Laden${L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : ''} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
+      : L_.art === 'lesen' ? `Entpacken${L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : ''} …` : 'Normalen rechnen …';
+    const keine = laserKacheln().every(k => laserGroessen.get(k) === 0);
+    inhalt = `
+      <p class="bb-sub" id="laserKosten">${esc(laserKosten())}</p>
+      <label class="slider-row" for="laserSeite">Größe
+        <input id="laserSeite" type="range" min="${LASER_SEITE.min}" max="${LASER_SEITE.max}" step="${LASER_SEITE.schritt}" value="${laserSeite}"${L_ ? ' disabled' : ''}>
+        <span id="laserSeiteWert" class="slider-val">${laserSeite} m</span>
+      </label>
+      <div class="seg seg-paar" role="group" aria-label="Welche Punkte" style="margin-top:9px">
+        <button type="button" class="seg-btn${laserNurBoden ? '' : ' is-on'}" data-laser-boden="0"${L_ ? ' disabled' : ''}>Alle Punkte</button>
+        <button type="button" class="seg-btn${laserNurBoden ? ' is-on' : ''}" data-laser-boden="1"${L_ ? ' disabled' : ''}>Nur Boden</button>
+      </div>
+      ${L_ ? `<div class="laser-lade"><div class="laser-lade-balken" style="width:${Math.round(anteil * 100)}%"></div></div>
+        <p class="bb-note plain">${esc(stufe)}</p>` : ''}
+      ${laserFehler ? `<p class="bb-note">${esc(laserFehler)}</p>` : ''}
+      ${!L_ && !laserFehler ? '<p class="bb-note plain">Rahmen ziehen zum Verschieben, Tipp daneben setzt ihn neu.</p>' : ''}
+      <div class="bb-actions">${L_ ? '<button type="button" id="laserAbbrechenBtn">Abbrechen</button>'
+        : `<button type="button" id="laserLadenBtn" class="maps"${keine ? ' disabled' : ''}>In 3D ansehen</button>`}</div>`;
+  }
+  b.innerHTML = `
+    <button type="button" id="laserZu" class="bb-close" aria-label="Laserpunkte beenden">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="bb-head"><p class="bb-title">Laserpunkte</p></div>
+    ${inhalt}`;
+  $('#laserZu').addEventListener('click', () => laserEnde());
+  const regler = $('#laserSeite');
+  if (regler) {
+    // Beim Ziehen nur Rahmen und Zahlen nachführen; die Leiste neu erst beim Loslassen
+    regler.addEventListener('input', () => {
+      laserSeite = Number(regler.value);
+      $('#laserSeiteWert').textContent = `${laserSeite} m`;
+      laserRahmenZeichnen();
+      $('#laserKosten').textContent = laserKosten();
+    });
+    regler.addEventListener('change', laserNeuGewaehlt);
+  }
+  b.querySelectorAll('[data-laser-boden]').forEach(k => k.addEventListener('click', () => {
+    laserNurBoden = k.dataset.laserBoden === '1';
+    laserLeiste();
+  }));
+  const laden = $('#laserLadenBtn');
+  if (laden) laden.addEventListener('click', laserLaden);
+  const abbrechen = $('#laserAbbrechenBtn');
+  if (abbrechen) abbrechen.addEventListener('click', () => { if (laserWerk) laserWerk.postMessage({ art: 'abbrechen' }); });
+  updateBH();
 }
 
 /* ============================ Höhe am Punkt ============================
@@ -7509,6 +7832,7 @@ const gpLaenge = () => GP_LAENGEN.includes(prefs.gpLaenge) ? prefs.gpLaenge : 25
 const profVz = d => (d > 0.05 ? '+' : d < -0.05 ? '−' : '±') + nfH.format(Math.abs(d));
 
 function profStart() {
+  if (laserAn) laserEnde(false);
   if (routeAn) routeEnde(false);
   if (messModus) messEnde();
   mappeOffen = false;
@@ -8888,6 +9212,7 @@ function mappeDazu(ref, km) {
 }
 
 function mappeStart() {
+  if (laserAn) laserEnde(false);
   if (routeAn) routeEnde(false);
   if (profModus) profEnde(false);
   if (messModus) messEnde();
@@ -9418,7 +9743,7 @@ async function onMapClick(ev) {
 
 /** Wohin ein Tipp auf die Karte geht, solange gemessen oder ein Profil gesetzt wird. */
 function tippZiel() {
-  return messModus ? messTipp : profModus ? profTipp : routeAn ? routeTipp : null;
+  return messModus ? messTipp : profModus ? profTipp : routeAn ? routeTipp : laserAn ? laserTipp : null;
 }
 
 /** Aus einem Sehnentreffer den anzuzeigenden Punkt bauen — nach Möglichkeit auf dem Gleis.
@@ -10278,6 +10603,7 @@ function routeBinden() {
 }
 
 function routeOeffnen(lat, lon, name = '') {
+  if (laserAn) laserEnde(false);
   if (profModus) profEnde(false);
   if (messModus) messEnde();
   if (mappeOffen) { mappeOffen = false; mappeStand = ''; mappeFertig = null; }
@@ -12675,14 +13001,14 @@ function syncButtons() {
   const mb = $('#mapMessBtn');
   if (mb) {
     // Auch bei offener Profilmappe: Der Knopf schließt sie dann wie ein laufendes Messen
-    const aktiv = messModus || profModus || mappeOffen;     // die Route gehört nicht zum Messen
+    const aktiv = messModus || profModus || mappeOffen || laserAn;     // die Route gehört nicht zum Messen
     mb.classList.toggle('is-on', aktiv);
     mb.setAttribute('aria-pressed', String(aktiv));
   }
   // Werkzeugleiste (ab 1010 px): das laufende Werkzeug und das Radar markiert
   document.querySelectorAll('#werkzeuge :is([data-messart], [data-werkzeug])').forEach(b => {
     const w = b.dataset.messart || b.dataset.werkzeug;
-    const an = w === 'profil' ? profModus : w === 'mappe' ? mappeOffen
+    const an = w === 'profil' ? profModus : w === 'mappe' ? mappeOffen : w === 'laser' ? laserAn
       : w === 'radar' ? !!($('#radarBtn') && $('#radarBtn').classList.contains('is-on'))
       : w === 'kml' ? false : messModus && messArt === w;
     b.classList.toggle('is-on', !!an);
@@ -13008,6 +13334,7 @@ function bind() {
     messMenueAuf(false);
     if (b.dataset.messart === 'profil') profStart();
     else if (b.dataset.messart === 'mappe') mappeStart();
+    else if (b.dataset.messart === 'laser') laserStart();
     else messStart(b.dataset.messart);
   }));
   // In der Einfangphase, damit Leaflet die Pfeiltasten nicht zum Verschieben bekommt

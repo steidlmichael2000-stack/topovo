@@ -6,7 +6,7 @@
 <!-- Nur eigene Skripte. Bilder und Abfragen dürfen an jede https-Adresse, weil der
      eigene WMS frei eintragbar ist. Alle Apps teilen sich diese Herkunft und damit
      Speicher und Caches, deshalb gilt die CSP als zweite Verteidigungslinie hinter esc(). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Topovo</title>
 <meta name="description" content="Kartenwerkzeug für den Außendienst: Streckenkilometer verorten, Gelände- und Querprofile mit PDF, Messen, Abstecken, KML-Dateien, amtliche Luftbilder und Regenradar.">
@@ -84,6 +84,10 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="4.5" cy="19.5" r="1.9"/><path d="M6.5 17.5 13 11" stroke-dasharray="2 2.2"/><circle cx="17" cy="7" r="3.4"/><path d="M17 1.8v2.4M17 9.8v2.4M11.8 7h2.4M19.8 7h2.4"/></svg>
     <span><b>Live</b><small>Vom Start zum Fadenkreuz</small></span>
   </button>
+  <button type="button" role="menuitem" data-messart="laser">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="5" cy="17" r="1.3"/><circle class="voll" cx="9" cy="13.5" r="1.3"/><circle class="voll" cx="13" cy="16" r="1.3"/><circle class="voll" cx="16.5" cy="10" r="1.3"/><circle class="voll" cx="19.5" cy="14.5" r="1.3"/><circle class="voll" cx="11" cy="8.5" r="1.3"/><path d="M2.5 20.5h19"/></svg>
+    <span><b>Laserpunkte</b><small>Befliegung der BVV in 3D</small></span>
+  </button>
 </div>
 
 <!-- Fadenkreuz in der Kartenmitte, nur beim Messen: Ziel für „Kartenmitte setzen" -->
@@ -112,6 +116,7 @@
   <button type="button" data-messart="mappe"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5h10.5L19 7v13.5H5z"/><path d="M8 16.5l2.5-3.2 2 1.8 3.5-4.6"/><path d="M8 8h5"/></svg><span>Mappe</span></button>
   <button type="button" data-messart="polygon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 3 9.5 11.5 4 20.5 9 18 18.5z"/><circle class="voll" cx="5" cy="19" r="1.7"/><circle class="voll" cx="3" cy="9.5" r="1.7"/><circle class="voll" cx="11.5" cy="4" r="1.7"/><circle class="voll" cx="20.5" cy="9" r="1.7"/><circle class="voll" cx="18" cy="18.5" r="1.7"/></svg><span>Polygon</span></button>
   <button type="button" data-messart="live"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="4.5" cy="19.5" r="1.9"/><path d="M6.5 17.5 13 11" stroke-dasharray="2 2.2"/><circle cx="17" cy="7" r="3.4"/><path d="M17 1.8v2.4M17 9.8v2.4M11.8 7h2.4M19.8 7h2.4"/></svg><span>Live</span></button>
+  <button type="button" data-messart="laser"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="5" cy="17" r="1.3"/><circle class="voll" cx="9" cy="13.5" r="1.3"/><circle class="voll" cx="13" cy="16" r="1.3"/><circle class="voll" cx="16.5" cy="10" r="1.3"/><circle class="voll" cx="19.5" cy="14.5" r="1.3"/><circle class="voll" cx="11" cy="8.5" r="1.3"/><path d="M2.5 20.5h19"/></svg><span>Laser</span></button>
   <button type="button" data-werkzeug="radar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 15.5h10.5a3.6 3.6 0 0 0 .4-7.2 5 5 0 0 0-9.7-1.1A4.2 4.2 0 0 0 7 15.5z"/><path d="M8.5 18.5l-1 2M12.5 18.5l-1 2M16.5 18.5l-1 2"/></svg><span>Radar</span></button>
   <button type="button" data-werkzeug="kml"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8.5L18 6.5V21H6zM14.5 3v3.5H18"/><path d="M12 10v7M9 14l3 3 3-3"/></svg><span>KML</span></button>
 </div>

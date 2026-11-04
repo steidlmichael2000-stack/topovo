@@ -1,0 +1,2 @@
+copc.js (MIT, github.com/connormanning/copc.js) mit eingebautem laz-perf
+(Apache-2.0, github.com/hobuinc/laz-perf), übernommen aus dem PW-Viewer (libs/copc).
