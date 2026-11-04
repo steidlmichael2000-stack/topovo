@@ -7546,6 +7546,7 @@ async function laserLaden() {
     if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt };
     else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
     else if (m.art === 'normalen') laserLaedt = { art: 'normalen', wert: m.fertig, gesamt: m.gesamt };
+    else if (m.art === 'warten') laserLaedt = { art: 'warten', nr: m.nr, von: m.von, wert: 0, gesamt: 0, sekunden: m.sekunden };
     else {
       laserLaedt = null;
       if (m.art === 'fehler') laserFehler = m.text;
@@ -7598,7 +7599,9 @@ function laserLeiste() {
     const L_ = laserLaedt;
     const anteil = L_ && L_.gesamt ? ((L_.nr || 0) + L_.wert / L_.gesamt) / (L_.von || 1) : 0;
     const stufe = !L_ ? '' : L_.art === 'laden' ? `Laden${L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : ''} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
-      : L_.art === 'lesen' ? `Entpacken${L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : ''} …` : 'Normalen rechnen …';
+      : L_.art === 'lesen' ? `Entpacken${L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : ''} …`
+      : L_.art === 'warten' ? `Verbindung unterbrochen — neuer Versuch in ${L_.sekunden} s oder sobald wieder Netz da ist. Die Kachel lädt dann von vorn.`
+      : 'Normalen rechnen …';
     const keine = laserKacheln().every(k => laserGroessen.get(k) === 0);
     inhalt = `
       <p class="bb-sub" id="laserKosten">${esc(laserKosten())}</p>

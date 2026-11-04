@@ -26,6 +26,7 @@
  *   { art: 'fertig', … }                         Punkte relativ zur Mitte des Ausschnitts
  *   { art: 'fehler', text }
  *   { art: 'abgebrochen' }
+ *   { art: 'warten', nr, von, versuch, sekunden }  Verbindung weg, neuer Versuch folgt
  *
  * { art: 'abbrechen' } bricht den laufenden Auftrag ab: das Herunterladen über
  * den AbortController, das Entpacken an der nächsten Pause (alle 2^20 Punkte
@@ -60,6 +61,36 @@ function platzMachen(LP, bedarf, behalten, vorratMax) {
 }
 
 /** Lädt eine Kachel in den Speicher von laz-perf; null, wenn es sie nicht gibt. */
+/* Bricht die Verbindung ab (WLAN aus, Funkloch, Wechsel aufs Mobilnetz),
+ * versucht es von selbst weiter: nach 2, 4, 8 … höchstens 15 s, oder sobald der
+ * Browser wieder Netz meldet. Von vorn — durch den Worker gehen keine
+ * Bytebereiche (siehe worker.js). Nach rund fünf Minuten wird aufgegeben. */
+const NETZ_VERSUCHE = 25;
+
+function warten(ms) {
+  return new Promise(fertig => {
+    const ende = () => { clearTimeout(uhr); self.removeEventListener('online', ende); abbruch.signal.removeEventListener('abort', ende); fertig(); };
+    const uhr = setTimeout(ende, ms);
+    self.addEventListener('online', ende);
+    abbruch.signal.addEventListener('abort', ende);
+  });
+}
+
+async function mitWiederholung(LP, url, melden, behalten, vorratMax, wartenMelden) {
+  for (let versuch = 1; ; versuch++) {
+    try {
+      return await herunterladen(LP, url, melden, behalten, vorratMax);
+    } catch (err) {
+      // Nur Netzfehler (TypeError) wiederholen; HTTP-Fehler und Abbrechen nicht
+      if (abbruch.signal.aborted || !(err instanceof TypeError) || versuch >= NETZ_VERSUCHE) throw err;
+      const ms = Math.min(15000, 1000 * 2 ** versuch);
+      wartenMelden(versuch, Math.round(ms / 1000));
+      await warten(ms);
+      if (abbruch.signal.aborted) throw err;
+    }
+  }
+}
+
 async function herunterladen(LP, url, melden, behalten, vorratMax) {
   // Nie in den HTTP-Zwischenspeicher des Browsers: der läge auf dem Gerät
   const r = await fetch(url, { cache: 'no-store', signal: abbruch.signal });
@@ -133,22 +164,29 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
   const LP = lazPerf;
   const von = kacheln.length, behalten = new Set(kacheln.map(k => k.kachel));
 
-  // Erst alle Kacheln da haben, eine nach der anderen
+  // Erst alle Kacheln da haben, eine nach der anderen. Die Zeiten je Schritt
+  // stehen unten in der Ansicht — damit sich sagen lässt, wo es hängt.
+  const zeiten = { laden: 0, megabyte: 0, lesen: 0, normalen: 0 };
+  let uhr = performance.now();
   const da = [], fehlen = [];
   for (let i = 0; i < von; i++) {
     const { kachel, url } = kacheln[i];
     let v = vorrat.get(kachel);
     if (v) vorrat.delete(kachel);               // nach hinten: zuletzt benutzt
     else {
-      v = await herunterladen(LP, url, (geladen, gesamt) =>
-        self.postMessage({ art: 'laden', nr: i, von, geladen, gesamt }), behalten, vorratMax);
+      v = await mitWiederholung(LP, url, (geladen, gesamt) =>
+        self.postMessage({ art: 'laden', nr: i, von, geladen, gesamt }), behalten, vorratMax,
+        (versuch, sekunden) => self.postMessage({ art: 'warten', nr: i, von, versuch, sekunden }));
       if (!v) { fehlen.push(kachel); continue; }
+      zeiten.megabyte += v.groesse / 1e6;
     }
     vorrat.set(kachel, v);
     vorratMelden();
     da.push({ kachel, ...v, kopf: kopfLesen(LP.HEAPU8.subarray(v.zeiger, v.zeiger + 375)) });
   }
   if (!da.length) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
+  zeiten.laden = (performance.now() - uhr) / 1000;
+  uhr = performance.now();
 
   /* Wie viele Punkte liegen etwa im Ausschnitt? Danach die Ausdünnung, damit
    * es höchstens rund max werden — gleichmäßig, jeder schritt-te Punkt. Beim
@@ -221,10 +259,13 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
   for (let j = 0; j < n; j++) xyz[3 * j + 2] -= zMin;
   /* Umkreis für die Normalen nach der Dichte: rund ein Dutzend Nachbarn, bei
    * voller Dichte (7–10 Punkte je m²) 0,8 m, ausgedünnt entsprechend mehr. */
+  zeiten.lesen = (performance.now() - uhr) / 1000;
+  uhr = performance.now();
   const dichte = n / Math.max(1, (e1 - e0) * (n1 - n0));
   const normalen = normalenRechnen(xyz, n, Math.max(0.8, Math.sqrt(12 / (Math.PI * dichte))));
+  zeiten.normalen = (performance.now() - uhr) / 1000;
   const ergebnis = {
-    art: 'fertig', anzahl: n, schritt, fehlen,
+    art: 'fertig', anzahl: n, schritt, fehlen, zeiten,
     mitte: [ce, cn], zMin, zMax, iMax,
     xyz: xyz.slice(0, n * 3), klasse: klasse.slice(0, n), staerke: staerke.slice(0, n), normalen,
     klassen: [...klassen].sort((a, b) => a[0] - b[0])

@@ -547,7 +547,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const finger = window.matchMedia('(pointer: coarse)').matches;
   $('.lz-fuss').innerHTML = (finger ? 'Ein Finger drehen · zwei Finger schieben und zoomen · Doppeltipp: Drehpunkt'
     : 'Ziehen: drehen · rechte Taste oder Shift: schieben · Rad: zoomen · Doppelklick: Drehpunkt') + '<br>' + `Kachel ${info.kachel} · ${d.anzahl.toLocaleString('de-DE')} Punkte` +
-    (d.schritt > 1 ? ` (jeder ${d.schritt}.)` : '') + ` · ${info.seite} × ${info.seite} m · Laserdaten: ${info.quelle}`;
+    (d.schritt > 1 ? ` (jeder ${d.schritt}.)` : '') + ` · ${info.seite} × ${info.seite} m · Laserdaten: ${info.quelle}` +
+    (d.zeiten ? '<br>' + [d.zeiten.megabyte ? `Laden ${zahl(d.zeiten.laden, 0)} s (${zahl(d.zeiten.megabyte, 0)} MB)` : 'Kacheln aus dem Speicher',
+      `Entpacken ${zahl(d.zeiten.lesen, 0)} s`, `Normalen ${zahl(d.zeiten.normalen, 0)} s`].join(' · ') : '');
   reglerZeigen();
   faerben();
   bild();

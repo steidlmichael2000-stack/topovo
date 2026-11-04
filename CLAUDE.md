@@ -512,6 +512,11 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   unten (Distanz, Fläche, Höhe, Löschen), Vollbild und Startansicht rechts unten. „Normalen“ ist
   graue Schummerung, nicht die Richtung als Farbe (die war fast überall lila, so verworfen).
 - Lokal: `laser-probe/` (in `.gitignore`) wird vor dem Worker gefragt.
+- **Netzabbruch:** `mitWiederholung` in `laser-werk.js` wiederholt nur Netzfehler (TypeError), 2…15 s
+  oder beim `online`-Ereignis, bis `NETZ_VERSUCHE`; die Kachel lädt von vorn. Unten in der Ansicht
+  stehen die Zeiten je Schritt (`zeiten`), um „lädt ewig“ zuordnen zu können.
+- **EDL-Tiefe als Float und Nah/Fern eng um die Wolke** (`tiefeAnpassen`): mit ganzzahliger Tiefe
+  und 0,5 m – 5 km zog die Kantenschattierung am Handy Linien über den Boden.
 
 ## Beim Deployen
 
