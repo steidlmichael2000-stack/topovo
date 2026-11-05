@@ -2147,8 +2147,9 @@ body { font-variant-numeric: tabular-nums; }
 .lz-heim { right: var(--gap); bottom: calc(var(--gap) + env(safe-area-inset-bottom)); }
 /* Standort über der Startansicht; an wie der Standortknopf der Karte (getöntes Glas) */
 .lz-ort { right: var(--gap); bottom: calc(var(--gap) + 52px + env(safe-area-inset-bottom)); }
-.lz-ort svg .voll, .lz-schiene-ort svg .voll { fill: currentColor; stroke: none; }
-.lz-ort.busy svg, .lz-schiene-ort.busy svg { animation: route-ort-puls .7s ease-in-out infinite alternate; }
+.lz-ort svg .voll { fill: currentColor; stroke: none; }
+/* Wie der Standortknopf der Karte (.maploc): Fadenkreuz, beim Suchen gestrichelter Ring */
+.lz-ort.busy svg .ring { stroke-dasharray: 6 5; }
 .lz-tafel {
   position: absolute; z-index: 2; left: var(--gap); top: calc(var(--gap) + 50px + env(safe-area-inset-top));
   width: min(320px, calc(100vw - 2 * var(--gap))); max-height: calc(100% - 130px); overflow: auto;
@@ -2166,7 +2167,11 @@ body { font-variant-numeric: tabular-nums; }
 .lz-klasse .lz-name { flex: 1 0 auto; font-size: .78rem; line-height: 1.2; }
 .lz-klasse small { margin-left: auto; font-size: .66rem; opacity: .7; font-variant-numeric: tabular-nums; }
 /* Gebäude: ein Schalter über die ganze Breite, wie die Klassen gebaut */
-.lz-geb { width: 100%; }
+.lz-geb, .lz-ex-geb { width: 100%; }
+/* Export (nur in der Leiste am Desktop) */
+.lz-ex-umfang { margin: 12px 0 0; }
+.lz-ex-lauf { margin-top: 10px; }
+.lz-ex-hinweis { margin: 8px 0 0; font-size: .74rem; color: var(--muted); }
 .lz-geb.laedt { opacity: .7; }
 /* Fünf Färbungen: Luftbild allein in der letzten Zeile über die ganze Breite */
 .lz-faerbung .seg-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -2273,10 +2278,11 @@ body { font-variant-numeric: tabular-nums; }
   .lz-seite .lz-mess-menue button { padding: 10px 16px; }
   .lz-seite .lz-leiste { margin-top: 12px; padding: 12px 14px 13px; border-radius: var(--r); background: var(--panel-2); position: relative; left: auto; right: auto; bottom: auto; }
   /* Die runden Knöpfe der Ecken übernimmt die Spalte */
-  .lz-einst, .lz-messen, .lz-heim, .lz-zu, .lz-ort { display: none; }
-  .lz-schiene button.ort-an { color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .lz-einst, .lz-messen, .lz-heim, .lz-zu { display: none; }
+  /* Standort wie in Topovo oben rechts, nicht in der Spalte */
+  .lz-ort { top: 16px; right: 16px; bottom: auto; }
   /* Fußzeile, Hinweis und Farbskala in der Mitte der freien Fläche */
-  .lz-fuss { left: calc(384px + 16px); right: 16px; top: 16px; }
+  .lz-fuss { left: calc(384px + 16px); right: 74px; top: 16px; }
   .lz-tipp { left: calc(50% + 192px); max-width: calc(100% - 440px); }
   .lz-skala { left: calc(50% + 192px); }
   .seite-zu .lz-fuss { left: calc(64px + 16px); }

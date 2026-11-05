@@ -153,13 +153,43 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       <button type="button" data-lz="karte" aria-label="Zurück zur Karte"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"/></svg><span>Zurück</span></button>
       <button type="button" data-lz="darstellung"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg><span>Darstellung</span></button>
       <button type="button" data-lz="messen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 16.5 16.5 3.5l4 4-13 13z"/><path d="M7 13l1.8 1.8M10 10l1.8 1.8M13 7l1.8 1.8"/></svg><span>Messen</span></button>
-      <button type="button" data-lz="ort" class="lz-schiene-ort"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="7.4"/></svg><span>Standort</span></button>
+      <button type="button" data-lz="export"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 16v3.5h14V16"/></svg><span>Export</span></button>
       <button type="button" data-lz="heim" class="lz-schiene-heim"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4.5l8 7"/><path d="M6.5 9.5V19h11V9.5"/></svg><span>Ansicht</span></button>
     </nav>
     <aside class="lz-seite">
       <div class="lz-seite-kopf"><p class="bb-title">Laserpunkte</p><p class="bb-sub lz-seite-unter"></p></div>
       <section data-bereich="darstellung"><h2 class="lz-seite-titel">Darstellung</h2></section>
       <section data-bereich="messen"><h2 class="lz-seite-titel">Messen</h2></section>
+      <section data-bereich="export"><h2 class="lz-seite-titel">Export</h2>
+        <p class="pal-label">Umfang</p>
+        <div class="seg seg-paar" role="group" aria-label="Umfang">
+          <button type="button" class="seg-btn is-on" data-ex-umfang="ausschnitt">Ausschnitt</button>
+          <button type="button" class="seg-btn" data-ex-umfang="kacheln">Ganze Kacheln</button>
+        </div>
+        <p class="pal-label">Punkte</p>
+        <div class="seg seg-paar" role="group" aria-label="Punkte">
+          <button type="button" class="seg-btn is-on" data-ex-boden="0">Alle</button>
+          <button type="button" class="seg-btn" data-ex-boden="1">Nur Boden</button>
+        </div>
+        <p class="pal-label">Farbe</p>
+        <div class="seg seg-paar" role="group" aria-label="Farbe">
+          <button type="button" class="seg-btn is-on" data-ex-farbe="0">Ohne</button>
+          <button type="button" class="seg-btn" data-ex-farbe="1">Luftbild</button>
+        </div>
+        <p class="pal-label">Koordinaten</p>
+        <div class="seg seg-paar" role="group" aria-label="Koordinaten">
+          <button type="button" class="seg-btn is-on" data-ex-ziel="utm">UTM32</button>
+          <button type="button" class="seg-btn" data-ex-ziel="3">DB_REF GK3</button>
+          <button type="button" class="seg-btn" data-ex-ziel="4">DB_REF GK4</button>
+        </div>
+        <p class="pal-label">Gebäude</p>
+        <button type="button" class="seg-btn lz-klasse lz-ex-geb" aria-pressed="false">
+          <span class="lz-feld" style="background:#e4e7ec"></span><span class="lz-name">LoD2 als DXF dazu</span><small>aus</small></button>
+        <p class="bb-sub lz-ex-umfang"></p>
+        <div class="lz-ex-lauf" hidden><div class="laser-lade"><div class="laser-lade-balken"></div></div><p class="bb-note plain lz-ex-stand"></p></div>
+        <div class="bb-actions knapp"><button type="button" class="maps lz-ex-los">Herunterladen</button></div>
+        <p class="fine lz-ex-hinweis"></p>
+      </section>
     </aside>
     <button type="button" class="lz-knopf lz-einst" aria-label="Darstellung" aria-expanded="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>
@@ -171,7 +201,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 16.5 16.5 3.5l4 4-13 13z"/><path d="M7 13l1.8 1.8M10 10l1.8 1.8M13 7l1.8 1.8"/></svg>
     </button>
     <button type="button" class="lz-knopf lz-ort" aria-label="Standort zeigen" aria-pressed="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="7.4"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="7.4" class="ring"/><path d="M12 1.6v3M12 19.4v3M1.6 12h3M19.4 12h3"/></svg>
     </button>
     <button type="button" class="lz-knopf lz-heim" aria-label="Ansicht zurücksetzen">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4.5l8 7"/><path d="M6.5 9.5V19h11V9.5"/></svg>
@@ -606,13 +636,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   function kugelGeoOrt() { return new THREE.SphereGeometry(1, 16, 12); }
   messSzene.add(ortGruppe);
   let ortWatch = null, ortStelle = null, ortErst = false, ortDraussen = null, ortSchild = null;
-  const ortKnoepfe = () => wurzel.querySelectorAll('.lz-ort, .lz-schiene-ort');
   function ortKnopf(an, busy) {
-    ortKnoepfe().forEach(k => {
-      k.classList.toggle(k.classList.contains('lz-ort') ? 'is-on' : 'ort-an', an);
-      k.classList.toggle('busy', busy);
-      k.setAttribute('aria-pressed', String(an));
-    });
+    const k = $('.lz-ort');
+    k.classList.toggle('is-on', an);
+    k.classList.toggle('busy', busy);
+    k.setAttribute('aria-pressed', String(an));
   }
   function ortAus() {
     if (ortWatch != null) navigator.geolocation.clearWatch(ortWatch);
@@ -709,19 +737,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   let geb = null, gebLaeuft = false;
   const gebKnopf = $('.lz-geb');
   gebKnopf.querySelector('small').textContent = 'aus';
-  function gebaeudeBauen(liste) {
-    const flaechen = [], kanten = [];
-    const ox = d.mitte[0], oy = d.mitte[1], oz = d.zMin;
+  /** Dächer und Wände als Dreiecke in UTM32 und NHN: ecken (x, y, z, drei je
+   *  Dreieck), wand je Dreieck, kanten als Linienpaare. grundVon(b, top) gibt
+   *  die Höhe des Geländes am Gebäude. Für die Ansicht und den Export (DXF). */
+  function gebaeudeDreiecke(liste, grundVon) {
+    const ecken = [], wand = [], kanten = [];
     const v2 = [];
     for (const b of liste) {
       let top = -Infinity;
       for (const r of b.d) for (const h of r.h) top = Math.max(top, h);
-      let grund = b.gr ?? (b.h ? top - b.h : null);
-      if (grund == null) {
-        const bh = bodenHoehe((b.bb[0] + b.bb[2]) / 2 - ox, (b.bb[1] + b.bb[3]) / 2 - oy);
-        grund = bh ? bh.z + oz : top - 3;
-      }
-      const gz = grund - oz;
+      const gz = grundVon(b, top);
       // Dachkanten zählen: geteilte (gleiche Lage und Höhe) bekommen keine Wand
       const schluessel = (a, c) => { const s1 = a.join(','), s2 = c.join(','); return s1 < s2 ? s1 + '|' + s2 : s2 + '|' + s1; };
       const zahlK = new Map(), ringe = [];
@@ -733,7 +758,6 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         ringe.push(p);
         for (let i = 0; i < p.length; i++) { const k = schluessel(p[i], p[(i + 1) % p.length]); zahlK.set(k, (zahlK.get(k) || 0) + 1); }
       }
-      const P = q => [q[0] - ox, q[1] - oy, q[2] - oz];
       for (const p of ringe) {
         // In Dreiecke: in die Ebene gelegt, in der das Dach am größten erscheint (Newell)
         let nx = 0, ny = 0, nz = 0;
@@ -745,25 +769,40 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         const [u, w] = az >= ax && az >= ay ? [0, 1] : ax >= ay ? [1, 2] : [0, 2];
         v2.length = 0;
         for (const q of p) v2.push(new THREE.Vector2(q[u] - p[0][u], q[w] - p[0][w]));
-        for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) for (const k of t) flaechen.push(...P(p[k]));
+        for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) { for (const k of t) ecken.push(...p[k]); wand.push(0); }
         for (let i = 0; i < p.length; i++) {
           const a = p[i], c = p[(i + 1) % p.length];
           const k = schluessel(a, c);
-          if (zahlK.get(k) > 0) { kanten.push(...P(a), ...P(c)); }
+          if (zahlK.get(k) > 0) { kanten.push(...a, ...c); }
           if (zahlK.get(k) === 1) {
-            const [a1, c1] = [P(a), P(c)], a0 = [a1[0], a1[1], gz], c0 = [c1[0], c1[1], gz];
-            flaechen.push(...a1, ...c1, ...c0, ...a1, ...c0, ...a0);
-            kanten.push(...a1, ...a0);
+            const a0 = [a[0], a[1], gz], c0 = [c[0], c[1], gz];
+            ecken.push(...a, ...c, ...c0, ...a, ...c0, ...a0);
+            wand.push(1, 1);
+            kanten.push(...a, ...a0);
           }
           zahlK.set(k, -1);        // jede Kante nur einmal zeichnen
         }
       }
     }
+    return { ecken, wand, kanten };
+  }
+  /** Höhe des Geländes am Gebäude: aus dem LoD2, sonst vom Laserboden (nur im Ausschnitt). */
+  function grundVon(b, top) {
+    const grund = b.gr ?? (b.h ? top - b.h : null);
+    if (grund != null) return grund;
+    const x = (b.bb[0] + b.bb[2]) / 2 - d.mitte[0], y = (b.bb[1] + b.bb[3]) / 2 - d.mitte[1];
+    const bh = Math.abs(x) <= halb && Math.abs(y) <= halb ? bodenHoehe(x, y) : null;
+    return bh ? bh.z + d.zMin : top - 3;
+  }
+  function gebaeudeBauen(liste) {
+    const { ecken, kanten } = gebaeudeDreiecke(liste, grundVon);
+    const ox = d.mitte[0], oy = d.mitte[1], oz = d.zMin;
+    const relativ = a => { const f = new Float32Array(a.length); for (let i = 0; i < a.length; i += 3) { f[i] = a[i] - ox; f[i + 1] = a[i + 1] - oy; f[i + 2] = a[i + 2] - oz; } return f; };
     const fg = new THREE.BufferGeometry();
-    fg.setAttribute('position', new THREE.Float32BufferAttribute(flaechen, 3));
+    fg.setAttribute('position', new THREE.BufferAttribute(relativ(ecken), 3));
     fg.computeVertexNormals();
     const kg = new THREE.BufferGeometry();
-    kg.setAttribute('position', new THREE.Float32BufferAttribute(kanten, 3));
+    kg.setAttribute('position', new THREE.BufferAttribute(relativ(kanten), 3));
     const gruppe = new THREE.Group();
     gruppe.add(new THREE.Mesh(fg, gebFlaecheMat), new THREE.LineSegments(kg, gebKanteMat));
     // Nah und Fern (tiefeAnpassen) auch um hinausragende Gebäude
@@ -803,6 +842,164 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       gebKnopf.classList.remove('laedt');
     }
   });
+
+  /* ---------- Export (nur am Desktop, Spalte „Export“) ----------
+   * Gerechnet wird in laser-werk.js aus den Kacheln im Vorrat, mit voller
+   * Dichte — nicht aus den ausgedünnten Punkten der Ansicht. Ohne Änderung geht
+   * das LAZ der BVV hinaus, sonst LAS (Format 3 bzw. 7 mit Farbe). DB_REF nach
+   * Ril 883.9010, Höhen bleiben DHHN2016 (= DB_REF2016). Jede Datei kommt einzeln
+   * als Download, sobald sie fertig ist. */
+  const ex = { umfang: 'ausschnitt', boden: !!info.nurBoden, farbe: false, ziel: 'utm', geb: false, laeuft: false };
+  {
+    // Vorwahl des Streifens nach der Lage: Grenze bei 10,5° O, grob aus dem UTM-Rechtswert
+    const breite = d.mitte[1] / 111132 * Math.PI / 180;
+    const laenge = 9 + (d.mitte[0] - 500000) / (111320 * Math.cos(breite));
+    ex.vorschlag = laenge < 10.5 ? '3' : '4';
+  }
+  const exSek = $('[data-bereich="export"]');
+  const exKacheln = d.kacheln || [];
+  const MB = b => b >= 1e9 ? `${zahl(b / 1e9, 1)} GB` : `${Math.max(1, Math.round(b / 1e6)).toLocaleString('de-DE')} MB`;
+  const ZIEL_NAME = { utm: 'UTM32', 3: 'DB_REF GK3', 4: 'DB_REF GK4' };
+  // Anteil der Bodenpunkte, aus der Ansicht geschätzt (war die schon „Nur Boden“, gut die Hälfte)
+  const bodenAnteil = info.nurBoden ? 0.55
+    : d.klassen.reduce((s, [k, a]) => s + (BODEN.has(k) ? a : 0), 0) / Math.max(1, d.klassen.reduce((s, [, a]) => s + a, 0));
+  const exOriginal = () => ex.umfang === 'kacheln' && !ex.boden && !ex.farbe && ex.ziel === 'utm';
+  function exUmfangZeigen() {
+    const neuFormat = exKacheln.some(k => k.format >= 6);
+    const L = ex.farbe || exKacheln.some(k => [2, 3, 5, 7, 8, 10].includes(k.format)) ? (neuFormat ? 36 : 34) : (neuFormat ? 30 : 28);
+    let text;
+    if (exOriginal()) {
+      const g = exKacheln.reduce((s, k) => s + k.groesse, 0);
+      text = `${exKacheln.length} × LAZ der BVV, unverändert · ${MB(g)}`;
+    } else {
+      let punkte = 0;
+      if (ex.umfang === 'kacheln') punkte = exKacheln.reduce((s, k) => s + k.anzahl, 0);
+      else {
+        const b = info.bereich;
+        for (const k of exKacheln) {
+          const [ke, kn] = k.kachel.split('_').map(Number);
+          const ueber = Math.max(0, Math.min(b.e1, ke * 1000 + 1000) - Math.max(b.e0, ke * 1000)) * Math.max(0, Math.min(b.n1, kn * 1000 + 1000) - Math.max(b.n0, kn * 1000));
+          punkte += k.anzahl * ueber / 1e6;
+        }
+      }
+      if (ex.boden) punkte *= bodenAnteil;
+      text = `LAS${ex.umfang === 'kacheln' && exKacheln.length > 1 ? ` aus ${exKacheln.length} Kacheln` : ''} · etwa ${zahl(punkte / 1e6, 1)} Mio. Punkte · etwa ${MB(punkte * L)}`;
+    }
+    $('.lz-ex-umfang').textContent = text + (ex.geb ? ' · dazu DXF' : '');
+    $('.lz-ex-hinweis').textContent = [
+      ex.ziel !== 'utm' && 'DB_REF nach Ril 883.9010 (7 Parameter, Gauß-Krüger 3°). Höhen bleiben DHHN2016 = DB_REF2016.',
+      ex.farbe && 'Farbe aus dem DOP20 (20 cm): kein True-Ortho, Wände tragen die Farbe von Dach oder Boden.',
+      !exOriginal() && 'LAS ohne Kompression — eine ganze Kachel kann über 1 GB groß werden.'
+    ].filter(Boolean).join(' ');
+  }
+  function exWahlZeigen() {
+    exSek.querySelectorAll('[data-ex-umfang]').forEach(b => b.classList.toggle('is-on', b.dataset.exUmfang === ex.umfang));
+    exSek.querySelectorAll('[data-ex-boden]').forEach(b => b.classList.toggle('is-on', (b.dataset.exBoden === '1') === ex.boden));
+    exSek.querySelectorAll('[data-ex-farbe]').forEach(b => b.classList.toggle('is-on', (b.dataset.exFarbe === '1') === ex.farbe));
+    exSek.querySelectorAll('[data-ex-ziel]').forEach(b => b.classList.toggle('is-on', b.dataset.exZiel === ex.ziel));
+    const gk = $('.lz-ex-geb');
+    gk.classList.toggle('is-on', ex.geb);
+    gk.setAttribute('aria-pressed', String(ex.geb));
+    gk.querySelector('small').textContent = ex.geb ? 'an' : 'aus';
+    exSek.querySelectorAll('.seg-btn').forEach(b => { b.disabled = ex.laeuft; });
+    exUmfangZeigen();
+  }
+  exSek.querySelectorAll('[data-ex-umfang]').forEach(b => b.addEventListener('click', () => { ex.umfang = b.dataset.exUmfang; exWahlZeigen(); }));
+  exSek.querySelectorAll('[data-ex-boden]').forEach(b => b.addEventListener('click', () => { ex.boden = b.dataset.exBoden === '1'; exWahlZeigen(); }));
+  exSek.querySelectorAll('[data-ex-farbe]').forEach(b => b.addEventListener('click', () => { ex.farbe = b.dataset.exFarbe === '1'; exWahlZeigen(); }));
+  exSek.querySelectorAll('[data-ex-ziel]').forEach(b => b.addEventListener('click', () => { ex.ziel = b.dataset.exZiel; exWahlZeigen(); }));
+  $('.lz-ex-geb').addEventListener('click', () => { ex.geb = !ex.geb; exWahlZeigen(); });
+  // GK-Knöpfe: der zur Lage passende Streifen zuerst genannt ist nicht nötig, aber angedeutet
+  exSek.querySelector(`[data-ex-ziel="${ex.vorschlag}"]`).title = 'Passt zur Lage des Ausschnitts';
+
+  /** Die Stücke des DOP20 für eine Fläche, 20 cm je Bildpunkt, in Stücken zu 2500. */
+  function luftbildTeile(e0, n0, e1, n1) {
+    const res = 0.2, breite = Math.round((e1 - e0) / res), hoehe = Math.round((n1 - n0) / res), STUECK = 2500, teile = [];
+    for (let y = 0; y < hoehe; y += STUECK) for (let x = 0; x < breite; x += STUECK) {
+      const w = Math.min(STUECK, breite - x), h = Math.min(STUECK, hoehe - y);
+      teile.push({ url: info.luftbild(e0 + x * res, n1 - (y + h) * res, e0 + (x + w) * res, n1 - y * res, w, h), x, y, w, h });
+    }
+    return { e0, n1, res, breite, hoehe, teile };
+  }
+  const kachelFlaeche = k => { const [e, n] = k.split('_').map(Number); return { e0: e * 1000, n0: n * 1000, e1: e * 1000 + 1000, n1: n * 1000 + 1000 }; };
+
+  function speichern(name, blob) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Erst später freigeben: Der Browser liest große Dateien noch eine Weile
+    setTimeout(() => URL.revokeObjectURL(a.href), 300000);
+  }
+  function exStand(text, anteil) {
+    $('.lz-ex-stand').textContent = text;
+    const balken = $('.lz-ex-lauf .laser-lade-balken');
+    balken.parentElement.classList.toggle('unbestimmt', anteil == null);
+    balken.style.width = anteil == null ? '' : Math.round(anteil * 100) + '%';
+  }
+  function exLaeuft(an) {
+    ex.laeuft = an;
+    $('.lz-ex-lauf').hidden = !an;
+    const los = $('.lz-ex-los');
+    los.textContent = an ? 'Abbrechen' : 'Herunterladen';
+    los.classList.toggle('maps', !an);
+    exWahlZeigen();
+  }
+  async function exportStarten() {
+    ex.abbrechen = false;
+    exLaeuft(true);
+    exStand('Vorbereiten …', null);
+    const einzeln = ex.umfang === 'kacheln', ziel = ex.ziel === 'utm' ? 'utm' : Number(ex.ziel);
+    const b = info.bereich;
+    const name = einzeln ? `laser_${info.kacheln.map(k => k.kachel).join('_')}` : `laser_${Math.round(b.e0)}_${Math.round(b.n0)}_${Math.round(b.e1 - b.e0)}m`;
+    const zusatz = (ziel === 'utm' ? '_utm32' : `_dbref_gk${ziel}`) + (ex.farbe ? '_rgb' : '') + (ex.boden ? '_boden' : '');
+    let luftbild = null;
+    if (ex.farbe) luftbild = einzeln ? Object.fromEntries(info.kacheln.map(k => { const f = kachelFlaeche(k.kachel); return [k.kachel, luftbildTeile(f.e0, f.n0, f.e1, f.n1)]; }))
+      : luftbildTeile(b.e0, b.n0, b.e1, b.n1);
+    let gebaeude = null;
+    if (ex.geb) {
+      exStand('Gebäude laden …', null);
+      try {
+        const flaechen = einzeln ? info.kacheln.map(k => kachelFlaeche(k.kachel)) : [b];
+        const roh = await info.gebaeude(Math.min(...flaechen.map(f => f.e0)), Math.min(...flaechen.map(f => f.n0)),
+          Math.max(...flaechen.map(f => f.e1)), Math.max(...flaechen.map(f => f.n1)));
+        // Wie in der Ansicht: nur Gebäude mit der Mitte in der Fläche
+        const liste = roh.filter(g => { const x = (g.bb[0] + g.bb[2]) / 2, y = (g.bb[1] + g.bb[3]) / 2;
+          return flaechen.some(f => x >= f.e0 && x < f.e1 && y >= f.n0 && y < f.n1); });
+        const { ecken, wand } = gebaeudeDreiecke(liste, grundVon);
+        gebaeude = { ecken: Float64Array.from(ecken), wand: Uint8Array.from(wand) };
+      } catch (err) {
+        console.warn(err);
+        hinweis('Die Gebäude ließen sich nicht laden — die Punkte kommen trotzdem.');
+      }
+      if (!laeuft || ex.abbrechen) return exLaeuft(false);
+    }
+    let dateien = 0;
+    info.exportieren({ kacheln: info.kacheln, bereich: b, einzeln, nurBoden: ex.boden, ziel, luftbild, gebaeude, name, zusatz }, m => {
+      if (!laeuft) return;
+      const von = m.von > 1 ? ` (Kachel ${m.nr + 1} von ${m.von})` : '';
+      if (m.art === 'laden') exStand(`Laden${von} … ${MB(m.geladen)}${m.gesamt ? ` von ${MB(m.gesamt)}` : ''}`, m.gesamt ? (m.nr + m.geladen / m.gesamt) / m.von : null);
+      else if (m.art === 'warten') exStand(`Verbindung unterbrochen — neuer Versuch in ${m.sekunden} s.`, null);
+      else if (m.art === 'luftbild') exStand(`Luftbild laden${von} …`, null);
+      else if (m.art === 'schreiben') exStand(`Schreiben${von} …`, (m.nr + m.gelesen / m.gesamt) / m.von);
+      else if (m.art === 'datei') { dateien++; speichern(m.name, m.blob); }
+      else {
+        exLaeuft(false);
+        if (m.art === 'fertig') hinweis(`${dateien} ${dateien === 1 ? 'Datei' : 'Dateien'} gespeichert.`);
+        else if (m.art === 'fehler') hinweis(m.text);
+        else hinweis('Export abgebrochen.');
+      }
+    });
+  }
+  $('.lz-ex-los').addEventListener('click', () => {
+    if (!ex.laeuft) { exportStarten(); return; }
+    ex.abbrechen = true;
+    exStand('Abbrechen …', null);
+    info.exportAbbrechen();
+  });
+  exWahlZeigen();
 
   /* ---------- Bedienung ---------- */
   const tafel = $('.lz-tafel'), einst = $('.lz-einst');
@@ -1194,7 +1391,6 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const was = b.dataset.lz;
     if (was === 'karte') return schliessen();
     if (was === 'heim') return heim();
-    if (was === 'ort') return ortUmschalten();
     if (was === bereich && !seiteZu) seiteZu = true;
     else { bereich = was; seiteZu = false; }
     bereichZeigen();

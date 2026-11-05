@@ -47,6 +47,11 @@ function vorratMelden() {
   self.postMessage({ art: 'vorrat', kacheln: [...vorrat.keys()] });
 }
 
+/* Meldungen eines Exports tragen export: true — app.js reicht sie an die
+ * Ansicht weiter statt an das Laden auf der Karte. */
+let exportLaeuft = false;
+const senden = m => self.postMessage(exportLaeuft ? { ...m, export: true } : m);
+
 /** Platz für bedarf Byte schaffen; die Kacheln in behalten bleiben. */
 function platzMachen(LP, bedarf, behalten, vorratMax) {
   let summe = bedarf;
@@ -188,7 +193,7 @@ function kopfLesen(b) {
   const d = new DataView(b.buffer, b.byteOffset, b.byteLength);
   if (String.fromCharCode(b[0], b[1], b[2], b[3]) !== 'LASF') throw new Error('Keine LAS-Datei');
   return {
-    format: b[104] & 0x3f, laenge: d.getUint16(105, true),
+    format: b[104] & 0x3f, laenge: d.getUint16(105, true), kodierung: d.getUint16(6, true),
     anzahl: d.getUint32(107, true) || Number(d.getBigUint64(247, true)),
     skala: [d.getFloat64(131, true), d.getFloat64(139, true), d.getFloat64(147, true)],
     versatz: [d.getFloat64(155, true), d.getFloat64(163, true), d.getFloat64(171, true)],
@@ -197,26 +202,21 @@ function kopfLesen(b) {
   };
 }
 
-async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
-  if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
-  const LP = lazPerf;
+/** Holt die Kacheln, eine nach der anderen: aus dem Vorrat oder neu geladen. */
+async function kachelnHolen(LP, kacheln, vorratMax) {
   const von = kacheln.length, behalten = new Set(kacheln.map(k => k.kachel));
-
-  // Erst alle Kacheln da haben, eine nach der anderen. Die Zeiten je Schritt
-  // stehen unten in der Ansicht — damit sich sagen lässt, wo es hängt.
-  const zeiten = { laden: 0, megabyte: 0, lesen: 0, normalen: 0 };
-  let uhr = performance.now();
   const da = [], fehlen = [];
+  let megabyte = 0;
   for (let i = 0; i < von; i++) {
     const { kachel, url } = kacheln[i];
     let v = vorrat.get(kachel);
     if (v) vorrat.delete(kachel);               // nach hinten: zuletzt benutzt
     else {
       v = await mitWiederholung(LP, url, (geladen, gesamt) =>
-        self.postMessage({ art: 'laden', nr: i, von, geladen, gesamt }), behalten, vorratMax,
-        (versuch, sekunden, abgeschnitten) => self.postMessage({ art: 'warten', nr: i, von, versuch, sekunden, abgeschnitten }));
+        senden({ art: 'laden', nr: i, von, geladen, gesamt }), behalten, vorratMax,
+        (versuch, sekunden, abgeschnitten) => senden({ art: 'warten', nr: i, von, versuch, sekunden, abgeschnitten }));
       if (!v) { fehlen.push(kachel); continue; }
-      zeiten.megabyte += v.groesse / 1e6;
+      megabyte += v.groesse / 1e6;
     }
     // Erst prüfen, dann merken: Eine Fehlerseite mit Status 200 bliebe sonst als „im Speicher“ hängen
     let kopf;
@@ -233,6 +233,19 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
     da.push({ kachel, ...v, kopf });
   }
   if (!da.length) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
+  return { da, fehlen, megabyte };
+}
+
+async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
+  if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
+  const LP = lazPerf;
+
+  // Erst alle Kacheln da haben, eine nach der anderen. Die Zeiten je Schritt
+  // stehen unten in der Ansicht — damit sich sagen lässt, wo es hängt.
+  const zeiten = { laden: 0, megabyte: 0, lesen: 0, normalen: 0 };
+  let uhr = performance.now();
+  const { da, fehlen, megabyte } = await kachelnHolen(LP, kacheln, vorratMax);
+  zeiten.megabyte = megabyte;
   zeiten.laden = (performance.now() - uhr) / 1000;
   uhr = performance.now();
 
@@ -270,7 +283,7 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
           laszip.getPoint(punkt);
           if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
           if ((i & 0xfffff) === 0) {
-            self.postMessage({ art: 'lesen', nr: t, von: da.length, gelesen: i, gesamt: anzahl });
+            senden({ art: 'lesen', nr: t, von: da.length, gelesen: i, gesamt: anzahl });
             await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) durchlassen
             if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
           }
@@ -317,6 +330,8 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
   const ergebnis = {
     art: 'fertig', anzahl: n, schritt, fehlen, zeiten,
     mitte: [ce, cn], zMin, zMax, iMax,
+    // Für den Export (Größe vorab): je Kachel Punkte, Format und Größe des LAZ
+    kacheln: da.map(k => ({ kachel: k.kachel, anzahl: k.kopf.anzahl, format: k.kopf.format, groesse: k.groesse })),
     xyz: xyz.slice(0, n * 3), klasse: klasse.slice(0, n), staerke: staerke.slice(0, n), normalen,
     klassen: [...klassen].sort((a, b) => a[0] - b[0])
   };
@@ -400,15 +415,435 @@ function kleinsteAchse(a, b, c, d, e, f) {
   return [best[0] / l, best[1] / l, best[2] / l];
 }
 
+/* ============================ Export ============================
+ *
+ * Auftrag { art: 'export', kacheln, bereich, einzeln, nurBoden, ziel, luftbild,
+ * gebaeude, name, zusatz, vorratMax } aus laser.js (über app.js):
+ *   einzeln   die Kacheln ganz statt des Ausschnitts bereich — zusammen in einer LAS;
+ *             nur unverändert (siehe unten) je Kachel ihr LAZ
+ *   ziel      'utm' (UTM32 wie geliefert) oder 3 / 4 (DB_REF Gauß-Krüger, Streifen 3 oder 4)
+ *   luftbild  null oder die Stücke des DOP20 (luftbildHolen): für den Ausschnitt eines,
+ *             bei einzeln eines je Kachel unter ihrem Namen — geholt erst, wenn die Kachel
+ *             dran ist, damit nie mehr als ein Bild (5000², 75 MB) im Speicher liegt
+ *   gebaeude  null oder { ecken: Float64Array (x, y, z je Ecke, drei je Dreieck),
+ *             wand: Uint8Array je Dreieck } in UTM32 → DXF
+ * Meldungen (alle mit export: true): laden, warten wie oben, dazu
+ *   { art: 'luftbild' }, { art: 'schreiben', nr, von, gelesen, gesamt },
+ *   { art: 'datei', name, blob, punkte }, { art: 'fertig', fehlen }, fehler, abgebrochen.
+ *
+ * Unverändert (ganze Kachel, alle Punkte, UTM, ohne Farbe) geht das LAZ der BVV
+ * so hinaus, wie es im Vorrat liegt. Sonst LAS ohne Kompression — laz-perf in
+ * vendor/copc kann nur entpacken. Rund 34 Byte je Punkt: eine Kachel mit
+ * 30 Mio. Punkten wird 1 GB groß und liegt bis zum Speichern im Arbeitsspeicher.
+ * Deshalb nur am Desktop (Knopf in der Spalte). */
+
+/* ---------- DB_REF ----------
+ * Ril 883.9010 (gültig ab 01.08.2024), Abschnitt 7: Datumsübergang ETRS89 →
+ * DB_REF mit den Parametern der Ril für genau diese Richtung (DBREF_HIN; die
+ * Gegenrichtung ist EPSG:5826 und steht als DBREF in app.js). Die
+ * Transformation definiert DB_REF, gilt also als fehlerfrei. Anders als in
+ * app.js mit der Ellipsoidhöhe des Punkts: Die Drehungen (bis 3,1″) verschieben
+ * die Lage sonst um rund 1 cm je 500 m Höhe. Ellipsoidhöhe = Höhe + Geoid, das
+ * Geoid fest mit 47 m (Bayern etwa 45–50 m) — 3 m daneben machen 0,05 mm.
+ * Die Höhen bleiben, wie sie sind: DB_REF2016 nimmt Normalhöhen über GCG2016,
+ * das sind die DHHN2016-Höhen der BVV (Ril 883.9010 Abschnitt 3 und 9).
+ * Geprüft gegen proj4 (werkzeug/dbref-pruefen.mjs). */
+// Coordinate Frame wie in app.js: Verschiebung in m, Drehung in Bogensekunden, Maßstab in ppm
+const DBREF_HIN = { tx: -584.9567, ty: -107.7277, tz: -413.8036,
+  rx: 1.1155257601, ry: 0.2824170155, rz: -3.1384505907, s: -7.992171 };
+const ELL_GRS80 = { a: 6378137, f: 1 / 298.257222101 };
+const ELL_BESSEL = { a: 6377397.155, f: 1 / 299.1528128 };
+const GEOID = 47;
+
+function ellXyz(lat, lon, h, { a, f }) {
+  const p = lat * Math.PI / 180, l = lon * Math.PI / 180, e2 = f * (2 - f);
+  const N = a / Math.sqrt(1 - e2 * Math.sin(p) ** 2);
+  return [(N + h) * Math.cos(p) * Math.cos(l), (N + h) * Math.cos(p) * Math.sin(l), (N * (1 - e2) + h) * Math.sin(p)];
+}
+
+function ellAusXyz([x, y, z], { a, f }) {
+  const e2 = f * (2 - f), r = Math.hypot(x, y);
+  let p = Math.atan2(z, r * (1 - e2)), h = 0;
+  for (let i = 0; i < 8; i++) {
+    const N = a / Math.sqrt(1 - e2 * Math.sin(p) ** 2);
+    h = r / Math.cos(p) - N;
+    p = Math.atan2(z, r * (1 - e2 * N / (N + h)));
+  }
+  return [p * 180 / Math.PI, Math.atan2(y, x) * 180 / Math.PI];
+}
+
+function tmHin(lat, lon, { a, f }, l0, k0, e0) {
+  const n = f / (2 - f), n2 = n * n, n3 = n2 * n, n4 = n3 * n;
+  const A = a / (1 + n) * (1 + n2 / 4 + n4 / 64);
+  const alpha = [n / 2 - 2 * n2 / 3 + 5 * n3 / 16 + 41 * n4 / 180, 13 * n2 / 48 - 3 * n3 / 5 + 557 * n4 / 1440,
+    61 * n3 / 240 - 103 * n4 / 140, 49561 * n4 / 161280];
+  const p = lat * Math.PI / 180, l = (lon - l0) * Math.PI / 180, ex = 2 * Math.sqrt(n) / (1 + n);
+  const t = Math.sinh(Math.atanh(Math.sin(p)) - ex * Math.atanh(ex * Math.sin(p)));
+  const xi1 = Math.atan2(t, Math.cos(l)), eta1 = Math.atanh(Math.sin(l) / Math.sqrt(1 + t * t));
+  let xi = xi1, eta = eta1;
+  for (let j = 1; j <= 4; j++) {
+    xi += alpha[j - 1] * Math.sin(2 * j * xi1) * Math.cosh(2 * j * eta1);
+    eta += alpha[j - 1] * Math.cos(2 * j * xi1) * Math.sinh(2 * j * eta1);
+  }
+  return [e0 + k0 * A * eta, k0 * A * xi];
+}
+
+function tmZurueck(e, nord, { a, f }, l0, k0, e0) {
+  const n = f / (2 - f), n2 = n * n, n3 = n2 * n, n4 = n3 * n;
+  const A = a / (1 + n) * (1 + n2 / 4 + n4 / 64);
+  const beta = [n / 2 - 2 * n2 / 3 + 37 * n3 / 96 - n4 / 360, n2 / 48 + n3 / 15 - 437 * n4 / 1440,
+    17 * n3 / 480 - 37 * n4 / 840, 4397 * n4 / 161280];
+  const delta = [2 * n - 2 * n2 / 3 - 2 * n3 + 116 * n4 / 45, 7 * n2 / 3 - 8 * n3 / 5 - 227 * n4 / 45,
+    56 * n3 / 15 - 136 * n4 / 35, 4279 * n4 / 630];
+  const xi = nord / (k0 * A), eta = (e - e0) / (k0 * A);
+  let xi1 = xi, eta1 = eta;
+  for (let j = 1; j <= 4; j++) {
+    xi1 -= beta[j - 1] * Math.sin(2 * j * xi) * Math.cosh(2 * j * eta);
+    eta1 -= beta[j - 1] * Math.cos(2 * j * xi) * Math.sinh(2 * j * eta);
+  }
+  const chi = Math.asin(Math.sin(xi1) / Math.cosh(eta1));
+  let p = chi;
+  for (let j = 1; j <= 4; j++) p += delta[j - 1] * Math.sin(2 * j * chi);
+  return [p * 180 / Math.PI, l0 + Math.atan2(Math.sinh(eta1), Math.cos(xi1)) * 180 / Math.PI];
+}
+
+/** UTM32 (ETRS89) mit Höhe h (DHHN2016) → DB_REF Gauß-Krüger im Streifen: [Rechts, Hoch]. */
+function dbrefPunkt(e, n, h, streifen) {
+  const [lat, lon] = tmZurueck(e, n, ELL_GRS80, 9, 0.9996, 500000);
+  const [x, y, z] = ellXyz(lat, lon, h + GEOID, ELL_GRS80);
+  const par = DBREF_HIN, sek = Math.PI / 180 / 3600, rx = par.rx * sek, ry = par.ry * sek, rz = par.rz * sek;
+  const m = 1 + par.s * 1e-6;
+  // X_db = T + m·R·X_etrs, R wie gkZurueck in app.js
+  const xd = par.tx + m * (x + rz * y - ry * z);
+  const yd = par.ty + m * (-rz * x + y + rx * z);
+  const zd = par.tz + m * (ry * x - rx * y + z);
+  const [pb, lb] = ellAusXyz([xd, yd, zd], ELL_BESSEL);
+  return tmHin(pb, lb, ELL_BESSEL, 3 * streifen, 1, streifen * 1e6 + 500000);
+}
+
+/* Streng gerechnet rund 1 µs je Punkt — bei 30 Mio. Punkten eine halbe Minute.
+ * Über eine Fläche bis etwa 1 km reicht ein Polynom dritten Grades in der Lage,
+ * linear in der Höhe, an 6 × 6 × 3 Stützpunkten ausgeglichen. An 500
+ * Zufallspunkten nachgeprüft; liegt es irgendwo über 0,05 mm daneben, bleibt
+ * es bei der strengen Rechnung. Gibt (e, n, h, aus) → aus = [Rechts, Hoch]. */
+function dbrefFlaeche(e0, n0, e1, n1, z0, z1, streifen) {
+  const me = (e0 + e1) / 2, mn = (n0 + n1) / 2, se = Math.max(1, (e1 - e0) / 2), sn = Math.max(1, (n1 - n0) / 2);
+  const mz = (z0 + z1) / 2, sz = Math.max(50, (z1 - z0) / 2);
+  const [R0, H0] = dbrefPunkt(me, mn, mz, streifen);
+  const terme = (u, v, w, t) => {
+    t[0] = 1; t[1] = u; t[2] = v; t[3] = u * u; t[4] = u * v; t[5] = v * v;
+    t[6] = u * u * u; t[7] = u * u * v; t[8] = u * v * v; t[9] = v * v * v; t[10] = w; t[11] = w * u; t[12] = w * v;
+  };
+  const T = 13, A = new Float64Array(T * T), bR = new Float64Array(T), bH = new Float64Array(T), t = new Float64Array(T);
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) for (let k = 0; k < 3; k++) {
+    const u = -1 + i * 0.4, v = -1 + j * 0.4, w = k - 1;
+    const [R, H] = dbrefPunkt(me + u * se, mn + v * sn, mz + w * sz, streifen);
+    terme(u, v, w, t);
+    for (let a = 0; a < T; a++) {
+      bR[a] += t[a] * (R - R0); bH[a] += t[a] * (H - H0);
+      for (let b = 0; b < T; b++) A[a * T + b] += t[a] * t[b];
+    }
+  }
+  const cR = loesen(A.slice(), bR, T), cH = loesen(A, bH, T);
+  const genaehert = (e, n, h, aus) => {
+    terme((e - me) / se, (n - mn) / sn, (h - mz) / sz, t);
+    let r = 0, hh = 0;
+    for (let a = 0; a < T; a++) { r += cR[a] * t[a]; hh += cH[a] * t[a]; }
+    aus[0] = R0 + r; aus[1] = H0 + hh;
+    return aus;
+  };
+  const streng = (e, n, h, aus) => { const [r, hh] = dbrefPunkt(e, n, h, streifen); aus[0] = r; aus[1] = hh; return aus; };
+  const aus = [0, 0];
+  for (let i = 0; i < 500; i++) {
+    const e = e0 + Math.random() * (e1 - e0), n = n0 + Math.random() * (n1 - n0), h = mz + (Math.random() * 2 - 1) * sz;
+    const [r, hh] = dbrefPunkt(e, n, h, streifen);
+    genaehert(e, n, h, aus);
+    if (Math.hypot(aus[0] - r, aus[1] - hh) > 5e-5) return streng;
+  }
+  return genaehert;
+}
+
+/** Löst A·x = b (n × n) nach Gauß mit Spaltenpivot; A und b werden verändert. */
+function loesen(A, b, n) {
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(A[r * n + c]) > Math.abs(A[p * n + c])) p = r;
+    if (p !== c) {
+      for (let k = 0; k < n; k++) { const x = A[c * n + k]; A[c * n + k] = A[p * n + k]; A[p * n + k] = x; }
+      const x = b[c]; b[c] = b[p]; b[p] = x;
+    }
+    for (let r = c + 1; r < n; r++) {
+      const f = A[r * n + c] / A[c * n + c];
+      for (let k = c; k < n; k++) A[r * n + k] -= f * A[c * n + k];
+      b[r] -= f * b[c];
+    }
+  }
+  const x = new Float64Array(n);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = b[r];
+    for (let k = r + 1; k < n; k++) s -= A[r * n + k] * x[k];
+    x[r] = s / A[r * n + r];
+  }
+  return x;
+}
+
+/* ---------- LAS schreiben ---------- */
+// Bytes je Punkt und Lage der Farbe; 4/5 und 9/10 sind 1/3 und 6/8 mit Wellenform
+const LAS_LAENGE = { 0: 20, 1: 28, 2: 26, 3: 34, 6: 30, 7: 36 };
+const LAS_RGB = { 2: 20, 3: 28, 5: 28, 7: 30, 8: 30, 10: 30 };
+const LAS_GPS = new Set([1, 3, 4, 5]);
+// Kein Bezugssystem steht in den Kacheln der BVV: es wird hier gesetzt (EPSG, Höhe DHHN2016)
+const WKT_HOEHE = 'VERT_CS["DHHN2016 height",VERT_DATUM["Deutsches Haupthoehennetz 2016",2005,AUTHORITY["EPSG","1170"]],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Gravity-related height",UP],AUTHORITY["EPSG","7837"]]';
+const WKT_DBREF = 'GEOGCS["DB_REF",DATUM["Deutsche_Bahn_Reference_System",SPHEROID["Bessel 1841",6377397.155,299.1528128],TOWGS84[584.9636,107.7175,413.8067,-1.1155,-0.2824,3.1384,7.9922]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","5681"]]';
+const LAS_CRS = {
+  utm: { epsg: 25832, wkt: 'PROJCS["ETRS89 / UTM zone 32N",GEOGCS["ETRS89",DATUM["European_Terrestrial_Reference_System_1989",SPHEROID["GRS 1980",6378137,298.257222101,AUTHORITY["EPSG","7019"]],TOWGS84[0,0,0,0,0,0,0],AUTHORITY["EPSG","6258"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4258"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",9],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","25832"]]' },
+  3: { epsg: 5683, wkt: `PROJCS["DB_REF / 3-degree Gauss-Kruger zone 3 (E-N)",${WKT_DBREF},PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",9],PARAMETER["scale_factor",1],PARAMETER["false_easting",3500000],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","5683"]]` },
+  4: { epsg: 5684, wkt: `PROJCS["DB_REF / 3-degree Gauss-Kruger zone 4 (E-N)",${WKT_DBREF},PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",12],PARAMETER["scale_factor",1],PARAMETER["false_easting",4500000],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","5684"]]` }
+};
+
+/** Kopf und VLR einer LAS-Datei (1.2 mit GeoKeys, 1.4 mit WKT). */
+function lasKopf({ neu, format, anzahl, rueck, skala, versatz, min, max, kodierung, ziel }) {
+  const crs = LAS_CRS[ziel];
+  const kopfGr = neu ? 375 : 227;
+  let vlr;
+  if (neu) {
+    const wkt = new TextEncoder().encode(`COMPD_CS["${crs.wkt.match(/^PROJCS\["([^"]+)"/)[1]} + DHHN2016 height",${crs.wkt},${WKT_HOEHE}]\0`);
+    vlr = { id: 2112, daten: wkt };
+  } else {
+    const schluessel = [1, 1, 0, 5, 1024, 0, 1, 1, 3072, 0, 1, crs.epsg, 3076, 0, 1, 9001, 4096, 0, 1, 7837, 4099, 0, 1, 9001];
+    vlr = { id: 34735, daten: new Uint8Array(Uint16Array.from(schluessel).buffer) };
+  }
+  const gesamt = kopfGr + 54 + vlr.daten.length;
+  const b = new Uint8Array(gesamt), d = new DataView(b.buffer);
+  const text = (o, s, len) => { for (let i = 0; i < Math.min(len, s.length); i++) b[o + i] = s.charCodeAt(i); };
+  text(0, 'LASF', 4);
+  // Bit 0: GPS-Zeit wie in der Kachel; Bit 4: Bezugssystem als WKT (Pflicht ab Format 6)
+  d.setUint16(6, (kodierung & 1) | (neu ? 16 : 0), true);
+  b[24] = 1; b[25] = neu ? 4 : 2;
+  text(26, 'OTHER', 32);
+  text(58, 'Topovo', 32);
+  const heute = new Date(), jan1 = Date.UTC(heute.getUTCFullYear(), 0, 1);
+  d.setUint16(90, Math.floor((heute - jan1) / 864e5) + 1, true);
+  d.setUint16(92, heute.getUTCFullYear(), true);
+  d.setUint16(94, kopfGr, true);
+  d.setUint32(96, gesamt, true);
+  d.setUint32(100, 1, true);
+  b[104] = format;
+  d.setUint16(105, LAS_LAENGE[format], true);
+  if (!neu) {
+    d.setUint32(107, anzahl, true);
+    for (let i = 0; i < 5; i++) d.setUint32(111 + 4 * i, rueck[i], true);
+  }
+  for (let i = 0; i < 3; i++) {
+    d.setFloat64(131 + 8 * i, skala[i], true);
+    d.setFloat64(155 + 8 * i, versatz[i], true);
+    d.setFloat64(179 + 16 * i, max[i], true);
+    d.setFloat64(187 + 16 * i, min[i], true);
+  }
+  if (neu) {
+    d.setBigUint64(247, BigInt(anzahl), true);
+    for (let i = 0; i < 15; i++) d.setBigUint64(255 + 8 * i, BigInt(rueck[i]), true);
+  }
+  // VLR: reserviert, Nutzerkennung, Nummer, Länge, Beschreibung
+  const o = kopfGr;
+  text(o + 2, 'LASF_Projection', 16);
+  d.setUint16(o + 18, vlr.id, true);
+  d.setUint16(o + 20, vlr.daten.length, true);
+  text(o + 22, neu ? 'OGC WKT' : 'GeoKeyDirectory', 32);
+  b.set(vlr.daten, o + 54);
+  return b;
+}
+
+/** Holt die Stücke des DOP20 zu einem Bild: { e0, n1, res, breite, hoehe, rgb }. */
+async function luftbildHolen(f) {
+  const rgb = new Uint8Array(f.breite * f.hoehe * 3);
+  await Promise.all(f.teile.map(async t => {
+    const r = await fetch(t.url, { signal: abbruch.signal });
+    if (!r.ok || !/^image\//.test(r.headers.get('content-type') || '')) throw new Error(`Luftbild: HTTP ${r.status}`);
+    const bild = await createImageBitmap(await r.blob());
+    const c = new OffscreenCanvas(t.w, t.h), g = c.getContext('2d');
+    g.drawImage(bild, 0, 0, t.w, t.h);
+    bild.close();
+    const pix = g.getImageData(0, 0, t.w, t.h).data;
+    for (let y = 0; y < t.h; y++) {
+      let q = y * t.w * 4, z = ((t.y + y) * f.breite + t.x) * 3;
+      for (let x = 0; x < t.w; x++, q += 4, z += 3) { rgb[z] = pix[q]; rgb[z + 1] = pix[q + 1]; rgb[z + 2] = pix[q + 2]; }
+    }
+  }));
+  return { e0: f.e0, n1: f.n1, res: f.res, breite: f.breite, hoehe: f.hoehe, rgb };
+}
+
+/** Die Punkte der Kacheln da im Bereich b als LAS-Datei: { blob, punkte }.
+ *  farbeFuer(t): das Luftbild für Kachel t (luftbildHolen), oder null ohne Farbe. */
+async function lasBauen(LP, da, b, { nurBoden, ziel, farbeFuer }) {
+  const neu = da.some(k => k.kopf.format >= 6);
+  const mitRgb = !!farbeFuer || da.some(k => LAS_RGB[k.kopf.format] != null);
+  const format = neu ? (mitRgb ? 7 : 6) : (mitRgb ? 3 : 1), L = LAS_LAENGE[format];
+  let z0 = Infinity, z1 = -Infinity;
+  for (const { kopf } of da) { z0 = Math.min(z0, kopf.min[2]); z1 = Math.max(z1, kopf.max[2]); }
+  const umrechnen = ziel === 'utm' ? null : dbrefFlaeche(b.e0, b.n0, b.e1, b.n1, z0, z1, ziel);
+  const xy = [0, 0];
+  const mitte = umrechnen ? umrechnen((b.e0 + b.e1) / 2, (b.n0 + b.n1) / 2, (z0 + z1) / 2, [0, 0]) : [(b.e0 + b.e1) / 2, (b.n0 + b.n1) / 2];
+  const skala = da[0].kopf.skala.slice();
+  const versatz = [Math.round(mitte[0] / 1000) * 1000, Math.round(mitte[1] / 1000) * 1000, 0];
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  const rueck = new Array(15).fill(0);
+  // In Stücken zu rund 8 MB als Blob gesammelt — der Browser darf sie auslagern
+  const STUECK = Math.floor((8 << 20) / L) * L;
+  let aus = new Uint8Array(STUECK), dv = new DataView(aus.buffer), o = 0, anzahl = 0;
+  const teile = [];
+  const punkt = LP._malloc(64);
+  try {
+    for (let t = 0; t < da.length; t++) {
+      const { zeiger, groesse, kopf: k } = da[t];
+      const altNeu = k.format >= 6, gps = LAS_GPS.has(k.format), rgbIn = LAS_RGB[k.format];
+      const farbe = farbeFuer ? await farbeFuer(t) : null;
+      const laszip = new LP.LASZip();
+      try {
+        laszip.open(zeiger, groesse);
+        const gesamt = laszip.getCount() || k.anzahl;
+        const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
+        const X0 = (b.e0 - ox) / sx, X1 = (b.e1 - ox) / sx, Y0 = (b.n0 - oy) / sy, Y1 = (b.n1 - oy) / sy;
+        let heap = null, q = 0;
+        for (let i = 0; i < gesamt; i++) {
+          laszip.getPoint(punkt);
+          if (heap !== LP.HEAPU8) heap = LP.HEAPU8;
+          if ((i & 0xfffff) === 0) {
+            senden({ art: 'schreiben', nr: t, von: da.length, gelesen: i, gesamt });
+            await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) durchlassen
+            if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
+          }
+          q = punkt;
+          const quelle = new DataView(heap.buffer, q, 40);
+          const X = quelle.getInt32(0, true), Y = quelle.getInt32(4, true);
+          if (X < X0 || X >= X1 || Y < Y0 || Y >= Y1) continue;
+          const kl = altNeu ? heap[q + 16] : heap[q + 15] & 31;
+          if (nurBoden && !BODEN.has(kl)) continue;
+          if (o === STUECK) { teile.push(new Blob([aus])); aus = new Uint8Array(STUECK); dv = new DataView(aus.buffer); o = 0; }
+          const e = X * sx + ox, n = Y * sy + oy, h = quelle.getInt32(8, true) * sz + oz;
+          if (umrechnen) umrechnen(e, n, h, xy); else { xy[0] = e; xy[1] = n; }
+          const XO = Math.round((xy[0] - versatz[0]) / skala[0]), YO = Math.round((xy[1] - versatz[1]) / skala[1]);
+          const ZO = Math.round((h - versatz[2]) / skala[2]);
+          dv.setInt32(o, XO, true); dv.setInt32(o + 4, YO, true); dv.setInt32(o + 8, ZO, true);
+          if (altNeu === neu) {
+            // Gleiche Familie: Stärke bis GPS-Zeit wie geliefert
+            aus.set(heap.subarray(q + 12, q + (neu ? 30 : 20)), o + 12);
+            if (!neu && gps) aus.set(heap.subarray(q + 20, q + 28), o + 20);
+          } else {
+            // Format 0–5 in 6/7: Echo in 4 Bit, Klasse in ein eigenes Byte, Scanwinkel in 0,006°
+            const b14 = heap[q + 14], b15 = heap[q + 15];
+            aus[o + 12] = heap[q + 12]; aus[o + 13] = heap[q + 13];
+            aus[o + 14] = (b14 & 7) | ((b14 >> 3) & 7) << 4;
+            aus[o + 15] = (b15 >> 5) | ((b14 >> 6) & 1) << 6 | (b14 >> 7) << 7;
+            aus[o + 16] = kl;
+            aus[o + 17] = heap[q + 17];
+            dv.setInt16(o + 18, Math.round(quelle.getInt8(16) / 0.006), true);
+            aus[o + 20] = heap[q + 18]; aus[o + 21] = heap[q + 19];
+            if (gps) aus.set(heap.subarray(q + 20, q + 28), o + 22);
+          }
+          if (mitRgb) {
+            const r = o + (neu ? 30 : 28);
+            if (farbe) {
+              const sp = Math.min(farbe.breite - 1, Math.max(0, Math.floor((e - farbe.e0) / farbe.res)));
+              const ze = Math.min(farbe.hoehe - 1, Math.max(0, Math.floor((farbe.n1 - n) / farbe.res)));
+              const f = (ze * farbe.breite + sp) * 3;
+              // 8 → 16 Bit: ×257, damit 255 zu 65535 wird
+              dv.setUint16(r, farbe.rgb[f] * 257, true); dv.setUint16(r + 2, farbe.rgb[f + 1] * 257, true); dv.setUint16(r + 4, farbe.rgb[f + 2] * 257, true);
+            } else if (rgbIn != null) aus.set(heap.subarray(q + rgbIn, q + rgbIn + 6), r);
+          }
+          const echo = neu ? aus[o + 14] & 15 : aus[o + 14] & 7;
+          if (echo >= 1 && echo <= 15) rueck[echo - 1]++;
+          const x = XO * skala[0] + versatz[0], y = YO * skala[1] + versatz[1], z = ZO * skala[2] + versatz[2];
+          if (x < min[0]) min[0] = x; if (x > max[0]) max[0] = x;
+          if (y < min[1]) min[1] = y; if (y > max[1]) max[1] = y;
+          if (z < min[2]) min[2] = z; if (z > max[2]) max[2] = z;
+          o += L;
+          anzahl++;
+        }
+      } finally {
+        laszip.delete();
+      }
+    }
+  } finally {
+    LP._free(punkt);
+  }
+  if (o) teile.push(new Blob([aus.subarray(0, o)]));
+  if (!anzahl) return { blob: null, punkte: 0 };
+  if (!neu && anzahl > 0xffffffff) throw new Error('Zu viele Punkte für LAS 1.2.');
+  const kopf = lasKopf({ neu, format, anzahl, rueck, skala, versatz, min, max, kodierung: da[0].kopf.kodierung, ziel });
+  return { blob: new Blob([kopf, ...teile], { type: 'application/octet-stream' }), punkte: anzahl };
+}
+
+/* ---------- LoD2 als DXF ----------
+ * R12 (AC1009), nur 3DFACE: liest jedes CAD. Dächer und Wände auf eigenen
+ * Layern, Koordinaten wie die Punkte (UTM32 oder DB_REF), Höhen DHHN2016. */
+function dxfBauen({ ecken, wand }, ziel) {
+  const zeilen = ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1009', '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'TABLES', '0', 'TABLE', '2', 'LAYER', '70', '2',
+    '0', 'LAYER', '2', 'LOD2_DACH', '70', '0', '62', '1', '6', 'CONTINUOUS',
+    '0', 'LAYER', '2', 'LOD2_WAND', '70', '0', '62', '8', '6', 'CONTINUOUS',
+    '0', 'ENDTAB', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES'];
+  const teile = [];
+  const xy = [0, 0], zahl = v => v.toFixed(3);
+  for (let i = 0; i < wand.length; i++) {
+    zeilen.push('0', '3DFACE', '8', wand[i] ? 'LOD2_WAND' : 'LOD2_DACH');
+    for (let j = 0; j < 4; j++) {
+      const k = (3 * i + Math.min(j, 2)) * 3;           // die vierte Ecke gleich der dritten
+      const e = ecken[k], n = ecken[k + 1], h = ecken[k + 2];
+      if (ziel === 'utm') { xy[0] = e; xy[1] = n; } else [xy[0], xy[1]] = dbrefPunkt(e, n, h, ziel);
+      zeilen.push(String(10 + j), zahl(xy[0]), String(20 + j), zahl(xy[1]), String(30 + j), zahl(h));
+    }
+    if (zeilen.length > 100000) { teile.push(zeilen.join('\r\n') + '\r\n'); zeilen.length = 0; }
+  }
+  zeilen.push('0', 'ENDSEC', '0', 'EOF');
+  teile.push(zeilen.join('\r\n') + '\r\n');
+  return new Blob(teile, { type: 'application/dxf' });
+}
+
+async function exportieren({ kacheln, bereich, einzeln, nurBoden, ziel, luftbild, gebaeude, name, zusatz, vorratMax }) {
+  if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
+  const LP = lazPerf;
+  const { da, fehlen } = await kachelnHolen(LP, kacheln, vorratMax);
+  const datei = (n, blob, punkte) => senden({ art: 'datei', name: n, blob, punkte });
+  if (einzeln && ziel === 'utm' && !luftbild && !nurBoden) {
+    // Unverändert: das LAZ der BVV je Kachel, so wie es im Vorrat liegt
+    for (const k of da) datei(`${k.kachel}.laz`, new Blob([LP.HEAPU8.subarray(k.zeiger, k.zeiger + k.groesse)], { type: 'application/octet-stream' }), k.kopf.anzahl);
+  } else {
+    // Ganze Kacheln: der Bereich um alle herum — jede liefert ohnehin nur ihre eigenen Punkte
+    const flaechen = da.map(k => { const [e, n] = k.kachel.split('_').map(Number); return [e * 1000, n * 1000]; });
+    const b = einzeln ? { e0: Math.min(...flaechen.map(f => f[0])), n0: Math.min(...flaechen.map(f => f[1])),
+      e1: Math.max(...flaechen.map(f => f[0])) + 1000, n1: Math.max(...flaechen.map(f => f[1])) + 1000 } : bereich;
+    let bild = null;
+    const farbeFuer = !luftbild ? null : async t => {
+      if (!einzeln && bild) return bild;
+      senden({ art: 'luftbild', nr: t, von: da.length });
+      bild = null;            // das vorige Bild freigeben, bevor das nächste kommt
+      bild = await luftbildHolen(einzeln ? luftbild[da[t].kachel] : luftbild);
+      return bild;
+    };
+    const { blob, punkte } = await lasBauen(LP, da, b, { nurBoden, ziel, farbeFuer });
+    if (!blob) throw new Error(einzeln ? 'In den Kacheln liegen keine passenden Punkte.' : 'Im Ausschnitt liegen keine Laserpunkte.');
+    datei(`${name}${zusatz}.las`, blob, punkte);
+  }
+  if (gebaeude && gebaeude.wand.length) datei(`${name}_lod2${zusatz.replace('_rgb', '')}.dxf`, dxfBauen(gebaeude, ziel), 0);
+  senden({ art: 'fertig', fehlen });
+}
+
 self.onmessage = async ev => {
   if (ev.data.art === 'abbrechen') { if (abbruch) abbruch.abort(); return; }
+  const istExport = ev.data.art === 'export';
+  // Eins nach dem anderen: Laden und Export teilen sich den Speicher von laz-perf
+  if (abbruch) { if (istExport) self.postMessage({ art: 'fehler', text: 'Es läuft noch ein Auftrag.', export: true }); return; }
   abbruch = new AbortController();
+  exportLaeuft = istExport;
   try {
-    await ausschneiden(ev.data);
+    if (istExport) await exportieren(ev.data);
+    else await ausschneiden(ev.data);
   } catch (err) {
-    if (abbruch.signal.aborted) self.postMessage({ art: 'abgebrochen' });
-    else self.postMessage({ art: 'fehler', text: String(err && err.message || err) });
+    if (abbruch.signal.aborted) senden({ art: 'abgebrochen' });
+    else senden({ art: 'fehler', text: String(err && err.message || err) });
   } finally {
     abbruch = null;
+    exportLaeuft = false;
   }
 };

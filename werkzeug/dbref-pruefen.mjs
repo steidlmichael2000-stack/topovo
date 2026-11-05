@@ -43,4 +43,26 @@ let zurueck = 0;
 for (const [lat, lon, , r, h] of REFERENZ) zurueck = Math.max(zurueck, meter([lat, lon], gkZurueck(r, h, DBREF)));
 const ok2 = zurueck < 0.002;
 console.log(`${ok2 ? 'ok    ' : 'FEHLER'}  DB_REF zurück auf ETRS89 gegen proj4: größte Abweichung ${(zurueck * 1000).toFixed(1)} mm`);
-process.exit(ok && ok2 ? 0 : 1);
+/* Export der Laserpunkte (laser-werk.js, dbrefPunkt): UTM32 mit Höhe → DB_REF, mit den
+ * Hin-Parametern der Ril 883.9010. Referenz proj4 2.12.1, UTM32 → EPSG:5683/5684 wie oben,
+ * Ellipsoidhöhe = Höhe + 47 m. Die Ril-Parameter der Hinrichtung weichen von der Umkehrung
+ * der Rückrichtung (proj4) überall um rund 0,7 mm ab — Rundung der veröffentlichten Werte. */
+const werk = readFileSync(new URL('../laser-werk.js', import.meta.url), 'utf8');
+const wStueck = werk.slice(werk.indexOf('const DBREF_HIN'), werk.indexOf('/* Streng gerechnet'));
+const { dbrefPunkt } = new Function(wStueck + '; return { dbrefPunkt };')();
+// [Rechts UTM, Hoch UTM, Höhe, Streifen, Rechts GK, Hoch GK]
+const MIT_HOEHE = [
+  [613500, 5478500, 400, 3, 3613620.5286, 5480253.0816],
+  [613500, 5478500, 400, 4, 4396118.2317, 5480059.3095],
+  [690000, 5290000, 1800, 4, 4465171.1771, 5288667.8200],
+  [560000, 5520000, 150, 3, 3560098.7762, 5521769.2529],
+  [640000, 5400000, 600, 4, 4419499.3379, 5400548.0567],
+];
+let mitH = 0;
+for (const [e, n, h, s, r, hh] of MIT_HOEHE) {
+  const [rr, h2] = dbrefPunkt(e, n, h, s);
+  mitH = Math.max(mitH, Math.hypot(rr - r, h2 - hh));
+}
+const ok3 = mitH < 0.001;
+console.log(`${ok3 ? 'ok    ' : 'FEHLER'}  Export UTM32 mit Höhe → DB_REF gegen proj4: größte Abweichung ${(mitH * 1000).toFixed(1)} mm`);
+process.exit(ok && ok2 && ok3 ? 0 : 1);

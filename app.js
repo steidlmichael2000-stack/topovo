@@ -7487,11 +7487,12 @@ function laserLuftbildUrl(e0, n0, e1, n1, w, h) {
   return LAND_WMS.dop.by.replace('EPSG:3857', 'EPSG:25832') + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}&FORMAT=image/jpeg`;
 }
 
-/** Gebäude aus dem LoD2 (gebaeude.js), deren Umring den Ausschnitt berührt.
- *  Der Ausschnitt ist höchstens 1 km groß: seine Ecken treffen jede 2-km-Kachel. */
+/** Gebäude aus dem LoD2 (gebaeude.js), deren Umring den Bereich berührt. */
 async function laserGebaeude(e0, n0, e1, n1) {
+  // Für den Export auch über mehrere Kacheln: jede 2-km-Kachel dazwischen
   const kacheln = new Set();
-  for (const e of [e0, e1]) for (const n of [n0, n1]) kacheln.add(`${Math.floor(e / LOD2_KACHEL) * 2}_${Math.floor(n / LOD2_KACHEL) * 2}`);
+  for (let e = Math.floor(e0 / LOD2_KACHEL); e <= Math.floor(e1 / LOD2_KACHEL); e++)
+    for (let n = Math.floor(n0 / LOD2_KACHEL); n <= Math.floor(n1 / LOD2_KACHEL); n++) kacheln.add(`${e * 2}_${n * 2}`);
   const listen = await Promise.all([...kacheln].map(k => gebaeudeKachel(...k.split('_').map(Number))));
   const gesehen = new Set();
   return listen.flat().filter(b => b.bb[2] >= e0 && b.bb[0] <= e1 && b.bb[3] >= n0 && b.bb[1] <= n1
@@ -7635,7 +7636,7 @@ async function laserLaden() {
   if (!namen.length) return;
   const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel) })));
   if (!laserAn || !laserStelle || laserLaedt) return;     // inzwischen beendet oder schon gestartet
-  const seite = laserSeite;
+  const seite = laserSeite, bereich = laserBereich(), nurBoden = laserNurBoden;
   laserLaedt = { art: 'laden', nr: 0, von: kacheln.length, wert: 0, gesamt: 0 };
   laserFehler = '';
   laserLeiste();
@@ -7650,6 +7651,8 @@ async function laserLaden() {
       if (kosten) kosten.textContent = laserKosten();
       return;
     }
+    // Export aus der 3D-Ansicht (laser.js): dorthin weiterreichen
+    if (m.export) { if (laserExportMelden) laserExportMelden(m); return; }
     const stufeVorher = laserLaedt && laserLaedt.art;
     if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt };
     else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
@@ -7671,8 +7674,10 @@ async function laserLaden() {
         const { laserAnsicht } = await import('./laser.js');
         if (!laserAn) return;                // beim ersten Mal lädt three.js — inzwischen beendet?
         const da = namen.filter(k => !m.fehlen.includes(k));
-        laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden: laserNurBoden,
-          utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude });
+        laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden,
+          utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude,
+          kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
+          { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); } });
       } catch (err) {
         console.warn(err);
         laserFehler = err && err.message === 'WebGL2' ? 'Dieses Gerät kann die 3D-Ansicht nicht zeigen (kein WebGL2).'
@@ -7681,7 +7686,23 @@ async function laserLaden() {
     }
     laserLeiste();
   };
-  laserWerk.postMessage({ kacheln, bereich: laserBereich(), max: LASER_MAX_PUNKTE, nurBoden: laserNurBoden, vorratMax: LASER_VORRAT });
+  laserWerk.postMessage({ kacheln, bereich, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT });
+}
+
+/* Export aus der 3D-Ansicht: läuft im selben Worker, damit die Kacheln aus
+ * dessen Vorrat kommen. auftrag wie in laser-werk.js (exportieren), melden
+ * bekommt dessen Meldungen. Schließt die Ansicht, bricht er ab. */
+let laserExportMelden = null;
+function laserExportieren(auftrag, melden) {
+  if (!laserWerk) { melden({ art: 'fehler', text: 'Die Laserpunkte sind nicht mehr geladen.' }); return; }
+  laserExportMelden = m => {
+    if (m.art === 'fertig' || m.art === 'fehler' || m.art === 'abgebrochen') laserExportMelden = null;
+    melden(m);
+  };
+  laserWerk.postMessage({ art: 'export', ...auftrag, vorratMax: LASER_VORRAT });
+}
+function laserExportAbbrechen() {
+  if (laserWerk && laserExportMelden) laserWerk.postMessage({ art: 'abbrechen' });
 }
 
 const laserMB = b => `${(b / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 0 })} MB`;
