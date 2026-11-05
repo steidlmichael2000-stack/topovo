@@ -7458,6 +7458,24 @@ function laserBereich() {
   return { e0: e - h, n0: n - h, e1: e + h, n1: n + h };
 }
 
+/* Für die 3D-Ansicht (laser.js). Die Laserpunkte der BVV haben keine Farbe
+ * (Punktformat 1); die Färbung „Luftbild“ holt sie aus dem DOP20 der BVV,
+ * gleich in UTM32 — CORS gibt der Dienst frei, auch für localhost (05.11.2026). */
+function laserLuftbildUrl(e0, n0, e1, n1, w, h) {
+  return LAND_WMS.dop.by.replace('EPSG:3857', 'EPSG:25832') + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}&FORMAT=image/jpeg`;
+}
+
+/** Gebäude aus dem LoD2 (gebaeude.js), deren Umring den Ausschnitt berührt.
+ *  Der Ausschnitt ist höchstens 1 km groß: seine Ecken treffen jede 2-km-Kachel. */
+async function laserGebaeude(e0, n0, e1, n1) {
+  const kacheln = new Set();
+  for (const e of [e0, e1]) for (const n of [n0, n1]) kacheln.add(`${Math.floor(e / LOD2_KACHEL) * 2}_${Math.floor(n / LOD2_KACHEL) * 2}`);
+  const listen = await Promise.all([...kacheln].map(k => gebaeudeKachel(...k.split('_').map(Number))));
+  const gesehen = new Set();
+  return listen.flat().filter(b => b.bb[2] >= e0 && b.bb[0] <= e1 && b.bb[3] >= n0 && b.bb[1] <= n1
+    && !gesehen.has(b.id) && gesehen.add(b.id));
+}
+
 /** Die Kacheln, die der Rahmen berührt — eine bis vier. */
 function laserKacheln() {
   const { e0, n0, e1, n1 } = laserBereich(), aus = [];
@@ -7631,7 +7649,8 @@ async function laserLaden() {
         const { laserAnsicht } = await import('./laser.js');
         if (!laserAn) return;                // beim ersten Mal lädt three.js — inzwischen beendet?
         const da = namen.filter(k => !m.fehlen.includes(k));
-        laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden: laserNurBoden });
+        laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden: laserNurBoden,
+          utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude });
       } catch (err) {
         console.warn(err);
         laserFehler = err && err.message === 'WebGL2' ? 'Dieses Gerät kann die 3D-Ansicht nicht zeigen (kein WebGL2).'

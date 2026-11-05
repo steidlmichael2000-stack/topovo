@@ -113,6 +113,33 @@ const EDL_FS = `
     gl_FragColor = vec4(texelFetch(farbe, p, 0).rgb * schatten, 1.0);
   }`;
 const EDL_VS = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+/* Gebäude (LoD2): halb durchsichtig über dem fertigen Bild der Punkte. Die
+ * Punkte liegen dann schon nur noch als Bild vor — verdeckt wird deshalb von
+ * Hand gegen deren Tiefe (dieselbe Kamera, dasselbe Ziel wie EDL_FS). Erst ab
+ * 30 cm vor der Fläche verdeckt ein Punkt: Die Dachpunkte liegen auf dem Dach
+ * und hätten es sonst zersiebt. */
+const GEB_VS = `
+  uniform vec3 lichtRichtung;
+  uniform float kante;
+  varying float vHell;
+  void main() {
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vHell = kante > 0.5 ? 1.0 : 0.6 + 0.4 * abs(dot(normal, lichtRichtung));
+  }`;
+const GEB_FS = `
+  precision highp float;
+  uniform highp sampler2D tiefe;
+  uniform float nah, fern, ortho, deckung;
+  uniform vec3 farbe;
+  varying float vHell;
+  float linear(float d) { return ortho > 0.5 ? nah + d * (fern - nah) : nah * fern / (fern - d * (fern - nah)); }
+  void main() {
+    float t = texelFetch(tiefe, ivec2(gl_FragCoord.xy), 0).r;
+    if (t < 1.0 && linear(gl_FragCoord.z) > linear(t) + 0.3) discard;
+    gl_FragColor = vec4(farbe * vHell, deckung);
+  }`;
+// Boden im Sinne der BVV: Boden, Gewässer, abgeleiteter Boden (wie in laser-werk.js)
+const BODEN = new Set([2, 9, 23, 24]);
 
 /** Öffnet die Ansicht über der Karte. d: Ergebnis aus laser-werk.js,
  *  info: { kachel, quelle, seite }. Gibt eine Funktion zum Schließen zurück. */
@@ -126,6 +153,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       <button type="button" data-lz="karte" aria-label="Zurück zur Karte"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6"/></svg><span>Zurück</span></button>
       <button type="button" data-lz="darstellung"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg><span>Darstellung</span></button>
       <button type="button" data-lz="messen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 16.5 16.5 3.5l4 4-13 13z"/><path d="M7 13l1.8 1.8M10 10l1.8 1.8M13 7l1.8 1.8"/></svg><span>Messen</span></button>
+      <button type="button" data-lz="ort" class="lz-schiene-ort"><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="7.4"/></svg><span>Standort</span></button>
       <button type="button" data-lz="heim" class="lz-schiene-heim"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4.5l8 7"/><path d="M6.5 9.5V19h11V9.5"/></svg><span>Ansicht</span></button>
     </nav>
     <aside class="lz-seite">
@@ -142,6 +170,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     <button type="button" class="lz-knopf lz-messen" aria-label="Messen" aria-expanded="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 16.5 16.5 3.5l4 4-13 13z"/><path d="M7 13l1.8 1.8M10 10l1.8 1.8M13 7l1.8 1.8"/></svg>
     </button>
+    <button type="button" class="lz-knopf lz-ort" aria-label="Standort zeigen" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="7.4"/></svg>
+    </button>
     <button type="button" class="lz-knopf lz-heim" aria-label="Ansicht zurücksetzen">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4.5l8 7"/><path d="M6.5 9.5V19h11V9.5"/></svg>
     </button>
@@ -152,9 +183,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         <button type="button" class="seg-btn" data-faerbung="hoehe">Höhe</button>
         <button type="button" class="seg-btn" data-faerbung="intensitaet">Intensität</button>
         <button type="button" class="seg-btn" data-faerbung="normalen">Normalen</button>
+        <button type="button" class="seg-btn" data-faerbung="luftbild">Luftbild</button>
       </div>
       <p class="pal-label">Klassen</p>
       <div class="lz-klassen"></div>
+      <p class="pal-label">Gebäude</p>
+      <button type="button" class="seg-btn lz-klasse lz-geb" aria-pressed="false">
+        <span class="lz-feld" style="background:#e4e7ec"></span><span class="lz-name">3D-Gebäudemodell LoD2</span><small></small></button>
       <label class="slider-row">Schatten
         <input type="range" class="lz-licht" min="0" max="100" step="5" value="50">
         <span class="slider-val lz-licht-wert"></span>
@@ -281,6 +316,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   schirmSzene.add(schirm);
   const schirmKamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
+  // Gebäude (LoD2), nach den Punkten über das fertige Bild gezeichnet (GEB_FS)
+  const gebSzene = new THREE.Scene();
+  const gebUniforms = () => ({ tiefe: edl.uniforms.tiefe, nah: edl.uniforms.nah, fern: edl.uniforms.fern,
+    ortho: edl.uniforms.ortho, lichtRichtung: material.uniforms.lichtRichtung });
+  const gebFlaecheMat = new THREE.ShaderMaterial({ vertexShader: GEB_VS, fragmentShader: GEB_FS, transparent: true,
+    side: THREE.DoubleSide, depthWrite: true,
+    uniforms: { ...gebUniforms(), kante: { value: 0 }, deckung: { value: 0.5 }, farbe: { value: new THREE.Color(0.86, 0.88, 0.92) } } });
+  const gebKanteMat = new THREE.ShaderMaterial({ vertexShader: GEB_VS, fragmentShader: GEB_FS, transparent: true,
+    uniforms: { ...gebUniforms(), kante: { value: 1 }, deckung: { value: 0.9 }, farbe: { value: new THREE.Color(1, 1, 1) } } });
+
   const steuerung = new OrbitControls(kamera, flaeche);
   steuerung.enableDamping = true;
   steuerung.dampingFactor = 0.12;
@@ -360,6 +405,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   function faerben() {
     for (let i = 0; i < n; i++) {
       let c;
+      if (faerbung === 'luftbild') {
+        // Unverändert durchgereicht: Das Bild ist schon sRGB, die Shader rechnen nicht um
+        farben[3 * i] = luftbild[3 * i] / 255; farben[3 * i + 1] = luftbild[3 * i + 1] / 255; farben[3 * i + 2] = luftbild[3 * i + 2] / 255;
+        continue;
+      }
       if (faerbung === 'klasse') c = klassenFarben.get(d.klasse[i]);
       else if (faerbung === 'hoehe') {
         const t = Math.min(1, Math.max(0, (d.xyz[3 * i + 2] - zLo) / (zHi - zLo || 1))) * (rampe.length - 1);
@@ -403,6 +453,357 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     neu = true;
   }));
 
+  /* Kurzer Hinweis über der Fußzeile, wo beim Öffnen die Bedienung steht */
+  let hinweisUhr = 0;
+  function hinweis(text) {
+    const t = $('.lz-tipp');
+    t.textContent = text;
+    t.classList.remove('weg');
+    clearTimeout(hinweisUhr);
+    hinweisUhr = setTimeout(() => t.classList.add('weg'), 5000);
+  }
+  const quellenNeu = () => {
+    const was = ['Laserdaten', luftbild && 'Luftbild', geb && 'Gebäude LoD2'].filter(Boolean);
+    $('.lz-fuss').textContent = `${was.join(', ').replace(/, ([^,]*)$/, ' und $1')}: ${info.quelle}`;
+  };
+
+  /* ---------- Färbung nach Luftbild ----------
+   * Die Kacheln der BVV haben keine Farbe (Punktformat 1). Das DOP20 der BVV
+   * im Ausschnitt geholt (app.js, laserLuftbildUrl), jeder Punkt bekommt den
+   * Bildpunkt unter sich. Das DOP ist kein True-Ortho: Hauswände bekommen die
+   * Farbe von Dach oder Straße, der Boden unter Bäumen die der Krone. Höchstens
+   * 3000 Bildpunkte je Seite (bei 1 km also 33 cm), in Stücken zu 1500. */
+  let luftbild = null, luftbildLaeuft = null;
+  async function luftbildHolen() {
+    const res = Math.max(0.2, info.seite / 3000), px = Math.round(info.seite / res);
+    const e0 = d.mitte[0] - halb, n1 = d.mitte[1] + halb, STUECK = 1500;
+    const lw = document.createElement('canvas');
+    lw.width = lw.height = px;
+    const g = lw.getContext('2d', { willReadFrequently: true });
+    const teile = [];
+    for (let y = 0; y < px; y += STUECK) for (let x = 0; x < px; x += STUECK) {
+      const w = Math.min(STUECK, px - x), h = Math.min(STUECK, px - y);
+      const url = info.luftbild(e0 + x * res, n1 - (y + h) * res, e0 + (x + w) * res, n1 - y * res, w, h);
+      teile.push(fetch(url).then(r => {
+        if (!r.ok || !/^image\//.test(r.headers.get('content-type') || '')) throw new Error(`Luftbild: HTTP ${r.status}`);
+        return r.blob();
+      }).then(createImageBitmap).then(b => { g.drawImage(b, x, y, w, h); b.close(); }));
+    }
+    await Promise.all(teile);
+    const pix = g.getImageData(0, 0, px, px).data;
+    lw.width = lw.height = 0;
+    const rgb = new Uint8Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const sp = Math.min(px - 1, Math.max(0, Math.floor((d.xyz[3 * i] + halb) / res)));
+      const ze = Math.min(px - 1, Math.max(0, Math.floor((halb - d.xyz[3 * i + 1]) / res)));
+      const k = (ze * px + sp) * 4;
+      rgb[3 * i] = pix[k]; rgb[3 * i + 1] = pix[k + 1]; rgb[3 * i + 2] = pix[k + 2];
+    }
+    return rgb;
+  }
+  function luftbildLaden(knopf) {
+    if (!luftbildLaeuft) luftbildLaeuft = (async () => {
+      knopf.textContent = 'Luftbild …';
+      try {
+        luftbild = await luftbildHolen();
+        quellenNeu();
+        return true;
+      } catch (err) {
+        console.warn(err);
+        hinweis('Das Luftbild ließ sich nicht laden.');
+        return false;
+      } finally {
+        knopf.textContent = 'Luftbild';
+        luftbildLaeuft = null;
+      }
+    })();
+    return luftbildLaeuft;
+  }
+
+  /* ---------- Standort ----------
+   * Lage aus dem GNSS des Geräts, die Höhe aber vom Laserboden darunter: der
+   * Median der Bodenpunkte (BODEN) im Umkreis von 1 m. So schwankt der Punkt
+   * nicht mit der GNSS-Höhe. Ohne Boden dort (im Haus, unter dichtem Bewuchs)
+   * wird interpoliert: eine ausgeglichene Ebene durch die Bodenpunkte rundum,
+   * erst wenn sie auf mindestens drei Seiten liegen — der Median im weiteren
+   * Umkreis lag am Hang zu hoch oder zu tief, wenn nur eine Seite Punkte hatte.
+   * Die Bodenpunkte in einem Raster zu 1 m, beim ersten Gebrauch gebaut. */
+  let bodenGitter = null;
+  function bodenGitterBauen() {
+    const b = Math.ceil(info.seite) + 2, zelle = new Int32Array(n).fill(-1), start = new Int32Array(b * b + 1);
+    for (let i = 0; i < n; i++) {
+      if (!BODEN.has(d.klasse[i])) continue;
+      const cx = Math.min(b - 1, Math.max(0, Math.floor(d.xyz[3 * i] + halb) + 1));
+      const cy = Math.min(b - 1, Math.max(0, Math.floor(d.xyz[3 * i + 1] + halb) + 1));
+      zelle[i] = cy * b + cx;
+      start[zelle[i] + 1]++;
+    }
+    for (let k = 0; k < b * b; k++) start[k + 1] += start[k];
+    const idx = new Int32Array(start[b * b]), voll = start.slice(0, b * b);
+    for (let i = 0; i < n; i++) if (zelle[i] >= 0) idx[voll[zelle[i]]++] = i;
+    return { b, start, idx };
+  }
+  /** { z, interpoliert } oder null, wenn im Umkreis von 32 m kein Boden reicht. */
+  function bodenHoehe(x, y) {
+    if (!bodenGitter) bodenGitter = bodenGitterBauen();
+    const { b, start, idx } = bodenGitter;
+    for (const r of [1, 2, 4, 8, 16, 32]) {
+      const z = [], px = [], py = [];
+      const x0 = Math.max(0, Math.floor(x - r + halb) + 1), x1 = Math.min(b - 1, Math.floor(x + r + halb) + 1);
+      const y0 = Math.max(0, Math.floor(y - r + halb) + 1), y1 = Math.min(b - 1, Math.floor(y + r + halb) + 1);
+      for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+        const k = cy * b + cx;
+        for (let j = start[k]; j < start[k + 1]; j++) {
+          const i = idx[j], dx = d.xyz[3 * i] - x, dy = d.xyz[3 * i + 1] - y;
+          if (dx * dx + dy * dy <= r * r) { z.push(d.xyz[3 * i + 2]); px.push(dx); py.push(dy); }
+        }
+      }
+      if (r === 1) {
+        if (z.length >= 3) { z.sort((a, b) => a - b); return { z: z[z.length >> 1], interpoliert: false }; }
+        continue;
+      }
+      const ebene = ebeneDurch(px, py, z);
+      if (ebene != null) return { z: ebene, interpoliert: true };
+    }
+    return null;
+  }
+  /** Höhe der ausgeglichenen Ebene z = a + b·x + c·y an der Stelle (0, 0) —
+   *  nur, wenn Punkte in mindestens drei der vier Viertel rundum liegen.
+   *  Begrenzt auf die Spanne der Punkte: Eine Ebene schießt sonst übers Ziel. */
+  function ebeneDurch(px, py, z) {
+    const m = z.length;
+    if (m < 8) return null;
+    const viertel = new Set();
+    let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sz = 0, sxz = 0, syz = 0, lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < m; i++) {
+      const xi = px[i], yi = py[i], zi = z[i];
+      viertel.add((xi >= 0 ? 1 : 0) + (yi >= 0 ? 2 : 0));
+      sx += xi; sy += yi; sxx += xi * xi; syy += yi * yi; sxy += xi * yi; sz += zi; sxz += xi * zi; syz += yi * zi;
+      lo = Math.min(lo, zi); hi = Math.max(hi, zi);
+    }
+    if (viertel.size < 3) return null;
+    // Normalgleichungen nach Cramer, gelöst nur nach a
+    const det = m * (sxx * syy - sxy * sxy) - sx * (sx * syy - sxy * sy) + sy * (sx * sxy - sxx * sy);
+    if (Math.abs(det) < 1e-9 * m * m * m) return null;
+    const a = (sz * (sxx * syy - sxy * sxy) - sx * (sxz * syy - sxy * syz) + sy * (sxz * sxy - sxx * syz)) / det;
+    return Math.min(hi, Math.max(lo, a));
+  }
+
+  // Blau wie der Standort auf der Karte (.me-dot), mit weißem Rand; immer obenauf
+  const ortGruppe = new THREE.Group();
+  ortGruppe.visible = false;
+  const ortRandMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
+  const ortMat = new THREE.MeshBasicMaterial({ color: 0x2f81f7, depthTest: false });
+  const ortRand = new THREE.Mesh(kugelGeoOrt(), ortRandMat), ortKern = new THREE.Mesh(ortRand.geometry, ortMat);
+  ortRand.renderOrder = 10; ortKern.renderOrder = 11;
+  const ortFlaecheGeo = new THREE.CircleGeometry(1, 64);
+  const ortFlaecheMat = new THREE.MeshBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.25, depthTest: false, side: THREE.DoubleSide });
+  const ortKreis = new THREE.Mesh(ortFlaecheGeo, ortFlaecheMat);
+  const ortRingMat = new THREE.LineBasicMaterial({ color: 0x2f81f7, transparent: true, opacity: 0.8, depthTest: false });
+  const ortRing = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 64 }, (_, k) => new THREE.Vector3(Math.cos(k / 32 * Math.PI), Math.sin(k / 32 * Math.PI), 0))), ortRingMat);
+  ortGruppe.add(ortKreis, ortRing, ortRand, ortKern);
+  function kugelGeoOrt() { return new THREE.SphereGeometry(1, 16, 12); }
+  messSzene.add(ortGruppe);
+  let ortWatch = null, ortStelle = null, ortErst = false, ortDraussen = null, ortSchild = null;
+  const ortKnoepfe = () => wurzel.querySelectorAll('.lz-ort, .lz-schiene-ort');
+  function ortKnopf(an, busy) {
+    ortKnoepfe().forEach(k => {
+      k.classList.toggle(k.classList.contains('lz-ort') ? 'is-on' : 'ort-an', an);
+      k.classList.toggle('busy', busy);
+      k.setAttribute('aria-pressed', String(an));
+    });
+  }
+  function ortAus() {
+    if (ortWatch != null) navigator.geolocation.clearWatch(ortWatch);
+    ortWatch = null; ortStelle = null; ortDraussen = null;
+    ortGruppe.visible = false;
+    if (ortSchild) { ortSchild.el.remove(); ortSchild = null; }
+    ortKnopf(false, false);
+    neu = true;
+  }
+  /* Blick auf den Standort: Drehpunkt dorthin, die Kamera um dasselbe Stück
+   * mit — gleitend in 0,4 s (fahrtSchritt in bild), damit man sieht, wohin es geht. */
+  let fahrt = null;
+  function aufOrt() {
+    fahrt = { dv: ortStelle.clone().sub(steuerung.target), t0: performance.now(), weg: 0 };
+    neu = true;
+  }
+  function fahrtSchritt() {
+    if (!fahrt) return;
+    const t = Math.min(1, (performance.now() - fahrt.t0) / 400), e = 1 - (1 - t) ** 3;
+    const schritt = fahrt.dv.clone().multiplyScalar(e - fahrt.weg);
+    fahrt.weg = e;
+    steuerung.target.add(schritt);
+    kamera.position.add(schritt);
+    if (t >= 1) fahrt = null;
+    neu = true;
+  }
+  /* Nachziehen wie auf der Karte: nur wenn der Standort in den Rand (15 %) der
+   * freien Fläche oder aus dem Bild läuft — und nicht, solange jemand die Ansicht
+   * bewegt oder in den 4 s danach, sonst kämpfte es gegen jedes Drehen. */
+  let bedient = false, bedientUhr = 0;
+  steuerung.addEventListener('start', () => { bedient = true; clearTimeout(bedientUhr); fahrt = null; });
+  steuerung.addEventListener('end', () => { clearTimeout(bedientUhr); bedientUhr = setTimeout(() => { bedient = false; }, 4000); });
+  const ortV = new THREE.Vector3();
+  function ortAusDemBild() {
+    ortV.copy(ortStelle).project(kamera);
+    if (ortV.z > 1) return true;            // hinter der Kamera
+    const w = wurzel.clientWidth, h = wurzel.clientHeight, links = freiLinks();
+    const x = (ortV.x + 1) / 2 * w, y = (1 - ortV.y) / 2 * h;
+    const rx = (w - links) * 0.15, ry = h * 0.15;
+    return x < links + rx || x > w - rx || y < ry || y > h - ry;
+  }
+  function ortNeu(pos) {
+    const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+    const [e, nn] = info.utm(lat, lon);
+    const x = e - d.mitte[0], y = nn - d.mitte[1];
+    ortKnopf(true, false);
+    if (Math.abs(x) > halb || Math.abs(y) > halb) {
+      const weg = Math.round(Math.hypot(Math.max(0, Math.abs(x) - halb), Math.max(0, Math.abs(y) - halb)));
+      if (ortDraussen !== true) hinweis(`Der Standort liegt ${weg.toLocaleString('de-DE')} m außerhalb des Ausschnitts.`);
+      ortDraussen = true;
+      ortStelle = null;
+      ortGruppe.visible = false;
+      if (ortSchild) ortSchild.el.hidden = true;
+      neu = true;
+      return;
+    }
+    ortDraussen = false;
+    const boden = bodenHoehe(x, y);
+    const z = boden ? boden.z : zLo;      // kein Boden im Umkreis von 32 m: auf den unteren Rand der Wolke
+    ortStelle = new THREE.Vector3(x, y, z);
+    ortGruppe.position.copy(ortStelle);
+    const genau = Math.max(1, accuracy || 0);
+    ortKreis.scale.setScalar(genau); ortRing.scale.setScalar(genau);
+    ortGruppe.visible = true;
+    const text = `Standort ±${zahl(genau, 0)} m${boden ? ` · Boden ${nhn(z)}${boden.interpoliert ? ' (interpoliert)' : ''}` : ''}`;
+    if (!ortSchild) ortSchild = schild(ortStelle, text, '', 'unten');
+    else { ortSchild.p.copy(ortStelle); ortSchild.el.textContent = text; }
+    ortSchild.el.hidden = false;
+    if (ortErst) { ortErst = false; aufOrt(); }
+    else if (!bedient && !fahrt && ortAusDemBild()) aufOrt();
+    neu = true;
+  }
+  function ortUmschalten() {
+    if (ortWatch != null) {
+      // Wie der Standortknopf der Karte: steht der Standort nicht im Blick, holt ihn der Tipp her
+      if (ortStelle && steuerung.target.distanceTo(ortStelle) > 3) { aufOrt(); return; }
+      ortAus();
+      return;
+    }
+    if (!navigator.geolocation || !window.isSecureContext) { hinweis('Der Standort geht nur über HTTPS.'); return; }
+    ortErst = true;
+    ortKnopf(true, true);
+    ortWatch = navigator.geolocation.watchPosition(ortNeu, err => {
+      if (!ortStelle && ortDraussen == null) { ortAus(); hinweis('Standort nicht verfügbar: ' + (err.message || 'unbekannt')); }
+    }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 25000 });
+  }
+  $('.lz-ort').addEventListener('click', ortUmschalten);
+
+  /* ---------- Gebäude (LoD2) ----------
+   * Aus gebaeude.js über app.js (laserGebaeude), dort samt Vorrat auf dem
+   * Gerät. Gelesen sind nur die Dachflächen: Wände entstehen unter jeder
+   * Dachkante, die kein zweites Dach teilt, bis HoeheGrund hinunter. Gebäude
+   * am Rand des Ausschnitts bleiben ganz. */
+  let geb = null, gebLaeuft = false;
+  const gebKnopf = $('.lz-geb');
+  gebKnopf.querySelector('small').textContent = 'aus';
+  function gebaeudeBauen(liste) {
+    const flaechen = [], kanten = [];
+    const ox = d.mitte[0], oy = d.mitte[1], oz = d.zMin;
+    const v2 = [];
+    for (const b of liste) {
+      let top = -Infinity;
+      for (const r of b.d) for (const h of r.h) top = Math.max(top, h);
+      let grund = b.gr ?? (b.h ? top - b.h : null);
+      if (grund == null) {
+        const bh = bodenHoehe((b.bb[0] + b.bb[2]) / 2 - ox, (b.bb[1] + b.bb[3]) / 2 - oy);
+        grund = bh ? bh.z + oz : top - 3;
+      }
+      const gz = grund - oz;
+      // Dachkanten zählen: geteilte (gleiche Lage und Höhe) bekommen keine Wand
+      const schluessel = (a, c) => { const s1 = a.join(','), s2 = c.join(','); return s1 < s2 ? s1 + '|' + s2 : s2 + '|' + s1; };
+      const zahlK = new Map(), ringe = [];
+      for (const r of b.d) {
+        const p = [];
+        for (let i = 0; i < r.h.length; i++) p.push([r.p[2 * i], r.p[2 * i + 1], r.h[i]]);
+        if (p.length > 3 && p[0].join() === p[p.length - 1].join()) p.pop();
+        if (p.length < 3) continue;
+        ringe.push(p);
+        for (let i = 0; i < p.length; i++) { const k = schluessel(p[i], p[(i + 1) % p.length]); zahlK.set(k, (zahlK.get(k) || 0) + 1); }
+      }
+      const P = q => [q[0] - ox, q[1] - oy, q[2] - oz];
+      for (const p of ringe) {
+        // In Dreiecke: in die Ebene gelegt, in der das Dach am größten erscheint (Newell)
+        let nx = 0, ny = 0, nz = 0;
+        for (let i = 0; i < p.length; i++) {
+          const a = p[i], c = p[(i + 1) % p.length];
+          nx += (a[1] - c[1]) * (a[2] + c[2]); ny += (a[2] - c[2]) * (a[0] + c[0]); nz += (a[0] - c[0]) * (a[1] + c[1]);
+        }
+        const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+        const [u, w] = az >= ax && az >= ay ? [0, 1] : ax >= ay ? [1, 2] : [0, 2];
+        v2.length = 0;
+        for (const q of p) v2.push(new THREE.Vector2(q[u] - p[0][u], q[w] - p[0][w]));
+        for (const t of THREE.ShapeUtils.triangulateShape(v2, [])) for (const k of t) flaechen.push(...P(p[k]));
+        for (let i = 0; i < p.length; i++) {
+          const a = p[i], c = p[(i + 1) % p.length];
+          const k = schluessel(a, c);
+          if (zahlK.get(k) > 0) { kanten.push(...P(a), ...P(c)); }
+          if (zahlK.get(k) === 1) {
+            const [a1, c1] = [P(a), P(c)], a0 = [a1[0], a1[1], gz], c0 = [c1[0], c1[1], gz];
+            flaechen.push(...a1, ...c1, ...c0, ...a1, ...c0, ...a0);
+            kanten.push(...a1, ...a0);
+          }
+          zahlK.set(k, -1);        // jede Kante nur einmal zeichnen
+        }
+      }
+    }
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.Float32BufferAttribute(flaechen, 3));
+    fg.computeVertexNormals();
+    const kg = new THREE.BufferGeometry();
+    kg.setAttribute('position', new THREE.Float32BufferAttribute(kanten, 3));
+    const gruppe = new THREE.Group();
+    gruppe.add(new THREE.Mesh(fg, gebFlaecheMat), new THREE.LineSegments(kg, gebKanteMat));
+    // Nah und Fern (tiefeAnpassen) auch um hinausragende Gebäude
+    fg.computeBoundingSphere();
+    if (fg.boundingSphere.radius > 0) kugelWolke.union(fg.boundingSphere);
+    return { gruppe, anzahl: liste.length };
+  }
+  function gebZeigen(an) {
+    gebKnopf.classList.toggle('is-on', an);
+    gebKnopf.setAttribute('aria-pressed', String(an));
+    if (geb) geb.gruppe.visible = an;
+    gebKnopf.querySelector('small').textContent = !an ? 'aus' : `${geb.anzahl.toLocaleString('de-DE')} Gebäude`;
+    neu = true;
+  }
+  gebKnopf.addEventListener('click', async () => {
+    if (geb) { gebZeigen(!geb.gruppe.visible); return; }
+    if (gebLaeuft) return;
+    gebLaeuft = true;
+    gebKnopf.classList.add('laedt');
+    gebKnopf.querySelector('small').textContent = 'lädt …';
+    try {
+      const roh = await info.gebaeude(d.mitte[0] - halb, d.mitte[1] - halb, d.mitte[0] + halb, d.mitte[1] + halb);
+      if (!laeuft) return;
+      // Nur Gebäude mit der Mitte im Ausschnitt — die übrigen stünden neben der Wolke in der Luft
+      const liste = roh.filter(b => Math.abs((b.bb[0] + b.bb[2]) / 2 - d.mitte[0]) <= halb && Math.abs((b.bb[1] + b.bb[3]) / 2 - d.mitte[1]) <= halb);
+      geb = gebaeudeBauen(liste);
+      gebSzene.add(geb.gruppe);
+      quellenNeu();
+      gebZeigen(true);
+      if (!liste.length) hinweis('Im Ausschnitt steht kein Gebäude des LoD2.');
+    } catch (err) {
+      console.warn(err);
+      gebKnopf.querySelector('small').textContent = 'aus';
+      hinweis('Die Gebäude ließen sich nicht laden.');
+    } finally {
+      gebLaeuft = false;
+      gebKnopf.classList.remove('laedt');
+    }
+  });
+
   /* ---------- Bedienung ---------- */
   const tafel = $('.lz-tafel'), einst = $('.lz-einst');
   function tafelZeigen(an) {
@@ -415,7 +816,12 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     // Am Handy liegen Tafel und Messmenü übereinander: immer nur eins offen
     if (!tafel.hidden) menueZeigen(false);
   });
-  wurzel.querySelectorAll('[data-faerbung]').forEach(b => b.addEventListener('click', () => {
+  let faerbungWahl = faerbung;
+  wurzel.querySelectorAll('[data-faerbung]').forEach(b => b.addEventListener('click', async () => {
+    faerbungWahl = b.dataset.faerbung;
+    // Das Luftbild erst beim ersten Mal holen; bis es da ist, bleibt die alte Färbung stehen
+    if (faerbungWahl === 'luftbild' && !luftbild && !(await luftbildLaden(b))) return;
+    if (faerbungWahl !== b.dataset.faerbung || !laeuft) return;     // inzwischen anders gewählt oder geschlossen
     faerbung = b.dataset.faerbung;
     // Ohne Licht wäre die Normalenansicht eine graue Fläche
     if (faerbung === 'normalen' && lichtRegler.value < 100) { lichtRegler.value = 100; reglerZeigen(); }
@@ -788,6 +1194,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const was = b.dataset.lz;
     if (was === 'karte') return schliessen();
     if (was === 'heim') return heim();
+    if (was === 'ort') return ortUmschalten();
     if (was === bereich && !seiteZu) seiteZu = true;
     else { bereich = was; seiteZu = false; }
     bereichZeigen();
@@ -844,6 +1251,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   function bild() {
     if (!laeuft) return;
     requestAnimationFrame(bild);
+    fahrtSchritt();
     steuerung.update();
     if (!neu) return;
     neu = false;
@@ -852,6 +1260,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     for (const k of kugeln) k.scale.setScalar(kamera === orthoKamera
       ? (orthoKamera.top - orthoKamera.bottom) / orthoKamera.zoom * 0.0045
       : kamera.position.distanceTo(k.position) * 0.006);
+    if (ortGruppe.visible) {
+      const s = kamera === orthoKamera ? (orthoKamera.top - orthoKamera.bottom) / orthoKamera.zoom * 0.007
+        : kamera.position.distanceTo(ortGruppe.position) * 0.009;
+      ortKern.scale.setScalar(s); ortRand.scale.setScalar(s * 1.4);
+    }
     renderer.setRenderTarget(ziel);
     renderer.clear();
     renderer.render(szene, kamera);
@@ -859,11 +1272,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     renderer.clear();
     renderer.render(schirmSzene, schirmKamera);
     renderer.autoClear = false;
+    if (geb && geb.gruppe.visible) renderer.render(gebSzene, kamera);
     renderer.render(messSzene, kamera);
     renderer.autoClear = true;
     // Beschriftungen der Messungen an ihre Stelle im Bild
     const r = flaeche.getBoundingClientRect();
-    for (const m of offen ? [...messungen, offen] : messungen) {
+    const mitOrt = ortSchild && ortGruppe.visible ? [{ schilder: [ortSchild] }] : [];
+    for (const m of [...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
       for (const sch of m.schilder) {
         v.copy(sch.p).project(kamera);
         const sicht = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2;
@@ -890,7 +1305,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const finger = window.matchMedia('(pointer: coarse)').matches;
   const bedienung = finger ? 'Ein Finger drehen · zwei Finger schieben und zoomen · Doppeltipp: Drehpunkt'
     : 'Ziehen: drehen · rechte Taste oder Shift: schieben · Rad: zoomen · Doppelklick: Drehpunkt';
-  $('.lz-fuss').textContent = `Laserdaten: ${info.quelle}`;
+  quellenNeu();
   $('.lz-info').innerHTML = [
     `Kachel ${info.kachel}`,
     `${d.anzahl.toLocaleString('de-DE')} Punkte${d.schritt > 1 ? `, jeder ${d.schritt}.` : ''} · ${info.seite} × ${info.seite} m`,
@@ -912,6 +1327,12 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     steuerung.stopListenToKeyEvents();
     steuerung.dispose();
     for (const m of offen ? [...messungen, offen] : messungen) wegNehmen(m);
+    ortAus();
+    clearTimeout(hinweisUhr); clearTimeout(bedientUhr);
+    ortRand.geometry.dispose(); ortRandMat.dispose(); ortMat.dispose(); ortFlaecheGeo.dispose(); ortFlaecheMat.dispose();
+    ortRing.geometry.dispose(); ortRingMat.dispose();
+    if (geb) geb.gruppe.children.forEach(c => c.geometry.dispose());
+    gebFlaecheMat.dispose(); gebKanteMat.dispose();
     geo.dispose(); material.dispose(); edl.dispose(); ziel.dispose(); schirm.geometry.dispose();
     kugelGeo.dispose(); kugelMat.dispose(); linieMat.dispose(); strichMat.dispose();
     /* dispose() gibt den WebGL-Kontext nicht frei: Browser halten nur rund 16, danach

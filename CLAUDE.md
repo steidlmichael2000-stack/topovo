@@ -560,6 +560,19 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   Messpunkt abfängt, schließt `zugEnde` die Fläche (Zug ohne Weg auf dem ersten Punkt) — die Prüfung in
   `messTipp` kam nie zum Zug (bis 05.11.2026). Kleine Schilder, die ein großes (Fläche, Σ, Δh)
   berühren, blendet `bild` aus. Messfarbe `--warn` wie in der App. Regler „Schatten“ (nicht „Licht“), Intensität per Histogrammausgleich (`iRang`).
+- **Standort, Luftbild, Gebäude** (05.11.2026, lokal, noch nicht gepusht): `laserAnsicht` bekommt `utm`,
+  `luftbild` (`laserLuftbildUrl`, DOP20 BVV direkt in EPSG:25832, CORS auch für localhost) und `gebaeude`
+  (`laserGebaeude` → `gebaeudeKachel`) aus `app.js`. Standort: eigenes `watchPosition` im Viewer (Knopf über
+  der Startansicht bzw. „Standort“ in der Spalte), Höhe = Median der Bodenpunkte (2, 9, 23, 24) im Umkreis
+  1 m aus `bodenGitter`, ohne Boden dort ausgeglichene Ebene (`ebeneDurch`, 2…32 m, Punkte auf ≥ 3 Seiten) —
+  die GNSS-Höhe wird nicht benutzt; geprüft gegen DGM1 (376,00 / 375,99; in fünf Häusern 0,03–0,40 m).
+  Die Kamera gleitet nach (`fahrtSchritt`), wenn der Standort in den 15-%-Rand läuft, nicht beim Bedienen
+  und 4 s danach (`bedient`).
+  Luftbild: höchstens 3000 px je Seite, je Punkt der Bildpunkt darunter, unverändert als sRGB in `farben`.
+  Gebäude: nur Dachflächen gelesen, Wände unter Dachkanten, die kein zweites Dach teilt, bis `gr`; nur
+  Gebäude mit Mitte im Ausschnitt. Gezeichnet **nach** dem EDL-Bild halb durchsichtig (`GEB_FS`), verdeckt
+  von Hand gegen die Tiefe der Punkte mit 0,3 m Spielraum (sonst zersieben die Dachpunkte das Dach).
+  Quellenangabe oben setzt `quellenNeu` nach dem, was geladen ist.
 - Namensnennung CC BY 4.0: `LASER_QUELLE` (unten in der Ansicht, mit „ausgeschnitten und
   ausgedünnt") und `LASER_ATTR` (Kartenattribution, solange Laserpunkte offen ist).
 
