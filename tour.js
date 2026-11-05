@@ -6,7 +6,7 @@
  * Text, Weiter und Zurück. Am Rechner gehen auch die Pfeiltasten; Escape beendet.
  *
  * Dieselbe Ebene erklärt auch einzelne Werkzeuge: Das ? oben rechts in den Leisten
- * von Profil, Profilmappe, Polygon, Live und Abstecken (hilfeKnopf in app.js)
+ * von Profil, Profilmappe, Polygon, Abstand und Abstecken (hilfeKnopf in app.js)
  * startet eine kurze Tour aus HILFE, die nur diese Leiste Knopf für Knopf
  * durchgeht. Sie räumt vorher nichts weg und führt nichts vor — sie erklärt, was
  * gerade dasteht; Schritte, deren Element fehlt, fallen heraus.
@@ -123,10 +123,10 @@ const TOUR_SCHRITTE = [
     /* Ab 1010 px gibt es keinen Messknopf: Die Werkzeuge stehen hochkant rechts unten */
     get text() {
       return (SEITENLEISTE.matches
-        ? 'Die Messwerkzeuge rechts unten (ein- und ausblenden mit „Profil“ in der Spalte links). '
+        ? 'Die Messwerkzeuge rechts unten; das Lineal klappt Polygon und Abstand aus. '
         : 'Der Messknopf öffnet vier Werkzeuge. ') +
         'Profil: der Geländeschnitt zwischen zwei getippten Punkten. Profilmappe: Querprofile an einer ' +
-        'Liste von Kilometern, als ein PDF. Polygon: Strecken und — geschlossen — Flächen. Live: die ' +
+        'Liste von Kilometern, als ein PDF. Polygon: Strecken und — geschlossen — Flächen. Abstand: die ' +
         'Entfernung vom Startpunkt zum Fadenkreuz. ' + (SEITENLEISTE.matches
         ? 'Ein zweiter Klick auf ein Werkzeug beendet es.'
         : 'Ein zweiter Tipp auf den Messknopf beendet, was gerade läuft.');
@@ -164,7 +164,7 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Genauer erklärt',
-    text: 'Dieses ? steht oben in jeder Werkzeugleiste — bei Profil, Profilmappe, Polygon, Live und ' +
+    text: 'Dieses ? steht oben in jeder Werkzeugleiste — bei Profil, Profilmappe, Polygon, Abstand und ' +
       'Abstecken. Es geht die Leiste Knopf für Knopf durch, genau so wie diese Tour.',
     ziel: () => tourSichtbar('#bottom [data-hilfe]'),
     mitProfil: true,

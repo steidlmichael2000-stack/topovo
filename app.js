@@ -7174,7 +7174,7 @@ function messLeiste() {
 
   let titel, schild, zahl, notizen = [];
   if (live) {
-    titel = 'Live';
+    titel = 'Abstand';
     schild = '<span class="tag warn">Luftlinie</span>';
     zahl = `<span id="liveZahl">—</span>${n ? ' <small>bis zum Fadenkreuz</small>' : ''}`;
     if (!n) notizen.push('Startpunkt antippen — dann die Karte schieben: Die Entfernung zum Fadenkreuz läuft mit.');
@@ -7375,6 +7375,28 @@ function messMenueDraussen(ev) {
 }
 function messMenueTaste(ev) {
   if (ev.key === 'Escape') messMenueAuf(false);
+}
+
+/* Am Desktop steht Messen in der Werkzeugleiste nur als Symbol und klappt
+ * Polygon und Abstand nach links aus — Profil und Mappe stehen dort schon. */
+function werkzeugMessAuf(auf) {
+  const m = $('#werkzeugMessMenue'), k = $('#werkzeugMessBtn');
+  if (!m || !k) return;
+  m.hidden = !auf;
+  k.setAttribute('aria-expanded', String(auf));
+  if (auf) {
+    document.addEventListener('pointerdown', werkzeugMessDraussen, true);
+    document.addEventListener('keydown', werkzeugMessTaste);
+  } else {
+    document.removeEventListener('pointerdown', werkzeugMessDraussen, true);
+    document.removeEventListener('keydown', werkzeugMessTaste);
+  }
+}
+function werkzeugMessDraussen(ev) {
+  if (!ev.target.closest('#werkzeugMessMenue, #werkzeugMessBtn')) werkzeugMessAuf(false);
+}
+function werkzeugMessTaste(ev) {
+  if (ev.key === 'Escape') werkzeugMessAuf(false);
 }
 
 /* ============================ Laserpunkte ============================
@@ -12964,6 +12986,9 @@ function closeSheet() {
  * in der Leiste öffnet; „Suche“ schließt ihn. Ein Tipp auf das gewählte Symbol
  * klappt die ganze Leiste zu, ein Tipp auf irgendeines wieder auf. */
 function schieneWaehlen(sec) {
+  // Wartet Laser noch auf den Tipp in die Karte, gilt das Weiterklicken als Abbruch —
+  // sonst bliebe Laser markiert, obwohl man längst woanders ist
+  if (laserAn && !laserStelle && !laserLaedt) laserEnde();
   const sh = $('#sheet'), zu = document.body.classList.contains('leiste-zu');
   const gewaehlt = sh.hidden ? sec === 'suche' : sh.dataset.nur === sec;
   if (!zu && gewaehlt) { leisteZu(true); return; }
@@ -12988,15 +13013,6 @@ function schieneSync() {
     b.classList.toggle('is-on', an);
     b.setAttribute('aria-pressed', String(an));
   });
-}
-
-/** Werkzeugleiste unten rechts ein- oder ausblenden (Knopf in der Symbolspalte, gemerkt) */
-function werkzeugeSync() {
-  const aus = !!prefs.werkzeugeAus;
-  document.body.classList.toggle('werkzeuge-zu', aus);
-  $('#werkzeugeBtn').classList.toggle('is-on', !aus);
-  $('#werkzeugeBtn').setAttribute('aria-pressed', String(!aus));
-  updateBH();
 }
 
 /** Leiste links zu- oder aufklappen (ab 1010 px; schmaler wirkt die Klasse nicht). */
@@ -13132,6 +13148,10 @@ function syncButtons() {
     b.classList.toggle('is-on', !!an);
     b.setAttribute('aria-pressed', String(!!an));
   });
+  const wm = $('#werkzeugMessBtn');
+  if (wm) { wm.classList.toggle('is-on', messModus); wm.setAttribute('aria-pressed', String(messModus)); }
+  const ps = $('#profilSchieneBtn');
+  if (ps) { ps.classList.toggle('is-on', profModus); ps.setAttribute('aria-pressed', String(profModus)); }
   abKnopf();
   // Laserpunkte: runder Knopf am Handy, Feld in der Symbolspalte am Desktop
   for (const id of ['#mapLaserBtn', '#laserSchieneBtn']) {
@@ -13441,9 +13461,10 @@ function bind() {
   document.querySelectorAll('#schiene [data-schiene]').forEach(b =>
     b.addEventListener('click', () => schieneWaehlen(b.dataset.schiene)));
   on('#leisteGriff', 'click', () => leisteZu(!document.body.classList.contains('leiste-zu')));
-  on('#werkzeugeBtn', 'click', () => { prefs.werkzeugeAus = !prefs.werkzeugeAus; saveStore(); werkzeugeSync(); });
+  on('#profilSchieneBtn', 'click', () => { if (profModus) profEnde(); else profStart(); });
+  // Messen: läuft Polygon oder Abstand, beendet der Knopf es (Einfangphase oben), sonst klappt er aus
+  on('#werkzeugMessBtn', 'click', () => werkzeugMessAuf($('#werkzeugMessMenue').hidden));
   for (const id of ['#mapLaserBtn', '#laserSchieneBtn']) on(id, 'click', () => { if (laserAn) laserEnde(); else laserStart(); });
-  werkzeugeSync();
   // Anwendungen unten mittig stapeln sich nach ihrer Höhe (updateBH)
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => updateBH());
@@ -13453,6 +13474,7 @@ function bind() {
   schieneSync();
   document.querySelectorAll('[data-messart]').forEach(b => b.addEventListener('click', () => {
     messMenueAuf(false);
+    werkzeugMessAuf(false);
     if (b.dataset.messart === 'profil') profStart();
     else if (b.dataset.messart === 'mappe') mappeStart();
     else messStart(b.dataset.messart);

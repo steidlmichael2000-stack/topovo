@@ -1865,11 +1865,11 @@ input[type="range"] { min-width: 0; }
   .schiene .sec-ikon .voll { fill: currentColor; }
   .schiene button:hover { background: var(--panel-2); color: var(--text); }
   .schiene button.is-on { background: var(--accent); color: var(--accent-ink); }
-  /* Querprofil (die Messwerkzeuge): ein Schalter, kein Bereich — an nur in der Signalfarbe */
-  .schiene .schiene-werkzeuge.is-on { background: none; color: var(--accent); }
+  /* Profil und Laser sind Werkzeuge, keine Bereiche: laufen sie, getönt wie in der
+     Werkzeugleiste rechts — gefüllt ist nur der Bereich, der in der Leiste offen ist */
+  .schiene .schiene-werkzeug.is-on { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
   /* Hinweise ganz unten (so gewünscht, 04.11.2026) */
   .schiene .schiene-unten { margin-top: auto; }
-  .schiene .schiene-werkzeuge.is-on:hover { background: var(--panel-2); }
 
   /* Feste Leiste: .ui ist die Spalte, ihr Glas liegt als ::before dahinter —
      nicht auf .ui selbst, sonst würden die festen Anwendungen darin an der
@@ -1964,18 +1964,27 @@ input[type="range"] { min-width: 0; }
     border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow);
     backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   }
-  .werkzeuge button {
+  .werkzeuge button, .werkzeug-mess-menue button {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     width: 60px; height: 52px; padding: 0; border: 0; border-radius: var(--r-knopf);
     background: none; color: var(--muted); cursor: pointer;
     font: inherit; font-size: .64rem; font-weight: 600;
   }
-  .werkzeuge svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
-  .werkzeuge svg .voll { fill: currentColor; stroke: none; }
-  .werkzeuge button:hover { background: var(--panel-2); color: var(--text); }
+  .werkzeuge svg, .werkzeug-mess-menue svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+  .werkzeuge svg .voll, .werkzeug-mess-menue svg .voll { fill: currentColor; stroke: none; }
+  .werkzeuge button:hover, .werkzeug-mess-menue button:hover { background: var(--panel-2); color: var(--text); }
   .werkzeuge button.is-on { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
-  /* Über den Knopf „Werkzeuge“ der Symbolspalte ausgeblendet */
-  .werkzeuge-zu .werkzeuge { display: none; }
+  /* Messen nur als Symbol; klappt Polygon und Abstand nach links aus, Unterkante auf Unterkante */
+  .werkzeuge .werkzeug-mess { height: 44px; }
+  .werkzeuge .werkzeug-mess[aria-expanded="true"] { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+  .werkzeug-mess-menue {
+    position: fixed; z-index: 510; right: calc(16px + var(--werkzeug-b) + 8px); bottom: 16px;
+    display: flex; gap: 2px; padding: 4px;
+    border-radius: var(--r); background: var(--glass); box-shadow: var(--shadow);
+    backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  }
+  .werkzeug-mess-menue[hidden] { display: none; }
+  .werkzeug-mess-menue:not([hidden]) { transform-origin: right bottom; animation: vom-knopf .22s var(--auf); }
 }
 
 @media (prefers-reduced-motion: reduce) {
