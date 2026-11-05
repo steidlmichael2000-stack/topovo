@@ -26,7 +26,7 @@
  *   { art: 'fertig', … }                         Punkte relativ zur Mitte des Ausschnitts
  *   { art: 'fehler', text }
  *   { art: 'abgebrochen' }
- *   { art: 'warten', nr, von, versuch, sekunden }  Verbindung weg, neuer Versuch folgt
+ *   { art: 'warten', nr, von, versuch, sekunden, abgeschnitten }  Verbindung weg oder Kachel unvollständig, neuer Versuch folgt
  *
  * { art: 'abbrechen' } bricht den laufenden Auftrag ab: das Herunterladen über
  * den AbortController, das Entpacken an der nächsten Pause (alle 2^20 Punkte
@@ -86,9 +86,15 @@ async function mitWiederholung(LP, url, melden, behalten, vorratMax, wartenMelde
        * sondern eine Antwort ohne CORS (etwa 5xx vom Worker) — dann nach zwei Versuchen
        * aufgeben statt fünf Minuten „Verbindung unterbrochen“ zu zeigen. */
       if (abbruch.signal.aborted || !(err instanceof TypeError) || versuch >= NETZ_VERSUCHE) throw err;
+      /* Abgeschnitten trotz Netz: Das bricht bei sehr großen Kacheln jedes Mal ab
+       * (gesehen ab einigen hundert MB) — nicht eine Stunde lang neu laden */
+      if (err.abgeschnitten && versuch >= 3) {
+        throw new Error('Die Kachel kam dreimal unvollständig an. Sehr große Kacheln (Gebirge, mehrere hundert MB) ' +
+          'bricht die Weiterleitung ab — eine Stelle mit kleinerer Kachel wählen oder später noch einmal versuchen.');
+      }
       if (!err.mittendrin && navigator.onLine && versuch >= 2) throw err;
       const ms = Math.min(15000, 1000 * 2 ** versuch);
-      wartenMelden(versuch, Math.round(ms / 1000));
+      wartenMelden(versuch, Math.round(ms / 1000), !!err.abgeschnitten);
       await warten(ms);
       if (abbruch.signal.aborted) throw err;
     }
@@ -99,6 +105,7 @@ async function herunterladen(LP, url, melden, behalten, vorratMax) {
   // Nie in den HTTP-Zwischenspeicher des Browsers: der läge auf dem Gerät
   const r = await fetch(url, { cache: 'no-store', signal: abbruch.signal });
   if (r.status === 404) return null;
+  if (r.status === 429) throw new Error('Gerade wurden sehr viele Laserkacheln geladen — die Weiterleitung lässt erst in einer Weile wieder welche durch.');
   if (!r.ok) throw new Error(`Laserkachel: HTTP ${r.status}`);
   if (!r.body) throw new Error('Laserkachel: keine Daten');
   // Gepackt unterwegs: Content-Length ist dann die gepackte Größe, nicht die der Datei
@@ -149,8 +156,31 @@ async function ohneLaenge(LP, leser, melden, behalten, vorratMax) {
   if (!zeiger) throw new Error('Zu wenig Speicher — einen kleineren Ausschnitt oder weniger Kacheln wählen.');
   let p = 0;
   for (const t of teile) { LP.HEAPU8.set(t, zeiger + p); p += t.byteLength; }
+  /* Ohne Länge merkt niemand, wenn der Strom zu früh endet — über Cloudflare kamen
+   * von der 713-MB-Kachel 650_5254 einmal 540, einmal 214 MB an, jedes Mal mit
+   * sauberem Ende (05.11.2026). Bei LAZ steht am Beginn der Punktdaten, wo die
+   * Chunk-Tabelle liegt: ganz am Ende der Datei. Reicht die Datei nicht bis dorthin,
+   * ist sie abgeschnitten und wird wie ein Abbruch mittendrin neu geholt. */
+  if (!vollstaendig(LP.HEAPU8, zeiger, o)) {
+    LP._free(zeiger);
+    const err = new TypeError('Laserkachel kam unvollständig an.');
+    err.mittendrin = err.abgeschnitten = true;
+    throw err;
+  }
   melden(o, o);
   return { zeiger, groesse: o };
+}
+
+/** Reicht die LAZ-Datei bis zu ihrer Chunk-Tabelle? Ohne Tabelle (LAS) gilt sie als ganz. */
+function vollstaendig(heap, zeiger, groesse) {
+  if (groesse < 375) return false;
+  const d = new DataView(heap.buffer, heap.byteOffset + zeiger, groesse);
+  const daten = d.getUint32(96, true);
+  if (daten + 8 > groesse) return false;
+  let tabelle = Number(d.getBigInt64(daten, true));
+  // −1: beim Schreiben nicht bekannt, die Adresse steht dann in den letzten 8 Bytes
+  if (tabelle === -1) tabelle = Number(d.getBigInt64(groesse - 8, true));
+  return !(tabelle > daten) || tabelle + 8 <= groesse;
 }
 
 /** Der Kopf einer LAS-Datei (1.0–1.4), soweit hier gebraucht. */
@@ -184,7 +214,7 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
     else {
       v = await mitWiederholung(LP, url, (geladen, gesamt) =>
         self.postMessage({ art: 'laden', nr: i, von, geladen, gesamt }), behalten, vorratMax,
-        (versuch, sekunden) => self.postMessage({ art: 'warten', nr: i, von, versuch, sekunden }));
+        (versuch, sekunden, abgeschnitten) => self.postMessage({ art: 'warten', nr: i, von, versuch, sekunden, abgeschnitten }));
       if (!v) { fehlen.push(kachel); continue; }
       zeiten.megabyte += v.groesse / 1e6;
     }
@@ -230,7 +260,8 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
       const laszip = new LP.LASZip();
       try {
         laszip.open(zeiger, groesse);
-        const anzahl = laszip.getCount();
+        // LAS 1.4 (alle neueren Befliegungen) lässt das alte 32-Bit-Feld leer, laz-perf meldet dann 0
+        const anzahl = laszip.getCount() || k.anzahl;
         const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
         // Ganzzahlige Grenzen: der Vergleich je Punkt ohne Umrechnung
         const X0 = (e0 - ox) / sx, X1 = (e1 - ox) / sx, Y0 = (n0 - oy) / sy, Y1 = (n1 - oy) / sy;

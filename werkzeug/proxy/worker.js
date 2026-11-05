@@ -58,12 +58,40 @@ const PFAD = /^\/(?:(dgm1|dom20)\/(\d{3})_(\d{4})\.tif|(lod2)\/(\d{3})_(\d{4})\.
 const BEREICH = /^bytes=(\d+-\d*|-\d+)$/;
 
 const HERKUNFT = ['https://steidlmichael2000-stack.github.io'];
+
+/* Begrenzung je IP-Adresse (05.11.2026). Ohne sie ließe sich das Tageskontingent
+ * (100.000 Abfragen) mit einer Schleife leerziehen — und eine Laserkachel geht
+ * jedes Mal ganz von der BVV durch. Gezählt wird im Speicher des Workers: Das
+ * wirkt nach Einfügen im Dashboard ohne weitere Einrichtung, zählt aber je
+ * Rechenzentrum und Instanz, ist also eine Bremse, keine harte Grenze. Das reicht
+ * gegen ein Skript, das immer wieder dieselbe Instanz trifft. Großzügig bemessen:
+ * Ein Querprofil braucht ein paar Dutzend Bytebereiche, eine Profilmappe einige
+ * hundert. Ist zusätzlich die Bindung LASER_GRENZE eingerichtet (nur über wrangler,
+ * siehe README), zählt Cloudflare die Laserkacheln dort gemeinsam je Standort. */
+const GRENZEN = {
+  laser: { anzahl: 30, sekunden: 3600 },      // ganze Kacheln, 60 MB bis 1 GB
+  sonst: { anzahl: 3000, sekunden: 600 }      // Bytebereiche, LoD2, BW-Archive
+};
+const zaehler = new Map();                    // `${gruppe}|${ip}` → { bis, n }
+
+function zuViel(gruppe, ip, jetzt) {
+  const g = GRENZEN[gruppe], schluessel = `${gruppe}|${ip}`;
+  let z = zaehler.get(schluessel);
+  if (!z || z.bis <= jetzt) {
+    // Abgelaufene ab und zu wegräumen, damit die Liste nicht wächst
+    if (zaehler.size > 5000) for (const [k, w] of zaehler) if (w.bis <= jetzt) zaehler.delete(k);
+    z = { bis: jetzt + g.sekunden * 1000, n: 0 };
+    zaehler.set(schluessel, z);
+  }
+  z.n++;
+  return z.n > g.anzahl ? Math.ceil((z.bis - jetzt) / 1000) : 0;
+}
 const LOKAL = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 const DURCHREICHEN = ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified'];
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     /* Fremde Seiten bekommen nichts. Ohne Origin — im Adressfeld geöffnet oder
      * von der Kommandozeile — kommt die Datei trotzdem: Sie ist ohnehin
      * öffentlich, und so lässt sich der Worker von Hand prüfen. */
@@ -71,12 +99,14 @@ export default {
     if (herkunft && !HERKUNFT.includes(herkunft) && !LOKAL.test(herkunft)) {
       return new Response('Herkunft nicht freigegeben', { status: 403 });
     }
+    /* Vary immer, auch ohne Origin: Sonst nähme der Browser eine im Adressfeld
+     * geholte Kachel (ohne CORS-Kopf) eine Woche lang auch für die App. */
     const cors = herkunft ? {
       'Access-Control-Allow-Origin': herkunft,
       // Content-Range braucht die App, um Teilantworten zu erkennen
       'Access-Control-Expose-Headers': 'Content-Length, Content-Range, ETag',
       'Vary': 'Origin'
-    } : {};
+    } : { 'Vary': 'Origin' };
 
     if (request.method === 'OPTIONS') {
       return new Response(null, {
@@ -95,6 +125,22 @@ export default {
     const treffer = t[1] ? t : t[4] ? [t[0], t[4], t[5], t[6]] : t[10] ? [t[0], t[10], t[11], t[12]]
       : [t[0], `bw-${t[7]}`, t[8], t[9]];
     const lod2 = treffer[1] === 'lod2';
+
+    /* Nur GET zählt: Die App fragt vor dem Laden mit HEAD nach der Größe */
+    if (request.method === 'GET') {
+      const ip = request.headers.get('CF-Connecting-IP') || 'lokal';
+      const gruppe = treffer[1] === 'laser' ? 'laser' : 'sonst';
+      let warte = zuViel(gruppe, ip, Date.now());
+      if (!warte && gruppe === 'laser' && env && env.LASER_GRENZE) {
+        const { success } = await env.LASER_GRENZE.limit({ key: ip });
+        if (!success) warte = 60;
+      }
+      if (warte) {
+        return new Response('Zu viele Abfragen — bitte später noch einmal.', {
+          status: 429, headers: { ...cors, 'Retry-After': String(warte), 'Content-Type': 'text/plain; charset=utf-8' }
+        });
+      }
+    }
 
     const kopf = new Headers();
     const bereich = request.headers.get('Range');
@@ -138,6 +184,16 @@ export default {
     if (lod2 && !bereich && /gzip/.test(request.headers.get('Accept-Encoding') || '')) {
       antwort.set('Content-Type', 'application/xml; charset=utf-8');
       antwort.set('Content-Encoding', 'gzip');
+      antwort.delete('Content-Length');
+    }
+    /* Laserkacheln gepackt durchreichen, wie sie kommen. Ohne Content-Encoding in der
+     * Antwort entpackt die Laufzeit den gzip-Strom der BVV im Worker — bei der
+     * 713-MB-Kachel 650_5254 endete das zweimal still nach 540 bzw. 214 MB, direkt
+     * kam sie ganz (05.11.2026). Mit der Kopfzeile reicht Cloudflare die Bytes
+     * unverändert weiter, und der Browser entpackt selbst. */
+    const packung = quelle.headers.get('Content-Encoding');
+    if (treffer[1] === 'laser' && packung && !bereich) {
+      antwort.set('Content-Encoding', packung);
       antwort.delete('Content-Length');
     }
     return new Response(request.method === 'HEAD' ? null : quelle.body, { status: quelle.status, headers: antwort });

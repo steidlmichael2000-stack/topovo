@@ -293,12 +293,15 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
 
   const halb = info.seite / 2, hoch = d.zMax - d.zMin;
   function heim() {
-    steuerung.target.set(0, 0, hoch / 3);
+    /* Im Gebirge ist der Ausschnitt höher als breit (Zugspitze: 900 m auf 200 m),
+     * dann zählt die Höhe als Größe und der Blick zielt auf die Mitte */
+    const gross = Math.max(halb, hoch * 0.6);
+    steuerung.target.set(0, 0, hoch > halb ? hoch / 2 : hoch / 3);
     /* Von Süden, schräg von oben, der ganze Ausschnitt im Bild. Hochkant (Handy)
      * ist das Bild schmaler als hoch: dann weiter weg, sonst fehlen links und rechts. */
     const w = wurzel.clientWidth, h = wurzel.clientHeight;
-    const weiter = w && h ? Math.max(1, 1.1 * h / w) : 1;
-    kamera.position.set(-halb * 0.5 * weiter, -halb * 2.3 * weiter, hoch / 3 + halb * 1.7 * weiter);
+    const weiter = (w && h ? Math.max(1, 1.1 * h / w) : 1) * gross;
+    kamera.position.set(-0.5 * weiter, -2.3 * weiter, steuerung.target.z + 1.7 * weiter);
     if (kamera === orthoKamera) { orthoKamera.zoom = 1; orthoRahmen(); }
     steuerung.update();
   }
@@ -647,12 +650,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     neu = true;
   });
 
-  function messTipp(p, cx, cy) {
-    // Fläche: ein Tipp auf den ersten Punkt schließt sie
-    if (offen && offen.art === 'flaeche' && offen.punkte.length >= 3) {
-      const v0 = offen.punkte[0].clone().project(kamera), r = flaeche.getBoundingClientRect();
-      if (Math.hypot((v0.x + 1) / 2 * r.width + r.left - cx, (1 - v0.y) / 2 * r.height + r.top - cy) < 16) { abschliessen(); return; }
-    }
+  function messTipp(p) {
+    // Ein Tipp auf einen Messpunkt kommt hier nicht an: den greift das Ziehen (zugEnde)
     if (!offen) offen = { art: messArt, punkte: [], teile: [], schilder: [], fertig: false, wert: '' };
     offen.punkte.push(p);
     zeichnen(offen);
@@ -685,7 +684,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (!treffer) return;
     ev.stopPropagation();
     ev.preventDefault();
-    gezogen = { ...treffer, id: ev.pointerId };
+    gezogen = { ...treffer, id: ev.pointerId, x: ev.clientX, y: ev.clientY };
     steuerung.enabled = false;
     flaeche.setPointerCapture(ev.pointerId);
     flaeche.classList.add('zieht');
@@ -708,7 +707,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (!gezogen || ev.pointerId !== gezogen.id) return;
     // Der letzte Zug, falls sein Bild noch aussteht
     if (zugBild) { cancelAnimationFrame(zugBild); zugBild = 0; }
-    const p = punktAn(ev.clientX, ev.clientY);
+    /* Nicht bewegt: ein Tipp auf den Punkt. Auf dem ersten Punkt einer offenen
+     * Fläche schließt er sie — sonst bleibt der Punkt, wo er war. */
+    const getippt = Math.hypot(ev.clientX - gezogen.x, ev.clientY - gezogen.y) <= 6;
+    const schliessen = getippt && gezogen.m === offen && offen.art === 'flaeche' && gezogen.i === 0 && offen.punkte.length >= 3;
+    const p = !getippt && punktAn(ev.clientX, ev.clientY);
     if (p) {
       gezogen.m.punkte[gezogen.i] = p;
       zeichnen(gezogen.m);
@@ -719,6 +722,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     steuerung.enabled = true;
     flaeche.classList.remove('zieht');
     runter = null;           // kein Tipp hinterher
+    if (schliessen) abschliessen();
   };
   flaeche.addEventListener('pointerup', zugEnde, true);
   flaeche.addEventListener('pointercancel', zugEnde, true);
@@ -743,7 +747,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     letzterTipp = jetzt;
     const p = punktAn(ev.clientX, ev.clientY);
     if (!p) return;
-    if (messArt) messTipp(p, ev.clientX, ev.clientY);
+    if (messArt) messTipp(p);
     // Doppeltipp: um diesen Punkt drehen
     else if (doppelt) { steuerung.target.copy(p); steuerung.update(); neu = true; }
   });
@@ -865,6 +869,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         const sicht = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2;
         sch.el.hidden = !sicht;
         if (sicht) sch.el.style.transform = `translate(${(v.x + 1) / 2 * r.width}px, ${(1 - v.y) / 2 * r.height}px) ${sch.lage}`;
+      }
+      /* Bei schmalen Flächen lagen die Seitenlängen unter der Fläche in der Mitte:
+       * Ein kleines Schild, das ein großes (Fläche, Σ, Δh) berührt, tritt zurück */
+      const gross = m.schilder.filter(s => !s.el.hidden && s.el.classList.contains('gross')).map(s => s.el.getBoundingClientRect());
+      if (gross.length) {
+        for (const sch of m.schilder) {
+          if (sch.el.hidden || sch.el.classList.contains('gross')) continue;
+          const k = sch.el.getBoundingClientRect();
+          if (gross.some(g => k.left < g.right && k.right > g.left && k.top < g.bottom && k.bottom > g.top)) sch.el.hidden = true;
+        }
       }
     }
   }

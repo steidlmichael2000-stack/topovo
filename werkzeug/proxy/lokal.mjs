@@ -26,4 +26,4 @@ http.createServer(async (req, res) => {
     res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end(String(fehler));
   }
-}).listen(port, () => console.log(`Höhendaten-Proxy auf http://localhost:${port}`));
+}).listen(port, '127.0.0.1', () => console.log(`Höhendaten-Proxy auf http://localhost:${port}`));

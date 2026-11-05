@@ -399,6 +399,11 @@ bündig mit der Außenkante des Suchfelds (74), optisch mittig (Mitte zwischen V
 auf 32). Darunter 16 px, dann Suche und Spaltenknöpfe (alle 52 × 52) ab `--marke-h` 74. Zugeklappt bleibt der
 Name stehen, mit Hof in `--bg`. Nachgemessen per Bildschirmfoto im kopflosen Firefox.
 
+**Handy quer** (unter 1010 px breit, höchstens 500 px hoch, 05.11.2026): Knopfsäule ins Eck unten rechts
+(`--saeule`, `--grund` wie ab 1010 px), Leisten beidseits um die Säule schmaler, Messmenü über der Leiste.
+Vorher rutschte die Säule über einer offenen Leiste unter die Suchzeile. Der Block steht am Ende von
+`style.css`, damit er die Breiten der einzelnen Leisten überstimmt.
+
 Die Grenze steht zweimal: in `style.css` („Desktop und Tablet quer“) und als `SEITENLEISTE` in
 `app.js`. **Ausschnitte nur über `kartePassen` (statt `map.fitBounds`) und `sichtSetzen` (statt
 `setView`/`panTo`) setzen**, sonst landet das Gezeigte unter Leiste oder Anwendungen.
@@ -529,6 +534,13 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   **immer dunkel**, auch im hellen Modus (hell sah flau aus); `.laser-ansicht` setzt dafür die dunklen
   Glas- und Schrift-Tokens selbst, Messlinien fest in #ff9f0a. Kleine Löcher zwischen Punkten füllt `EDL_FS`. Die Pflichtangabe steht oben mittig (`.lz-fuss`), Bedienung, Kachel, Zeiten in der Tafel (`.lz-info`).
 - Lokal: `laser-probe/` (in `.gitignore`) wird vor dem Worker gefragt.
+- **Neuere Kacheln sind LAS 1.4, Format 6** (Alpen, Oberfranken, Oberpfalz, Nürnberg …, oft 300 MB bis
+  1,9 GB). Punktzahl dort aus dem 64-Bit-Feld (`kopf.anzahl`), nicht aus `getCount()` (liefert 0). Die
+  Probekacheln in `laser-probe/` sind LAS 1.2 — wer am Leser dreht, prüft auch eine 1.4-Kachel.
+- **Über Cloudflare kamen Kacheln ab einigen hundert MB still abgeschnitten an** (05.11.2026, README).
+  `vollstaendig` prüft gegen die Chunk-Tabelle; nicht entfernen, sonst entpackt laz-perf eine halbe Datei.
+- **Begrenzung je IP** im Worker (`GRENZEN`, im Speicher, optional Bindung `LASER_GRENZE`): Wer der App
+  neue Abrufe über den Worker gibt, prüft, dass ein normaler Gebrauch (Profilmappe!) unter 3000 je 10 min bleibt.
 - **Kamera Perspektive | Orthografisch** (wie PW-Viewer): zwei Kameras, `kamera` ist die aktive,
   `steuerung.object` wird umgehängt. Orthografisch braucht eigene Punktgröße (`orthoSkala`) und lineare
   Tiefe in `EDL_FS` (`ortho`-Uniform) — wer an Shader oder Kamera dreht, prüft beide.
@@ -544,7 +556,10 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   Float-Tiefe, Nah/Fern eng um die Wolke (`tiefeAnpassen`) und 5 cm `schwelle`.
 - **Messen wie Potree im PW-Viewer:** Höhe = Δh zweier Punkte (waagerecht oben, senkrecht am tieferen, Neigung in %),
   Distanz = Linienzug mit Abschnitten und Σ, Fläche mit Seitenlängen; Punkte lassen sich ziehen
-  (`messpunktAn`, Einfangphase an der Wurzel vor OrbitControls). Messfarbe `--warn` wie in der App. Regler „Schatten“ (nicht „Licht“), Intensität per Histogrammausgleich (`iRang`).
+  (`messpunktAn`, Einfangphase an der Wurzel vor OrbitControls). Weil das Ziehen jeden Tipp auf einen
+  Messpunkt abfängt, schließt `zugEnde` die Fläche (Zug ohne Weg auf dem ersten Punkt) — die Prüfung in
+  `messTipp` kam nie zum Zug (bis 05.11.2026). Kleine Schilder, die ein großes (Fläche, Σ, Δh)
+  berühren, blendet `bild` aus. Messfarbe `--warn` wie in der App. Regler „Schatten“ (nicht „Licht“), Intensität per Histogrammausgleich (`iRang`).
 - Namensnennung CC BY 4.0: `LASER_QUELLE` (unten in der Ansicht, mit „ausgeschnitten und
   ausgedünnt") und `LASER_ATTR` (Kartenattribution, solange Laserpunkte offen ist).
 

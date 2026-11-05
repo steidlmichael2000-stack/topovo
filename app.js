@@ -4901,6 +4901,9 @@ const KML_FORMEN = {
 
 function kmlSymbolSvg(form, farbe, gross) {
   const r = gross ? 16 : 14;
+  /* Die Farbe kommt aus der IndexedDB, und die teilt Topovo mit allen Apps unter
+   * github.io — geprüft wird sie beim Einlesen der KML, hier noch einmal vor dem HTML. */
+  if (!/^#[0-9a-f]{3,8}$/i.test(farbe)) farbe = '#888';
   // Steht die Form nicht fest, zwei verschiedene andeuten statt eine vorzutäuschen
   if (form === 'auto') {
     return `<svg viewBox="0 0 16 16" width="${r}" height="${r}" aria-hidden="true">` +
@@ -6436,12 +6439,15 @@ function fpZelle(art, z, x, y) {
       if (!r.ok) throw new Error(`Festpunkte: HTTP ${r.status}`);
       const j = await r.json();
       for (const f of j.features || []) {
-        const [e, n] = f.geometry.coordinates;
+        // Als Zahlen: Sie landen formatiert im HTML der Sprechblase
+        const [e, n] = (f.geometry && f.geometry.coordinates || []).map(Number);
+        if (!Number.isFinite(e) || !Number.isFinite(n)) continue;
         const [la, lo] = utm32Zurueck(e, n);
         raus.push({ e, n, lat: la, lon: lo, p: f.properties || {} });
       }
       const weiter = (j.links || []).find(l => l.rel === 'next');
-      url = weiter ? weiter.href : null;
+      // Nur Folgeseiten derselben API — ein „next" woandershin wird nicht befolgt
+      url = weiter && new URL(weiter.href, FP_API).origin === new URL(FP_API).origin ? weiter.href : null;
     }
     return raus;
   })();
@@ -7608,7 +7614,7 @@ async function laserLaden() {
     if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt };
     else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
     else if (m.art === 'normalen') laserLaedt = { art: 'normalen', wert: m.fertig, gesamt: m.gesamt };
-    else if (m.art === 'warten') laserLaedt = { art: 'warten', nr: m.nr, von: m.von, wert: 0, gesamt: 0, sekunden: m.sekunden };
+    else if (m.art === 'warten') laserLaedt = { art: 'warten', nr: m.nr, von: m.von, wert: 0, gesamt: 0, sekunden: m.sekunden, abgeschnitten: m.abgeschnitten, versuch: m.versuch };
     if (laserLaedt && m.art !== 'fertig' && m.art !== 'fehler' && m.art !== 'abgebrochen') {
       /* Nur Balken und Text nachführen, die Leiste nicht neu bauen: Bei dutzenden
        * Meldungen je Sekunde ginge ein Tipp auf „Abbrechen“ sonst zwischen Drücken
@@ -7645,6 +7651,7 @@ function laserStand(L_) {
   const kachelNr = L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : '';
   const text = L_.art === 'laden' ? `Laden${kachelNr} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
     : L_.art === 'lesen' ? `Entpacken${kachelNr} …`
+    : L_.art === 'warten' && L_.abgeschnitten ? `Die Kachel kam unvollständig an (Versuch ${L_.versuch} von 3) — neuer Versuch in ${L_.sekunden} s, sie lädt dann von vorn.`
     : L_.art === 'warten' ? `Verbindung unterbrochen — neuer Versuch in ${L_.sekunden} s oder sobald wieder Netz da ist. Die Kachel lädt dann von vorn.`
     : 'Normalen rechnen …';
   return { anteil, text };

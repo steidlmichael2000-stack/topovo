@@ -1396,6 +1396,50 @@ Gemessen am 04.11.2026: Kachel 586_5491 (Gollhofen, 45 MB) über den Worker in 3
 Entpacken und Normalen 11,7 s bis zur Ansicht (482.000 Punkte auf 200 × 200 m). Eine ganze Kachel
 „nur Boden“ (8,4 Mio. Punkte) aus dem Speicher in 11 s.
 
+**Sehr große Kacheln kommen über Cloudflare abgeschnitten an** (gemessen 05.11.2026): 650_5254
+(Zugspitze, 713 MB) über den Worker zweimal geholt, angekommen 540 MB und 214 MB — jedes Mal mit
+sauberem Ende, ohne Fehler. Direkt von der BVV kam sie ganz (178 s). Bis rund 100 MB lief es ohne
+Abbruch (613_5478, 92 MB). Weil ohne Dateigröße niemand das Ende prüft, schaut `vollstaendig` in
+`laser-werk.js` nach, ob die Datei bis zu ihrer Chunk-Tabelle reicht (LAZ legt sie ans Ende, der
+Verweis steht am Beginn der Punktdaten). Abgeschnitten gilt als Abbruch mittendrin, höchstens drei
+Versuche, dann eine Meldung. Vermutete Ursache: Cloudflare verlangt bei der BVV selbst gzip (die
+`Accept-Encoding: identity` des Workers kommt nicht an — die Antwort trägt das ETag `…-gzip`), und weil
+der Worker `Content-Encoding` nicht weitergab, musste die Laufzeit die ganze Kachel im Worker entpacken.
+Seit 05.11.2026 reicht der Worker Laserkacheln gepackt durch (`packung`), der Browser entpackt. Ob das
+den Abbruch behebt, zeigt sich erst im Betrieb — im Browser kam die Kachel auch vorher zweimal ganz an,
+nur über curl nicht. Direkt bei der BVV gilt: ungepackt mit Größe und Bytebereichen (206), gepackt
+ohne beides.
+
+**Zwei Kachelformate** (Stichprobe 05.11.2026, 78 Kacheln alle 30 km): Die älteren Befliegungen
+(Mittelfranken, 586_5491, 612_5478) sind LAS 1.2, Format 1, 40–100 MB. Die neueren sind **LAS 1.4,
+Format 6**, und viel größer: Mittel aller Stichproben 246 MB, 12 von 78 über 400 MB — nicht nur in den
+Alpen (690_5270 Karwendel 1,9 GB, 780_5300 Berchtesgaden 1,36 GB), auch in Oberfranken (720_5570 762 MB),
+der Oberpfalz und um Nürnberg (660_5480 533 MB). In LAS 1.4 ist das alte 32-Bit-Feld der Punktzahl 0;
+laz-perf meldet dann `getCount() === 0`, die Zahl steht im 64-Bit-Feld des Kopfes. Bis 05.11.2026
+zeigte der Viewer für all diese Kacheln „keine Laserpunkte“. Zugspitze 650_5254 (713 MB, 75 Mio.
+Punkte) danach im Browser: Laden 74 s, Entpacken 55 s, Normalen 10 s.
+
+**Begrenzung je IP-Adresse** (seit 05.11.2026, `GRENZEN` in `worker.js`): 30 Laserkacheln je Stunde,
+3000 sonstige Abrufe je 10 Minuten; darüber 429 mit `Retry-After`. HEAD zählt nicht. Gezählt wird im
+Speicher des Workers — wirkt nach Einfügen im Dashboard, gilt aber je Instanz und Rechenzentrum: eine
+Bremse gegen Skripte, keine harte Grenze. Strenger geht es mit der Rate-Limiting-Bindung von Cloudflare,
+die sich nur über `wrangler` einrichten lässt (im Dashboard nicht sichtbar), etwa mit einer
+`wrangler.toml` neben `worker.js`:
+
+```toml
+name = "trackpilot-hoehen"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[[ratelimits]]
+name = "LASER_GRENZE"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+```
+
+und `npx wrangler deploy`. Der Worker nimmt `LASER_GRENZE` dann zusätzlich, für Laserkacheln. Achtung:
+Ein Deploy mit wrangler überschreibt den Code im Dashboard.
+
 Lokal liest die App zuerst `laser-probe/{O}_{N}.laz` (nicht im Repo), sonst den Worker.
 
 ## Eigener WMS-Layer

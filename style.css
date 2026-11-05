@@ -2148,9 +2148,10 @@ body { font-variant-numeric: tabular-nums; }
 .lz-klassen { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 /* Steht die letzte Klasse allein in ihrer Zeile, nimmt sie die ganze Breite — „Objekte, Bewuchs“ brach sonst um */
 .lz-klasse:last-child:nth-child(odd) { grid-column: 1 / -1; }
-.lz-klasse { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 8px 10px; text-align: left; white-space: normal; }
-.lz-klasse .lz-name { flex: 1; min-width: 0; font-size: .78rem; line-height: 1.2; }
-.lz-klasse small { font-size: .66rem; opacity: .7; font-variant-numeric: tabular-nums; }
+/* Passt die Zahl nicht neben den Namen („Unklassifiziert“ am Desktop), rutscht sie rechtsbündig darunter */
+.lz-klasse { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; min-width: 0; padding: 8px 10px; text-align: left; white-space: normal; }
+.lz-klasse .lz-name { flex: 1 0 auto; font-size: .78rem; line-height: 1.2; }
+.lz-klasse small { margin-left: auto; font-size: .66rem; opacity: .7; font-variant-numeric: tabular-nums; }
 .lz-feld { flex: none; width: 10px; height: 10px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); }
 .lz-skala {
   position: absolute; z-index: 2; left: 50%; top: calc(var(--gap) + 52px + env(safe-area-inset-top)); transform: translateX(-50%);
@@ -2261,4 +2262,18 @@ body { font-variant-numeric: tabular-nums; }
   .lz-skala { left: calc(50% + 192px); }
   .seite-zu .lz-fuss { left: calc(64px + 16px); }
   .seite-zu .lz-tipp, .seite-zu .lz-skala { left: calc(50% + 32px); }
+}
+
+/* Handy quer: Eine offene Leiste nimmt fast die ganze Höhe, die Säule darüber
+   rutschte unter die Suchzeile. Dann wie auf großen Bildschirmen ins Eck unten rechts, und die
+   Leisten lassen beidseits Platz für sie (mittig bleibt mittig). Am Dateiende,
+   damit es die Breiten der einzelnen Leisten überstimmt. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 1009px) {
+  :root { --saeule: var(--gap); --grund: 6px; }
+  .bar, .quellen, .live, .radar, .sheet { width: min(640px, calc(100% - 2 * (42px + 2 * var(--gap)))); }
+  /* Das Messmenü steht wie dort über einer offenen Leiste */
+  .mess-menue { z-index: 510; }
+  /* Datenhinweis und Tour-Angebot breiter und dafür niedriger — 300 px breit
+     reichten sie über dem ©-Kasten bis über die Suchzeile */
+  .tour-angebot { width: min(560px, calc(100vw - 2 * (42px + 2 * var(--gap)))); }
 }
