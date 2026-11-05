@@ -7428,6 +7428,7 @@ const LASER_QUELLE = 'Bayerische Vermessungsverwaltung (CC BY 4.0), bearbeitet';
 const LASER_ATTR = landQuelle('Laserpunkte', ['by']);
 let laserAn = false;
 let laserStelle = null;      // { e, n } — Mitte des Rahmens in UTM32
+let laserZiel = null;        // { e, n, text } — gesuchte Stelle, im Viewer hervorgehoben
 let laserSeite = 200;
 let laserNurBoden = false;
 const laserGroessen = new Map();   // Kachel → Bytes; 0 = gibt es nicht, −1 = unbekannt, null = wird geprüft
@@ -7446,6 +7447,7 @@ function laserStart() {
   if (mappeOffen) { mappeOffen = false; mappeStand = ''; mappeFertig = null; }
   laserAn = true;
   laserStelle = null;
+  laserZiel = null;
   laserFehler = '';
   laserLaedt = null;
   map.closePopup();
@@ -7462,6 +7464,7 @@ function laserStart() {
 function laserEnde(zeigen = true) {
   laserAn = false;
   laserStelle = null;
+  laserZiel = null;
   laserLaedt = null;
   // Mit dem Worker geht auch der Speicher der Kacheln
   if (laserWerk) { laserWerk.terminate(); laserWerk = null; }
@@ -7497,6 +7500,69 @@ async function laserGebaeude(e0, n0, e1, n1) {
   const gesehen = new Set();
   return listen.flat().filter(b => b.bb[2] >= e0 && b.bb[0] <= e1 && b.bb[3] >= n0 && b.bb[1] <= n1
     && !gesehen.has(b.id) && gesehen.add(b.id));
+}
+
+/** Rechteck in UTM32 → [Süd, West, Nord, Ost] in Grad, über alle vier Ecken. */
+function laserGrad(e0, n0, e1, n1) {
+  const ecken = laserEcken(e0, n0, e1, n1);
+  return [Math.min(...ecken.map(c => c[0])), Math.min(...ecken.map(c => c[1])),
+    Math.max(...ecken.map(c => c[0])), Math.max(...ecken.map(c => c[1]))];
+}
+
+/* Streckenachsen der DB InfraGO im Ausschnitt, für die 3D-Ansicht. Alle
+ * Strecken, deren Abschnitte den Rahmen berühren — parallele also mit, je
+ * Abschnitt die Art (0 Achse, 1 Richtungsgleis, 2 Gegenrichtungsgleis). Die
+ * Höhe gibt erst laser.js dazu, vom Laserboden. */
+async function laserAchsen(e0, n0, e1, n1) {
+  const [s, w, n, o] = laserGrad(e0, n0, e1, n1);
+  const nummern = await ifgNummernImRechteck(s, w, n, o, 80);
+  if (!nummern) return [];
+  const strecken = await Promise.all([...nummern].map(nr => ifgStrecke(nr).catch(() => null)));
+  const raus = [];
+  for (const st of strecken) {
+    if (!st) continue;
+    for (const g of st.abschnitte) {
+      if (g.bb[2] < s || g.bb[0] > n || g.bb[3] < w || g.bb[1] > o) continue;
+      raus.push({ nr: st.nr, ri: g.ri, pts: g.pts.map(p => utm32Hin(p.lat, p.lon)) });
+    }
+  }
+  return raus;
+}
+
+/* Sichtbare KML-Dateien im Ausschnitt: Punkte, Linien, Flächen als Umring.
+ * Höhen aus der KML bleiben außen vor — die meisten Dateien tragen keine oder
+ * eine in unbekanntem Bezug; laser.js legt alles auf den Laserboden. */
+function laserKml(e0, n0, e1, n1) {
+  const [s, w, n, o] = laserGrad(e0, n0, e1, n1);
+  const drin = ([la, lo]) => la >= s && la <= n && lo >= w && lo <= o;
+  const raus = [];
+  for (const a of kmlAkten) {
+    if (!a.sichtbar) continue;
+    for (const ob of a.objekte) {
+      if (!kmlSichtbarObj(a, ob)) continue;
+      const linie = ob.art === 'l' ? ob.koord : ob.art === 'a' ? [...ob.koord[0], ob.koord[0][0]] : null;
+      if (ob.art === 'p' ? !drin(ob.koord) : !linie.some(drin)) continue;
+      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe,
+        pts: (ob.art === 'p' ? [ob.koord] : linie).map(([la, lo]) => utm32Hin(la, lo)) });
+    }
+  }
+  return raus;
+}
+
+/* Aus dem Ergebnis heraus (Knopf „3D“): Rahmen auf den gesuchten Ort, laden,
+ * und dort in der Ansicht hervorgehoben. */
+function laserAufErgebnis() {
+  const p = view.point;
+  if (!p) return;
+  const text = $('#bottom .bb-title') ? $('#bottom .bb-title').textContent : '';
+  laserStart();
+  const [e, n] = utm32Hin(p.lat, p.lon);
+  laserZiel = { e, n, text };
+  laserStelle = { e, n };
+  laserNeuGewaehlt();
+  const { e0, n0, e1, n1 } = laserBereich();
+  kartePassen(L.latLngBounds(laserEcken(e0, n0, e1, n1)), { padding: [30, 30], maxZoom: 17 });
+  laserLaden();
 }
 
 /** Die Kacheln, die der Rahmen berührt — eine bis vier. */
@@ -7676,6 +7742,7 @@ async function laserLaden() {
         const da = namen.filter(k => !m.fehlen.includes(k));
         laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden,
           utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude,
+          achsen: laserAchsen, kml: laserKml, ziel: laserZiel,
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); } });
       } catch (err) {
@@ -10642,6 +10709,12 @@ function renderBottom() {
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.6" cy="18" r="2.2"/><path d="M7.8 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h9.2"/><path d="M15.6 3.4 18.2 6l-2.6 2.6"/></svg>
       </button>`;
 
+  /* Laserpunkte am Ergebnis (nur Bayern): öffnet den Viewer gleich dort,
+   * die Stelle darin hervorgehoben (laserAufErgebnis). */
+  const laserKnopfBB = inLandRahmen('by', p.lat, p.lon)
+    ? `<button type="button" id="laser3dBtn" class="bb-ikon lz-3d" aria-label="Laserpunkte in 3D" title="Laserpunkte in 3D">3D</button>`
+    : '';
+
   b.hidden = false;
   b.innerHTML = `
     ${umschalt}
@@ -10681,6 +10754,7 @@ function renderBottom() {
       <a id="mapsBtn" class="maps" href="${gmapsUrl(p.lat, p.lon)}"${svAttr(p.lat, p.lon)} target="_blank" rel="noopener">Google Maps${SV_HINWEIS}</a>
       ${routeKnopfBB}
       ${profilKnopf}
+      ${laserKnopfBB}
     </div>`;
 
   bindBottom();
@@ -11150,6 +11224,9 @@ function bindBottom() {
 
   const gp = $('#gpBtn');
   if (gp) gp.addEventListener('click', () => gpStart());
+
+  const laser3d = $('#laser3dBtn');
+  if (laser3d) laser3d.addEventListener('click', laserAufErgebnis);
 
   const route = $('#routeBtn');
   if (route && view.point) route.addEventListener('click', () =>

@@ -573,6 +573,12 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   Gebäude mit Mitte im Ausschnitt. Gezeichnet **nach** dem EDL-Bild halb durchsichtig (`GEB_FS`), verdeckt
   von Hand gegen die Tiefe der Punkte mit 0,3 m Spielraum (sonst zersieben die Dachpunkte das Dach).
   Quellenangabe oben setzt `quellenNeu` nach dem, was geladen ist.
+- **Auflagen** (05.11.2026): Streckenachsen der DB InfraGO (`laserAchsen`, alle Abschnitte jeder Strecke, die
+  den Rahmen berührt — parallele mit), sichtbare KML-Objekte (`laserKml`, ohne KML-Höhen) und die gesuchte
+  Stelle (`laserZiel`, Knopf „3D“ `#laser3dBtn` in der Ergebnisleiste, nur Bayern → `laserAufErgebnis`).
+  `laser.js` legt alles alle 1 m (Ausschnitt > 300 m: 2 m) per `bodenHoehe` auf den Laserboden, ohne
+  Tiefentest (sichtbar unter Bäumen); ohne Boden im Umkreis von 32 m setzt die Linie aus. Schalter unter
+  „Auflagen“ in der Tafel. Kleine Schilder, die ein großes berühren, treten über alle Gruppen zurück (`bild`).
 - Namensnennung CC BY 4.0: `LASER_QUELLE` (unten in der Ansicht, mit „ausgeschnitten und
   ausgedünnt") und `LASER_ATTR` (Kartenattribution, solange Laserpunkte offen ist).
 

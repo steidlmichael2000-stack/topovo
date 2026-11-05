@@ -138,6 +138,11 @@ const GEB_FS = `
     if (t < 1.0 && linear(gl_FragCoord.z) > linear(t) + 0.3) discard;
     gl_FragColor = vec4(farbe * vHell, deckung);
   }`;
+/* Streckenachsen der DB InfraGO: der helle Lapis-Ton (wie im Dunkelmodus der
+ * App), Ziel der Suche rot wie ein Kartenpin — Orange trägt schon das Messen. */
+const ACHS_FARBE = '#55a5e7';
+const ZIEL_FARBE = '#ff453a';
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 // Boden im Sinne der BVV: Boden, Gewässer, abgeleiteter Boden (wie in laser-werk.js)
 const BODEN = new Set([2, 9, 23, 24]);
 
@@ -220,6 +225,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       <p class="pal-label">Gebäude</p>
       <button type="button" class="seg-btn lz-klasse lz-geb" aria-pressed="false">
         <span class="lz-feld" style="background:#e4e7ec"></span><span class="lz-name">3D-Gebäudemodell LoD2</span><small></small></button>
+      <p class="pal-label">Auflagen</p>
+      <div class="lz-klassen">
+        <button type="button" class="seg-btn lz-klasse lz-achsen" aria-pressed="false">
+          <span class="lz-feld" style="background:${ACHS_FARBE}"></span><span class="lz-name">Streckenachsen</span><small></small></button>
+        <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden>
+          <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">KML</span><small></small></button>
+      </div>
       <label class="slider-row">Schatten
         <input type="range" class="lz-licht" min="0" max="100" step="5" value="50">
         <span class="slider-val lz-licht-wert"></span>
@@ -494,7 +506,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   }
   const quellenNeu = () => {
     const was = ['Laserdaten', luftbild && 'Luftbild', geb && 'Gebäude LoD2'].filter(Boolean);
-    $('.lz-fuss').textContent = `${was.join(', ').replace(/, ([^,]*)$/, ' und $1')}: ${info.quelle}`;
+    $('.lz-fuss').textContent = `${was.join(', ').replace(/, ([^,]*)$/, ' und $1')}: ${info.quelle}` +
+      (achsen && achsen.anzahl ? ' · Streckenachsen: DB InfraGO (CC BY 4.0), bearbeitet' : '');
   };
 
   /* ---------- Färbung nach Luftbild ----------
@@ -842,6 +855,168 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       gebKnopf.classList.remove('laedt');
     }
   });
+
+  /* ---------- Auflagen: Streckenachsen, KML, gesuchte Stelle ----------
+   * Alles kommt zweidimensional aus app.js (laserAchsen, laserKml: UTM32) und
+   * wird hier auf den Laserboden gelegt (bodenHoehe), alle SCHRITT Meter ein
+   * Stützpunkt, damit die Linie dem Gelände folgt statt durch Dämme und
+   * Einschnitte zu schneiden. Wo im Umkreis von 32 m kein Boden ist, setzt
+   * die Linie aus. Immer obenauf (ohne Tiefentest): Die Achse soll auch unter
+   * Bäumen und Oberleitung zu sehen sein. */
+  const auflSzene = new THREE.Scene();
+  const SCHRITT = halb > 150 ? 2 : 1;
+  const ANHEBEN = 0.05;               // knapp über dem Boden, sonst flimmert sie mit den Bodenpunkten
+  const auflKugeln = [];              // bleiben auf dem Schirm gleich groß (bild)
+  let achsen = null, kmlAufl = null, zielAufl = null;
+  const achsKnopf = $('.lz-achsen'), kmlKnopf = $('.lz-kml');
+
+  /** Linienzug in UTM32 → Stücke auf dem Boden (Vector3, lokal), auf den Ausschnitt beschnitten. */
+  function aufBoden(pts) {
+    const stuecke = [];
+    let lauf = [];
+    const setzen = (x, y) => {
+      const b = Math.abs(x) <= halb && Math.abs(y) <= halb ? bodenHoehe(x, y) : null;
+      if (b) { lauf.push(new THREE.Vector3(x, y, b.z + ANHEBEN)); return; }
+      if (lauf.length > 1) stuecke.push(lauf);
+      lauf = [];
+    };
+    for (let i = 0; i < pts.length; i++) {
+      const x = pts[i][0] - d.mitte[0], y = pts[i][1] - d.mitte[1];
+      if (i === 0) { setzen(x, y); continue; }
+      const x0 = pts[i - 1][0] - d.mitte[0], y0 = pts[i - 1][1] - d.mitte[1];
+      // Kanten ganz außerhalb überspringen, ohne sie abzutasten
+      if (Math.max(x0, x) < -halb || Math.min(x0, x) > halb || Math.max(y0, y) < -halb || Math.min(y0, y) > halb) {
+        if (lauf.length > 1) stuecke.push(lauf);
+        lauf = [];
+        continue;
+      }
+      const teile = Math.max(1, Math.ceil(Math.hypot(x - x0, y - y0) / SCHRITT));
+      for (let k = 1; k <= teile; k++) setzen(x0 + (x - x0) * k / teile, y0 + (y - y0) * k / teile);
+    }
+    if (lauf.length > 1) stuecke.push(lauf);
+    return stuecke;
+  }
+  function auflLinie(punkte, mat) {
+    const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(punkte), mat);
+    l.renderOrder = 5;
+    return l;
+  }
+  function auflZeigen(a, knopf, an, text) {
+    knopf.classList.toggle('is-on', an);
+    knopf.setAttribute('aria-pressed', String(an));
+    knopf.querySelector('small').textContent = an ? text : 'aus';
+    if (a) {
+      a.gruppe.visible = an;
+      for (const sch of a.schilder) sch.el.hidden = true;     // bild zeigt die sichtbaren wieder
+    }
+    neu = true;
+  }
+
+  /* Streckenachsen: je Strecke eine Nummer am längsten Stück, parallele
+   * Strecken im Ausschnitt alle (laserAchsen nimmt jede, die ihn berührt). */
+  const achsMat = new THREE.LineBasicMaterial({ color: ACHS_FARBE, depthTest: false });
+  async function achsenLaden() {
+    achsKnopf.classList.add('laedt');
+    achsKnopf.querySelector('small').textContent = 'lädt …';
+    let liste = [];
+    try { liste = await info.achsen(d.mitte[0] - halb, d.mitte[1] - halb, d.mitte[0] + halb, d.mitte[1] + halb); }
+    catch (err) { console.warn(err); }
+    if (!laeuft) return;
+    achsKnopf.classList.remove('laedt');
+    const gruppe = new THREE.Group(), schilder = [], laengste = new Map();
+    for (const a of liste) {
+      for (const st of aufBoden(a.pts)) {
+        gruppe.add(auflLinie(st, achsMat));
+        const l = st.length;
+        if (!laengste.has(a.nr) || laengste.get(a.nr).length < l) laengste.set(a.nr, st);
+      }
+    }
+    /* Die Nummer nicht in die Mitte, da steht die gesuchte Stelle: an den
+     * Punkt des Stücks, der gut halbwegs zum Rand liegt. */
+    for (const [nr, st] of laengste) {
+      const p = st.reduce((a, q) => Math.abs(Math.hypot(q.x, q.y) - halb * 0.6) < Math.abs(Math.hypot(a.x, a.y) - halb * 0.6) ? q : a);
+      schilder.push(schild(p, `Strecke ${nr}`, 'achse'));
+    }
+    auflSzene.add(gruppe);
+    achsen = { gruppe, schilder, anzahl: laengste.size };
+    quellenNeu();
+    const text = laengste.size ? `${laengste.size} ${laengste.size === 1 ? 'Strecke' : 'Strecken'}` : 'keine';
+    auflZeigen(achsen, achsKnopf, true, text);
+    if (!laengste.size) hinweis(liste.length ? 'Unter den Streckenachsen liegen hier keine Bodenpunkte.' : 'Im Ausschnitt liegt keine Streckenachse der DB InfraGO.');
+  }
+  achsKnopf.addEventListener('click', () => {
+    if (!achsen) return;
+    const an = !achsen.gruppe.visible;
+    auflZeigen(achsen, achsKnopf, an, `${achsen.anzahl} ${achsen.anzahl === 1 ? 'Strecke' : 'Strecken'}`);
+  });
+
+  /* KML: Punkte als Kugel in der Farbe der Datei, Linien und Flächenränder auf
+   * dem Boden. Namen nur bis KML_NAMEN_MAX — sonst deckt Text die Wolke zu. */
+  const KML_NAMEN_MAX = 150;
+  const kmlMats = new Map();
+  const kmlMat = (farbe, art) => {
+    const k = art + farbe;
+    if (!kmlMats.has(k)) kmlMats.set(k, art === 'p'
+      ? new THREE.MeshBasicMaterial({ color: farbe, depthTest: false })
+      : new THREE.LineBasicMaterial({ color: farbe, depthTest: false }));
+    return kmlMats.get(k);
+  };
+  function kmlBauen() {
+    const liste = info.kml ? info.kml(d.mitte[0] - halb, d.mitte[1] - halb, d.mitte[0] + halb, d.mitte[1] + halb) : [];
+    const gruppe = new THREE.Group(), schilder = [];
+    let punkte = 0;
+    for (const o of liste) {
+      if (o.art === 'p') {
+        const x = o.pts[0][0] - d.mitte[0], y = o.pts[0][1] - d.mitte[1];
+        if (Math.abs(x) > halb || Math.abs(y) > halb) continue;
+        const b = bodenHoehe(x, y);
+        const p = new THREE.Vector3(x, y, (b ? b.z : zLo) + ANHEBEN);
+        const k = new THREE.Mesh(kugelGeo, kmlMat(o.farbe, 'p'));
+        k.position.copy(p);
+        k.renderOrder = 6;
+        k.userData.faktor = 0.7;
+        gruppe.add(k);
+        auflKugeln.push(k);
+        punkte++;
+        if (o.name) schilder.push(schild(p, esc(o.name), 'kml', 'rechts'));
+      } else {
+        for (const st of aufBoden(o.pts)) gruppe.add(auflLinie(st, kmlMat(o.farbe, 'l')));
+      }
+    }
+    if (schilder.length > KML_NAMEN_MAX) { for (const s of schilder) s.el.remove(); schilder.length = 0; }
+    auflSzene.add(gruppe);
+    kmlAufl = { gruppe, schilder, anzahl: liste.length, punkte };
+    if (!liste.length) return;
+    kmlKnopf.hidden = false;
+    auflZeigen(kmlAufl, kmlKnopf, true, `${liste.length.toLocaleString('de-DE')}`);
+  }
+  kmlKnopf.addEventListener('click', () => {
+    if (!kmlAufl) return;
+    auflZeigen(kmlAufl, kmlKnopf, !kmlAufl.gruppe.visible, `${kmlAufl.anzahl.toLocaleString('de-DE')}`);
+  });
+
+  /* Die gesuchte Stelle (Knopf „3D“ am Ergebnis): roter Stab 6 m hoch über dem
+   * Boden, Kugel am Fuß, Schild mit dem Kilometer obendrüber. */
+  const zielMat = new THREE.MeshBasicMaterial({ color: ZIEL_FARBE, depthTest: false });
+  const zielLinieMat = new THREE.LineBasicMaterial({ color: ZIEL_FARBE, depthTest: false });
+  function zielBauen() {
+    const z = info.ziel;
+    if (!z) return;
+    const x = z.e - d.mitte[0], y = z.n - d.mitte[1];
+    if (Math.abs(x) > halb || Math.abs(y) > halb) return;
+    const b = bodenHoehe(x, y);
+    const fuss = new THREE.Vector3(x, y, (b ? b.z : zLo) + ANHEBEN), kopf = fuss.clone().setZ(fuss.z + 6);
+    const gruppe = new THREE.Group();
+    const k = new THREE.Mesh(kugelGeo, zielMat);
+    k.position.copy(fuss);
+    k.renderOrder = 7;
+    k.userData.faktor = 1.6;
+    auflKugeln.push(k);
+    gruppe.add(k, auflLinie([fuss, kopf], zielLinieMat));
+    auflSzene.add(gruppe);
+    const text = `<b>${esc(z.text || 'Gesuchte Stelle')}</b>${b ? `<br>Boden ${nhn(fuss.z - ANHEBEN)} m` : ''}`;
+    zielAufl = { gruppe, schilder: [schild(kopf, text, 'gross ziel')] };
+  }
 
   /* ---------- Export (nur am Desktop, Spalte „Export“) ----------
    * Gerechnet wird in laser-werk.js aus den Kacheln im Vorrat, mit voller
@@ -1453,9 +1628,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     neu = false;
     tiefeAnpassen();
     // Messkugeln bleiben auf dem Schirm gleich groß
-    for (const k of kugeln) k.scale.setScalar(kamera === orthoKamera
+    for (const k of [...kugeln, ...auflKugeln]) k.scale.setScalar((k.userData.faktor || 1) * (kamera === orthoKamera
       ? (orthoKamera.top - orthoKamera.bottom) / orthoKamera.zoom * 0.0045
-      : kamera.position.distanceTo(k.position) * 0.006);
+      : kamera.position.distanceTo(k.position) * 0.006));
     if (ortGruppe.visible) {
       const s = kamera === orthoKamera ? (orthoKamera.top - orthoKamera.bottom) / orthoKamera.zoom * 0.007
         : kamera.position.distanceTo(ortGruppe.position) * 0.009;
@@ -1469,27 +1644,31 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     renderer.render(schirmSzene, schirmKamera);
     renderer.autoClear = false;
     if (geb && geb.gruppe.visible) renderer.render(gebSzene, kamera);
+    renderer.render(auflSzene, kamera);
     renderer.render(messSzene, kamera);
     renderer.autoClear = true;
     // Beschriftungen der Messungen an ihre Stelle im Bild
     const r = flaeche.getBoundingClientRect();
     const mitOrt = ortSchild && ortGruppe.visible ? [{ schilder: [ortSchild] }] : [];
-    for (const m of [...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
+    const aufl = [achsen, kmlAufl, zielAufl].filter(a => a && a.gruppe.visible);
+    for (const m of [...aufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
       for (const sch of m.schilder) {
         v.copy(sch.p).project(kamera);
         const sicht = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2;
         sch.el.hidden = !sicht;
         if (sicht) sch.el.style.transform = `translate(${(v.x + 1) / 2 * r.width}px, ${(1 - v.y) / 2 * r.height}px) ${sch.lage}`;
       }
-      /* Bei schmalen Flächen lagen die Seitenlängen unter der Fläche in der Mitte:
-       * Ein kleines Schild, das ein großes (Fläche, Σ, Δh) berührt, tritt zurück */
-      const gross = m.schilder.filter(s => !s.el.hidden && s.el.classList.contains('gross')).map(s => s.el.getBoundingClientRect());
-      if (gross.length) {
-        for (const sch of m.schilder) {
-          if (sch.el.hidden || sch.el.classList.contains('gross')) continue;
-          const k = sch.el.getBoundingClientRect();
-          if (gross.some(g => k.left < g.right && k.right > g.left && k.top < g.bottom && k.bottom > g.top)) sch.el.hidden = true;
-        }
+    }
+    /* Bei schmalen Flächen lagen die Seitenlängen unter der Fläche in der Mitte:
+     * Ein kleines Schild, das ein großes (Fläche, Σ, Δh, gesuchte Stelle) berührt,
+     * tritt zurück — über alle Messungen und Auflagen hinweg. */
+    const alle = [...aufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt].flatMap(m => m.schilder).filter(s => !s.el.hidden);
+    const gross = alle.filter(s => s.el.classList.contains('gross')).map(s => s.el.getBoundingClientRect());
+    if (gross.length) {
+      for (const sch of alle) {
+        if (sch.el.classList.contains('gross')) continue;
+        const k = sch.el.getBoundingClientRect();
+        if (gross.some(g => k.left < g.right && k.right > g.left && k.top < g.bottom && k.bottom > g.top)) sch.el.hidden = true;
       }
     }
   }
@@ -1514,6 +1693,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   setTimeout(() => tipp.classList.add('weg'), 6000);
   reglerZeigen();
   faerben();
+  zielBauen();
+  kmlBauen();
+  achsenLaden();
   bild();
 
   function schliessen() {
@@ -1528,6 +1710,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     ortRand.geometry.dispose(); ortRandMat.dispose(); ortMat.dispose(); ortFlaecheGeo.dispose(); ortFlaecheMat.dispose();
     ortRing.geometry.dispose(); ortRingMat.dispose();
     if (geb) geb.gruppe.children.forEach(c => c.geometry.dispose());
+    auflSzene.traverse(o => { if (o.geometry && o.geometry !== kugelGeo) o.geometry.dispose(); });
+    achsMat.dispose(); zielMat.dispose(); zielLinieMat.dispose(); kmlMats.forEach(m => m.dispose());
     gebFlaecheMat.dispose(); gebKanteMat.dispose();
     geo.dispose(); material.dispose(); edl.dispose(); ziel.dispose(); schirm.geometry.dispose();
     kugelGeo.dispose(); kugelMat.dispose(); linieMat.dispose(); strichMat.dispose();
