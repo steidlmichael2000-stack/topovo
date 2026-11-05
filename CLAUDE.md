@@ -560,7 +560,7 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   Messpunkt abfängt, schließt `zugEnde` die Fläche (Zug ohne Weg auf dem ersten Punkt) — die Prüfung in
   `messTipp` kam nie zum Zug (bis 05.11.2026). Kleine Schilder, die ein großes (Fläche, Σ, Δh)
   berühren, blendet `bild` aus. Messfarbe `--warn` wie in der App. Regler „Schatten“ (nicht „Licht“), Intensität per Histogrammausgleich (`iRang`).
-- **Standort, Luftbild, Gebäude** (05.11.2026, lokal, noch nicht gepusht): `laserAnsicht` bekommt `utm`,
+- **Standort, Luftbild, Gebäude** (05.11.2026, v103): `laserAnsicht` bekommt `utm`,
   `luftbild` (`laserLuftbildUrl`, DOP20 BVV direkt in EPSG:25832, CORS auch für localhost) und `gebaeude`
   (`laserGebaeude` → `gebaeudeKachel`) aus `app.js`. Standort: eigenes `watchPosition` im Viewer (Knopf über
   der Startansicht bzw. „Standort“ in der Spalte), Höhe = Median der Bodenpunkte (2, 9, 23, 24) im Umkreis
