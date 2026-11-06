@@ -2021,32 +2021,51 @@ const OFM_DUNKEL = 'https://tiles.openfreemap.org/styles/dark';
 const OFM_KACHELN = 'https://tiles.openfreemap.org/planet';
 const OFM_GLYPHEN = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
 const OFM_QUELLE = '<a href="https://openfreemap.org/">OpenFreeMap</a> &copy; OpenMapTiles, Daten &copy; OpenStreetMap';
-// Nur noch die Parzellen — DOP20 und Relief nennen die Länder selbst (LAND_URHEBER)
-const BVV_QUELLE = 'Parzellen: <a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (CC BY 4.0)';
-/* Urheber je Land, wie es die Dienste verlangen; wo ein Jahr des Datenbezugs
- * gefordert ist, das laufende. Das DOP20 nennt nur die Länder, die gerade im
- * Bild sind (dopQuelleErneuern), das Relief kommt immer aus Bayern und BW. */
+/* Lizenzen als Link: CC BY 4.0 (Abschnitt 3(a)(1)(C)) und die Datenlizenz
+ * Deutschland verlangen den Lizenztext oder einen Verweis darauf, und zwar
+ * dort, wo die Daten zu sehen sind. Die Kürzel stehen deshalb nie nackt da. */
+const lizenzLink = (url, text) => `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+const LIZENZ_URL = {
+  ccby: 'https://creativecommons.org/licenses/by/4.0/deed.de',
+  dlby: 'https://www.govdata.de/dl-de/by-2-0',
+  dlzero: 'https://www.govdata.de/dl-de/zero-2-0'
+};
+const CC_BY = lizenzLink(LIZENZ_URL.ccby, 'CC BY 4.0');
+const DL_BY = lizenzLink(LIZENZ_URL.dlby, 'dl-de/by-2-0');
+const DL_ZERO = lizenzLink(LIZENZ_URL.dlzero, 'dl-de/zero-2-0');
+// Nur noch die Parzellen — DOP20 und Relief nennen die Länder selbst (LAND_URHEBER).
+// „bearbeitet“: Die Umringe werden auf dem Gerät umgefärbt (ParzWms).
+const BVV_QUELLE = `Parzellen: <a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (${CC_BY}), bearbeitet`;
+/* Urheber je Land, wie es die Dienste verlangen (Wortlaut aus Fees bzw.
+ * AccessConstraints der GetCapabilities, am 06.11.2026 nachgesehen); wo ein Jahr
+ * des Datenbezugs gefordert ist, das laufende. Bremen nennt nur „CC-BY“ ohne
+ * Fassung — so übernommen, verlinkt auf die geltende 4.0. Das DOP20 nennt nur
+ * die Länder, die gerade im Bild sind (dopQuelleErneuern), das Relief kommt
+ * immer aus Bayern und BW. */
 const JAHR = new Date().getFullYear();
 const LAND_URHEBER = {
-  by: '<a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (CC BY 4.0)',
-  bw: `<a href="https://www.lgl-bw.de/">LGL-BW</a> (${JAHR}, dl-de/by-2-0)`,
-  nw: 'Geobasis NRW (dl-de/zero-2-0)',
-  ni: `LGLN (${JAHR}, CC BY 4.0)`,
-  he: 'HVBG (dl-de/zero-2-0)',
-  rp: `GeoBasis-DE / LVermGeoRP (${JAHR}, dl-de/by-2-0)`,
-  sl: 'GeoBasis-DE / LVGL-SL (dl-de/by-2-0)',
-  th: '© GDI-Th (CC BY 4.0)',
-  sn: 'GeoSN (dl-de/by-2-0)',
-  st: 'GeoBasis-DE / LVermGeo LSA (dl-de/by-2-0)',
-  bb: 'GeoBasis-DE/LGB (dl-de/by-2-0)',
-  be: 'Geoportal Berlin (dl-de/zero-2-0)',
-  mv: `GeoBasis-DE/M-V ${JAHR}`,
-  sh: 'GeoBasis-DE/LVermGeo SH (CC BY 4.0)',
-  hb: 'Landesamt GeoInformation Bremen (CC BY)',
-  hh: 'FHH, LGV (dl-de/by-2-0)'
+  by: `<a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (${CC_BY})`,
+  bw: `<a href="https://www.lgl-bw.de/">LGL-BW</a> (${JAHR}, ${DL_BY})`,
+  nw: `Geobasis NRW (${DL_ZERO})`,
+  ni: `LGLN (${JAHR}, ${CC_BY})`,
+  he: `HVBG (${DL_ZERO})`,
+  rp: `GeoBasis-DE / LVermGeoRP (${JAHR}, ${DL_BY})`,
+  sl: `GeoBasis-DE / LVGL-SL (${DL_BY})`,
+  th: `© GDI-Th (${CC_BY})`,
+  sn: `GeoSN (${DL_BY})`,
+  st: `GeoBasis-DE / LVermGeo LSA (${DL_BY})`,
+  bb: `GeoBasis-DE/LGB (${DL_BY})`,
+  be: `Geoportal Berlin (${DL_ZERO})`,
+  mv: `© GeoBasis-DE/M-V ${JAHR}`,
+  sh: `© GeoBasis-DE/LVermGeo SH/${CC_BY}`,
+  hb: `Landesamt GeoInformation Bremen (${lizenzLink(LIZENZ_URL.ccby, 'CC BY')})`,
+  hh: `FHH, LGV (${DL_BY})`
 };
-const landQuelle = (was, laender) => `${was}: ${laender.map(l => LAND_URHEBER[l]).join(', ')}`;
-const RELIEF_QUELLE = landQuelle('Relief', ['by', 'bw']);
+/* bearbeitet: an Landesgrenzen setzt die App die Bilder je Bildpunkt aus
+ * mehreren Diensten zusammen (dopMaske) — dann ist es eine Bearbeitung. */
+const landQuelle = (was, laender, bearbeitet = false) =>
+  `${was}: ${laender.map(l => LAND_URHEBER[l]).join(', ')}${bearbeitet ? ', bearbeitet' : ''}`;
+const RELIEF_QUELLE = landQuelle('Relief', ['by', 'bw'], true);
 
 /* Die Bilder für MapLibre — dieselben Dienste und Grenzen wie die Leaflet-
  * Ebenen in initMap. DOP20 und Relief kommen über das Protokoll land:// aus
@@ -3010,7 +3029,7 @@ async function dopQuelleErneuern() {
       const gb = grenzen[l].gb;
       return gb[0] <= n && gb[2] >= s && gb[1] <= o && gb[3] >= w;
     });
-    if (laender.length) neu = landQuelle('DOP20', laender);
+    if (laender.length) neu = landQuelle('DOP20', laender, laender.length > 1);
   }
   if (neu === dopQuelleZuletzt) return;
   if (dopQuelleZuletzt) map.attributionControl.removeAttribution(dopQuelleZuletzt);
@@ -4170,7 +4189,11 @@ function radarTexWeg(tex) {
 const RadarSchicht = L.Layer.extend({
   options: {
     pane: 'tilePane',
-    attribution: 'Regenradar: Quelle <a href="https://www.dwd.de/">Deutscher Wetterdienst</a>'
+    /* Vorlage des DWD für veränderte Daten („Datenbasis: …, Rasterdaten bildlich
+     * wiedergegeben“), dazu CC BY 4.0 — die Bilder werden zwischen den Zeitpunkten
+     * verschoben und gemischt, das Modell ICON-EU aufs Radarraster umgerechnet. */
+    attribution: `Regen: Datenbasis <a href="https://www.dwd.de/">Deutscher Wetterdienst</a> ` +
+      `(Radar, ICON-EU; ${CC_BY}), Rasterdaten bildlich wiedergegeben und zeitlich interpoliert`
   },
 
   onAdd(m) {
@@ -7570,7 +7593,9 @@ async function laserKostra(e, n) {
     hn.push(zeile);
   }
   const zelle = String(ix.zeilen - 1 - z).padStart(3, '0') + String(c).padStart(3, '0');
-  return { dauern: ix.dauern, jahre: ix.jahre, hn, zelle, quelle: ix.quelle };
+  // Vorlage des DWD für bearbeitete Daten; Hn wird hier zu Regen je Stunde umgerechnet
+  return { dauern: ix.dauern, jahre: ix.jahre, hn, zelle,
+    quelle: `Datenbasis: ${ix.quelle}, Einzelwerte umgerechnet (CC BY 4.0)` };
 }
 
 /** Gebäude aus dem LoD2 (gebaeude.js), deren Umring den Bereich berührt. */
@@ -8166,9 +8191,9 @@ const PROF_LOD2_BW_MB = 4;             // LoD2 BW: je Kilometer gepackt 2–5,4 
  * quellen). Das LGL will das Jahr des Datenbezugs in Klammern. */
 const PROF_QUELLEN = {
   by: () => 'der <a href="https://www.geodaten.bayern.de/" target="_blank" rel="noopener">' +
-    'Bayerischen Vermessungsverwaltung</a>, CC BY 4.0',
+    `Bayerischen Vermessungsverwaltung</a>, ${CC_BY}`,
   bw: () => `des <a href="https://www.lgl-bw.de/" target="_blank" rel="noopener">LGL-BW</a> ` +
-    `(${new Date().getFullYear()}), dl-de/by-2-0`
+    `(${new Date().getFullYear()}), ${DL_BY}`
 };
 
 function profQuelle(dgm) {
@@ -9429,13 +9454,31 @@ function pdfFuss(s, nr, gesamt, quellen) {
     .filter(Boolean).join(', ');
   const lgl = [quellen.bw && 'Gelände DGM1', quellen.domBw && 'Oberfläche DOM1', quellen.gebBw && 'Gebäude LoD2', quellen.dopBw && 'Luftbild DOP20']
     .filter(Boolean).join(', ');
+  /* Am Gleis (quellen.osm) kommt die Lage zuerst aus DB InfraGO (gleisLage), die
+   * OSM-Steine nur, wo InfraGO die Strecke nicht führt — beide nennen. */
   const teile = [
     bvv && `${bvv}: Bayerische Vermessungsverwaltung – www.geodaten.bayern.de, CC BY 4.0, bearbeitet.`,
     lgl && `${lgl} in BW: LGL-BW (${new Date().getFullYear()}), dl-de/by-2-0, www.lgl-bw.de, bearbeitet.`,
-    quellen.osm && 'Kilometrierung und Gleislage: © OpenStreetMap-Mitwirkende (ODbL).'
+    quellen.osm && 'Kilometrierung und Gleislage: DB InfraGO, Infrastrukturdaten (Mobilithek), CC BY 4.0, bearbeitet; ' +
+      'wo InfraGO die Strecke nicht führt: © OpenStreetMap-Mitwirkende, ODbL.'
   ].filter(Boolean);
-  s.linie([[PDF_RAND, y - 10], [s.breite - PDF_RAND, y - 10]], { farbe: F.rahmen, breite: 0.5 });
-  s.text(PDF_RAND, y, teile.join(' '), { groesse: 6.5, farbe: F.fein });
+  /* Ein Papier hat keinen Link: die Lizenztexte als Adresse (CC BY 4.0, Abschnitt 3(a)(1)(C)) */
+  const lizenzen = [
+    (bvv || quellen.osm) && 'CC BY 4.0: creativecommons.org/licenses/by/4.0/deed.de',
+    lgl && 'dl-de/by-2-0: www.govdata.de/dl-de/by-2-0',
+    quellen.osm && 'ODbL: www.openstreetmap.org/copyright'
+  ].filter(Boolean);
+  if (lizenzen.length) teile.push(`Lizenztexte: ${lizenzen.join(' · ')}.`);
+  // Umbrechen statt über den Rand laufen; die Zeilen wachsen nach oben
+  const zeilen = [], breit = s.breite - 2 * PDF_RAND;
+  for (const wort of teile.join(' ').split(' ')) {
+    const z = zeilen.length ? `${zeilen[zeilen.length - 1]} ${wort}` : wort;
+    if (zeilen.length && pdfTextBreite(z, 6.5) <= breit) zeilen[zeilen.length - 1] = z;
+    else zeilen.push(wort);
+  }
+  const y0 = y - 9 * (zeilen.length - 1);
+  s.linie([[PDF_RAND, y0 - 10], [s.breite - PDF_RAND, y0 - 10]], { farbe: F.rahmen, breite: 0.5 });
+  zeilen.forEach((z, i) => s.text(PDF_RAND, y0 + 9 * i, z, { groesse: 6.5, farbe: F.fein }));
   s.text(PDF_RAND, y + 9, 'Keine amtliche Quelle — zur Übersicht, nicht für Vermessung oder sicherheitsrelevante ' +
     'Entscheidungen. Erstellt mit Topovo.', { groesse: 6.5, farbe: F.fein });
   if (gesamt > 1) s.text(s.breite - PDF_RAND, y + 9, `Seite ${nr} von ${gesamt}`, { groesse: 7, farbe: F.fein, anker: 'end' });
@@ -13587,7 +13630,11 @@ async function wetterHolen() {
     $('#wetterFeuchte').textContent = `${nfM.format(c.relative_humidity_2m)} %`;
     const zeit = (c.time || '').slice(11, 16);
     ort.textContent = `${standort ? 'Eigener Standort' : 'Kartenmitte'} · ${nfM.format(Number.isFinite(hoehe) ? hoehe : j.elevation)} m ` +
-      `${Number.isFinite(hoehe) ? 'ü. NHN (DGM1)' : '(Höhenmodell des Dienstes)'} · Stand ${zeit} Uhr · Open-Meteo`;
+      `${Number.isFinite(hoehe) ? 'ü. NHN (DGM1)' : '(Höhenmodell des Dienstes)'} · Stand ${zeit} Uhr · `;
+    // Open-Meteo gibt seine Werte unter CC BY 4.0 und bittet um Link — als Knoten, die Zeit kommt vom Dienst
+    const om = document.createElement('span');
+    om.innerHTML = `Wetterdaten <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (${CC_BY})`;
+    ort.append(om);
     wetterZuletzt = Date.now();
   } catch (err) {
     ort.textContent = navigator.onLine === false ? 'Ohne Netz gibt es keine Wetterwerte.' : `Nicht erreichbar (${err.message}).`;

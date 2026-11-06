@@ -1776,7 +1776,9 @@ Bahn-Layer von
 [OpenRailwayMap](https://www.openrailwaymap.org/) (CC-BY-SA 2.0), Luftbilder von den
 Vermessungsverwaltungen der Länder (siehe Quellenangabe in der App),
 dunkle Karte, Straßen und Ortsnamen von [OpenFreeMap](https://openfreemap.org/) (© OpenMapTiles,
-Daten © OpenStreetMap). Regenradar: Quelle [Deutscher Wetterdienst](https://www.dwd.de/).
+Daten © OpenStreetMap). Regenradar, Regenvorhersage (ICON-EU) und KOSTRA-DWD-2020: Datenbasis
+[Deutscher Wetterdienst](https://www.dwd.de/) (CC BY 4.0), Rasterdaten bildlich wiedergegeben,
+zeitlich interpoliert bzw. umgerechnet. Wetterwerte: [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0).
 DOP20, Geländerelief, Parzellarkarte und die Höhen in Profil und Höhenangabe (DGM1, DOM20): Bayerische
 Vermessungsverwaltung – [www.geodaten.bayern.de](https://www.geodaten.bayern.de/) (CC BY 4.0); das
 Profil ist daraus berechnet. DOP20, DGM1, DOM1, LoD2 und Landesgrenze in Baden-Württemberg: LGL-BW (2026), Datenlizenz Deutschland –
@@ -1791,3 +1793,11 @@ App ohne CDN und offline läuft. MapLibre zeichnet die dunkle Karte sowie Straß
 [laz-perf](https://github.com/hobuinc/laz-perf) (Apache-2.0, `vendor/copc/`), aus dem PW-Viewer
 übernommen; beide werden erst geladen, wenn jemand Laserpunkte öffnet. Laserpunkte: Bayerische
 Vermessungsverwaltung (CC BY 4.0).
+
+**Quellenvermerke (CC BY 4.0, am 06.11.2026 geprüft).** Die Lizenz verlangt den Urheber, einen
+Hinweis auf Änderungen und einen Verweis auf den Lizenztext, und zwar dort, wo die Daten zu sehen
+sind. In der App sind die Kürzel deshalb Links (`CC_BY`, `DL_BY`, `DL_ZERO` in `app.js`,
+`lizenzTextSetzen` in `laser.js`), im PDF steht die Adresse als Text (`pdfFuss`). Am Gleis nennt
+das PDF DB InfraGO und, wo InfraGO die Strecke nicht führt, OpenStreetMap. Die Wortlaute der
+Länder stammen aus Fees/AccessConstraints ihrer GetCapabilities, die des DWD aus dessen Vorlagen
+für Quellenvermerke.

@@ -2345,6 +2345,9 @@ body { font-variant-numeric: tabular-nums; }
   position: absolute; z-index: 1; left: 64px; right: 64px; top: calc(var(--gap) + 13px + env(safe-area-inset-top));
   margin: 0; text-align: center; font-size: .62rem; line-height: 1.4; color: var(--muted); pointer-events: none;
 }
+/* Die Lizenzlinks darin bleiben antippbar, die Fläche drumherum nicht */
+.lz-fuss a { pointer-events: auto; color: inherit; }
+.lz-regen-kostra a { color: inherit; }
 /* Bedienung beim Öffnen, verblasst nach einigen Sekunden */
 .lz-tipp {
   position: absolute; z-index: 1; left: 50%; bottom: calc(var(--gap) + 4px + env(safe-area-inset-bottom)); transform: translateX(-50%);

@@ -30,7 +30,25 @@ const klasseFarbe = k => (KLASSEN[k] || [0, '#c8c8c8'])[1];
 // Dieselben Töne wie die Höhenfarben auf der Karte (HOEHEN_RAMPE in app.js)
 const RAMPE = ['#2c3e94', '#2a7dc4', '#33b2b0', '#7ccc6c', '#e6dd55', '#f19a3c', '#c8382f'];
 
-const zahl = (v, s = 2) => v.toLocaleString('de-DE', { minimumFractionDigits: s, maximumFractionDigits: s });
+/* Quellenvermerk als Text, die Lizenzkürzel darin als Link auf den Lizenztext
+ * (CC BY 4.0, Abschnitt 3(a)(1)(C)). Über Knoten statt innerHTML: datenName
+ * kommt im PW-Viewer aus dem Dateinamen. */
+const LIZENZ_LINKS = {
+  'CC BY 4.0': 'https://creativecommons.org/licenses/by/4.0/deed.de',
+  'ODbL': 'https://www.openstreetmap.org/copyright',
+  'dl-de/by-2-0': 'https://www.govdata.de/dl-de/by-2-0'
+};
+function lizenzTextSetzen(el, text) {
+  el.replaceChildren();
+  for (const teil of String(text).split(/(CC BY 4\.0|ODbL|dl-de\/by-2-0)/)) {
+    if (!LIZENZ_LINKS[teil]) { if (teil) el.append(teil); continue; }
+    const a = document.createElement('a');
+    a.href = LIZENZ_LINKS[teil]; a.target = '_blank'; a.rel = 'noopener'; a.textContent = teil;
+    el.append(a);
+  }
+}
+
+const zahl = (v, s = 2) =>v.toLocaleString('de-DE', { minimumFractionDigits: s, maximumFractionDigits: s });
 
 const PUNKT_VS = `
   attribute vec3 farbe, normale;
@@ -702,9 +720,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   }
   const quellenNeu = () => {
     const was = [info.datenName || 'Laserdaten', luftbild && 'Luftbild', geb && 'Gebäude LoD2'].filter(Boolean);
-    $('.lz-fuss').textContent = `${was.join(', ').replace(/, ([^,]*)$/, ' und $1')}: ${info.quelle}` +
+    lizenzTextSetzen($('.lz-fuss'), `${was.join(', ').replace(/, ([^,]*)$/, ' und $1')}: ${info.quelle}` +
       (achsen && achsen.anzahl ? ' · Streckenachsen: DB InfraGO (CC BY 4.0), bearbeitet' : '') +
-      (strassen && strassen.gruppe.visible ? ' · Straßen: OpenFreeMap, © OpenStreetMap' : '');
+      (strassen && strassen.gruppe.visible ? ' · Straßen: OpenFreeMap, © OpenStreetMap (ODbL)' : ''));
   };
 
   /* ---------- Färbung nach Luftbild ----------
@@ -2074,9 +2092,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     $('.lz-regen-dauer-wert').textContent = w.min != null ? dauerText(w.min) : stunden(w.dauerH);
     $('.lz-regen-sicker-wert').textContent = `${regenRegler.sicker.value} mm/h`;
     $('.lz-regen-hoch-wert').textContent = `${regenRegler.hoch.value} ×`;
-    if (kostra) $('.lz-regen-kostra').textContent = w.hn != null
+    if (kostra) lizenzTextSetzen($('.lz-regen-kostra'), w.hn != null
       ? `${zahl(w.hn, 1)} mm in ${dauerText(w.min)}, im Mittel alle ${kostraJahre} ${kostraJahre === 1 ? 'Jahr' : 'Jahre'} erreicht oder überschritten · Rasterfeld ${kostra.zelle} · ${kostra.quelle}`
-      : `Eigene Werte · KOSTRA hier: Rasterfeld ${kostra.zelle}, ${kostra.quelle}`;
+      : `Eigene Werte · KOSTRA hier: Rasterfeld ${kostra.zelle}, ${kostra.quelle}`);
     if (regen) Object.assign(regen.zustand, { regenMmH: w.mmH, dauerH: w.dauerH, versickernMmH: +regenRegler.sicker.value });
     ueberhoehungSetzen(+regenRegler.hoch.value);
   }
