@@ -2204,9 +2204,14 @@ body { font-variant-numeric: tabular-nums; }
   background: var(--glass); box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 .lz-regen-leiste .lz-regen-los { box-shadow: var(--shadow); }
-/* Beim Messen steht unten die Messleiste — dann tritt die Regenleiste zurück; der Hinweis rückt darüber */
+/* Beim Messen steht unten die Messleiste — dann tritt die Regenleiste zurück */
 .lz-leiste:not([hidden]) ~ .lz-regen-leiste { display: none; }
-.lz-regen-leiste:not([hidden]) ~ .lz-tipp { bottom: calc(var(--gap) + 52px + env(safe-area-inset-bottom)); }
+/* Mit den Kennzahlen ist die Leiste bis 200 px hoch: Hinweise („Bewuchs ausgeblendet …“) lagen darüber.
+ * Solange sie steht, kommen sie oben unter die Quellenangabe. */
+.lz-regen-leiste:not([hidden]) ~ .lz-tipp { top: calc(var(--gap) + 52px + env(safe-area-inset-top)); bottom: auto; }
+/* Senkrechtes Wischen über einem Regler rollt die Tafel, statt den Wert zu ändern — am Handy hatte
+ * sich die Überhöhung beim Rollen der Regen-Tafel „von selbst“ verstellt (06.11.2026) */
+.lz-regen-tafel input[type="range"], .lz-tafel input[type="range"] { touch-action: pan-y; }
 .lz-regen-tafel .lz-seite-titel { margin: 12px 0 4px; font-size: .74rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 /* Wie der Standortknopf der Karte (.maploc): Fadenkreuz, beim Suchen gestrichelter Ring */
 .lz-ort.busy svg .ring { stroke-dasharray: 6 5; }
