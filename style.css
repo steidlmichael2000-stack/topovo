@@ -2177,6 +2177,28 @@ body { font-variant-numeric: tabular-nums; }
   backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 .lz-regen-tafel:not([hidden]) { animation: von-unten .24s var(--auf); }
+/* Start/Pause, Von vorn, Beenden am Handy unten zwischen Messen und Startansicht —
+ * so gewünscht (Bildschirmfoto 06.11.2026): erreichbar, auch wenn die Tafel zu ist */
+.lz-regen-leiste {
+  position: absolute; z-index: 2; left: calc(var(--gap) + 50px); right: calc(var(--gap) + 50px);
+  bottom: calc(var(--gap) + env(safe-area-inset-bottom)); max-width: 280px; margin: 0 auto;
+  padding: 0; border-radius: var(--r-knopf);
+}
+.lz-regen-leiste:not([hidden]) { animation: von-unten .24s var(--auf); }
+.lz-regen-leiste .lz-regen-knoepfe { margin: 0; }
+/* Kennzahlen am Handy über den Knöpfen, als Glas; Tipp klappt sie auf die Zeit zusammen */
+.lz-regen-leiste .lz-regen-werte {
+  margin: 0 0 8px; padding: 8px 12px; font-size: .74rem; cursor: pointer;
+  background: var(--glass); box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-regen-werte.knapp > :nth-child(n+3) { display: none; }
+.lz-regen-leiste .lz-regen-knoepfe button:not(.lz-regen-los) {
+  background: var(--glass); box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-regen-leiste .lz-regen-los { box-shadow: var(--shadow); }
+/* Beim Messen steht unten die Messleiste — dann tritt die Regenleiste zurück; der Hinweis rückt darüber */
+.lz-leiste:not([hidden]) ~ .lz-regen-leiste { display: none; }
+.lz-regen-leiste:not([hidden]) ~ .lz-tipp { bottom: calc(var(--gap) + 52px + env(safe-area-inset-bottom)); }
 .lz-regen-tafel .lz-seite-titel { margin: 12px 0 4px; font-size: .74rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 /* Wie der Standortknopf der Karte (.maploc): Fadenkreuz, beim Suchen gestrichelter Ring */
 .lz-ort.busy svg .ring { stroke-dasharray: 6 5; }
@@ -2353,7 +2375,7 @@ body { font-variant-numeric: tabular-nums; }
   .lz-seite .lz-mess-menue button { padding: 10px 16px; }
   .lz-seite .lz-leiste { margin-top: 12px; padding: 12px 14px 13px; border-radius: var(--r); background: var(--panel-2); position: relative; left: auto; right: auto; bottom: auto; }
   /* Die runden Knöpfe der Ecken übernimmt die Spalte */
-  .lz-einst, .lz-messen, .lz-heim, .lz-zu, .lz-regen-knopf, .lz-regen-tafel { display: none; }
+  .lz-einst, .lz-messen, .lz-heim, .lz-zu, .lz-regen-knopf, .lz-regen-tafel, .lz-regen-leiste { display: none; }
   /* Standort wie in Topovo oben rechts, nicht in der Spalte */
   .lz-ort { top: 16px; right: 16px; bottom: auto; }
   /* Fußzeile, Hinweis und Farbskala in der Mitte der freien Fläche */

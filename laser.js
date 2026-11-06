@@ -438,6 +438,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       </div>
     </div>
     <div class="lz-marken"></div>
+    <!-- Am Handy stehen Start/Pause, Von vorn, Beenden hier unten (anordnen), nicht in der Tafel.
+         Nach .lz-marken: davor hängt anordnen die Messleiste ein, und die verdrängt diese Leiste per CSS -->
+    <div class="lz-regen-leiste" hidden></div>
     <p class="lz-tipp"></p>
     <p class="lz-fuss"></p>`;
   wurzel.dataset.grund = 'verlauf';
@@ -1939,11 +1942,15 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   /* Regen am Handy: eigene Tafel über dem Regen-Knopf (links, über dem Messen).
    * Wie Tafel und Messmenü ist immer nur eins offen. */
   const regenSektion = $('[data-bereich="regen"]'), regenTafel = $('.lz-regen-tafel'), regenKnopf = $('.lz-regen-knopf');
+  const regenLeiste = $('.lz-regen-leiste'), regenKnoepfe = $('.lz-regen-knoepfe'), regenWerteEl = $('.lz-regen-werte');
+  // Am Handy: Tipp auf die Kennzahlen klappt sie auf die Zeit zusammen und wieder auf
+  regenWerteEl.addEventListener('click', () => { if (!desktop.matches) regenWerteEl.classList.toggle('knapp'); });
   function regenTafelZeigen(an) {
     if (desktop.matches) an = false;
     regenTafel.hidden = !an;
     regenKnopf.setAttribute('aria-expanded', String(an));
-    regenKnopf.classList.toggle('is-on', an || (typeof regenLaeuft !== 'undefined' && regenLaeuft));
+    regenKnopf.classList.toggle('is-on', an || regenLaeuft);
+    regenLeisteZeigen();
     if (an) { tafelZeigen(false); menueZeigen(false); regenAufZeigen(); kostraHolen(); }
   }
   regenKnopf.addEventListener('click', () => regenTafelZeigen(regenTafel.hidden));
@@ -1956,6 +1963,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       tafel.hidden = false;
       menue.hidden = false;
       seite.querySelector('[data-bereich="export"]').before(regenSektion);
+      regenSektion.querySelector('.lz-regen-vorher').after(regenKnoepfe);
+      regenSektion.querySelector('.lz-regen-stand').after(regenWerteEl);
+      regenWerteEl.classList.remove('knapp');
       regenTafelZeigen(false);
     } else {
       for (const el of [tafel, menue, leiste]) wurzel.insertBefore(el, fussVor);
@@ -1964,6 +1974,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       einst.classList.remove('is-on');
       regenTafel.appendChild(regenSektion);
       regenSektion.hidden = false;
+      regenLeiste.append(regenWerteEl, regenKnoepfe);
       regenTafelZeigen(false);
     }
     bereichZeigen();
@@ -2141,6 +2152,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     }
     return true;
   }
+  /* Leiste unten (nur am Handy): da, solange die Tafel offen ist oder ein Regen
+   * läuft oder steht — so lässt er sich anhalten, ohne die Tafel zu öffnen. */
+  function regenLeisteZeigen() {
+    regenLeiste.hidden = desktop.matches || !(!regenTafel.hidden || regenLaeuft || (regen && regen.zustand.zeit > 0));
+  }
   function regenStand(text) {
     const el = $('.lz-regen-stand');
     el.textContent = text;
@@ -2151,6 +2167,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const name = regenLaeuft ? 'Anhalten' : regen && regen.zustand.zeit > 0 ? 'Weiter' : 'Regen starten';
     regenLos.classList.toggle('laeuft', regenLaeuft);
     regenKnopf.classList.toggle('is-on', regenLaeuft || !regenTafel.hidden);
+    regenLeisteZeigen();
     regenLos.setAttribute('aria-label', name);
     regenLos.title = name;
     const da = !!regen && (regen.zustand.zeit > 0 || regenLaeuft);
