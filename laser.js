@@ -1944,7 +1944,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const regenSektion = $('[data-bereich="regen"]'), regenTafel = $('.lz-regen-tafel'), regenKnopf = $('.lz-regen-knopf');
   const regenLeiste = $('.lz-regen-leiste'), regenKnoepfe = $('.lz-regen-knoepfe'), regenWerteEl = $('.lz-regen-werte');
   // Am Handy: Tipp auf die Kennzahlen klappt sie auf die Zeit zusammen und wieder auf
-  regenWerteEl.addEventListener('click', () => { if (!desktop.matches) regenWerteEl.classList.toggle('knapp'); });
+  regenWerteEl.addEventListener('click', () => {
+    if (desktop.matches) return;
+    const knapp = regenWerteEl.classList.toggle('knapp');
+    regenWerteEl.setAttribute('aria-expanded', String(!knapp));
+  });
+  regenWerteEl.setAttribute('role', 'button');
+  regenWerteEl.setAttribute('aria-label', 'Kennzahlen ein- und ausklappen');
   function regenTafelZeigen(an) {
     if (desktop.matches) an = false;
     regenTafel.hidden = !an;
@@ -2271,7 +2277,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const zeile = (name, wert) => `<span>${name}</span><b>${wert}</b>`;
     const regnet = z.zeit < z.dauerH * 3600;
     regenWerte.innerHTML = [
-      zeile('Zeit', `${stunden(z.zeit / 3600)}${regnet ? ` von ${stunden(z.dauerH)}` : ' · Regen vorbei'}`),
+      // Pfeil nur am Handy sichtbar (CSS): Tipp auf die Kennzahlen klappt sie auf die Zeit zusammen
+      zeile('Zeit', `${stunden(z.zeit / 3600)}${regnet ? ` von ${stunden(z.dauerH)}` : ' · Regen vorbei'}<svg class="lz-klapp" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg>`),
       zeile('Gefallen', kubik(b.gefallen)),
       zeile('Steht noch', kubik(b.steht)),
       zeile(`Wasser über ${PFUETZE_CM} cm`, `${Math.round(b.nassFlaeche).toLocaleString('de-DE')} m²`),

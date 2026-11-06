@@ -620,7 +620,8 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   denselben Abschnitt `[data-bereich="regen"]` um; beim Start klappt die Tafel am Handy zu, der Knopf leuchtet.
   Am Handy stehen Knöpfe und Kennzahlen (`.lz-regen-knoepfe`, `.lz-regen-werte`) unten in `.lz-regen-leiste`
   zwischen Messen und Startansicht (v111, Bildschirmfoto des Nutzers) — da, solange die Tafel offen ist oder ein Regen
-  läuft/steht; Tipp auf die Kennzahlen klappt sie auf die Zeit zusammen; beim Messen tritt die Leiste zurück (CSS).
+  läuft/steht; Tipp auf die Kennzahlen klappt sie auf die Zeit zusammen (Pfeil `.lz-klapp` neben der Zeit, v112 —
+  ohne ihn fand der Nutzer das Klappen nicht); beim Messen tritt die Leiste zurück (CSS).
   Am Handy bleibt das Luftbild fürs Gelände auf 1536 px verkleinert. Am Gerät (Xiaomi, iPhone) noch ungetestet. Höhenraster aus den Bodenpunkten (0,5 m, höchstens 500 Zellen je Seite), Lücken gefüllt, einmal
   geglättet. Gebäude als Hindernis aus den **LoD2-Grundrissen** (Dachringe gerastert, bis zum First) — so vom
   Nutzer gewünscht: Die Dachpunkte (Klasse 6) haben Lücken, durch die Wasser ins Haus lief; sie sind nur der

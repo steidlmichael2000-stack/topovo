@@ -2192,6 +2192,14 @@ body { font-variant-numeric: tabular-nums; }
   background: var(--glass); box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
 .lz-regen-werte.knapp > :nth-child(n+3) { display: none; }
+/* Klapp-Pfeil neben der Zeit (so gewünscht): zeigt nach unten = offen, nach oben = zu */
+.lz-klapp { display: none; }
+.lz-regen-leiste .lz-klapp {
+  display: inline-block; width: 15px; height: 15px; margin: -2px -4px 0 6px; vertical-align: middle;
+  fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .2s var(--auf);
+}
+.lz-regen-werte.knapp .lz-klapp { transform: rotate(180deg); }
 .lz-regen-leiste .lz-regen-knoepfe button:not(.lz-regen-los) {
   background: var(--glass); box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
 }
