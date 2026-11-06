@@ -622,6 +622,9 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   zwischen Messen und Startansicht (v111, Bildschirmfoto des Nutzers) — da, solange die Tafel offen ist oder ein Regen
   läuft/steht; Tipp auf die Kennzahlen klappt sie auf die Zeit zusammen (Pfeil `.lz-klapp` neben der Zeit, v112 —
   ohne ihn fand der Nutzer das Klappen nicht); beim Messen tritt die Leiste zurück (CSS).
+  **Regen-Modus** (`regenModus`, v113, so gewünscht): beginnt beim Öffnen (Knopf/Abschnitt, `regenOeffnen`) und
+  zeigt dann gleich das Geländemodell; die Leiste unten bleibt bis „Beenden“ stehen (verschwand sie mit der Tafel,
+  fand man den Start nicht wieder). Bei offener Regen-Tafel ist der Einstellungsknopf oben links weg (`einst.hidden`).
   Am Handy bleibt das Luftbild fürs Gelände auf 1536 px verkleinert. Am Gerät (Xiaomi, iPhone) noch ungetestet. Höhenraster aus den Bodenpunkten (0,5 m, höchstens 500 Zellen je Seite), Lücken gefüllt, einmal
   geglättet. Gebäude als Hindernis aus den **LoD2-Grundrissen** (Dachringe gerastert, bis zum First) — so vom
   Nutzer gewünscht: Die Dachpunkte (Klasse 6) haben Lücken, durch die Wasser ins Haus lief; sie sind nur der
@@ -636,7 +639,7 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   (`readRenderTargetPixels`, bremst). Überhöhung streckt alle Szenen in z (`ueber`); `punktAn`, Schilder,
   Messkugeln und `tiefeAnpassen` rechnen sie ein — gemessen wird weiter in echten Metern. Beim ersten Start
   werden alle Klassen außer Boden und Gebäude ausgeblendet (im Wald sah man sonst kein Wasser).
-  „Gemessene Fläche“ nimmt die letzte fertige Flächenmessung. Braucht `EXT_color_buffer_float`.
+  Es regnet immer auf den ganzen Ausschnitt („Regnet auf | Gemessene Fläche“ am 06.11.2026 auf Wunsch entfernt). Braucht `EXT_color_buffer_float`.
   Der PW-Viewer zeigt „Regen“ nicht (keine Bodenklasse); `topovo-holen.sh` kopiert `regen.js` nicht mit.
   **Bedienung:** Start/Pause, Von vorn, Beenden als Symbole (so gewünscht). „Beenden“ (`regenBeenden`) stellt die
   Ansicht wie vor dem Regen her: Wasser weg, Punkte, Überhöhung 1 ×, genau die beim Start ausgeblendeten Klassen

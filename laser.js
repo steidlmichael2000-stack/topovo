@@ -263,11 +263,6 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <button type="button" class="seg-btn is-on" data-tempo="normal">Normal</button>
           <button type="button" class="seg-btn" data-tempo="schnell">Schnell</button>
         </div>
-        <p class="pal-label">Regnet auf</p>
-        <div class="seg seg-paar" role="group" aria-label="Regnet auf">
-          <button type="button" class="seg-btn is-on" data-regen-auf="alles">Ausschnitt</button>
-          <button type="button" class="seg-btn" data-regen-auf="flaeche">Gemessene Fläche</button>
-        </div>
         <p class="pal-label">Zeigen</p>
         <div class="seg seg-paar" role="group" aria-label="Zeigen">
           <button type="button" class="seg-btn is-on" data-regen-ansicht="punkte">Punkte</button>
@@ -1957,7 +1952,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     regenKnopf.setAttribute('aria-expanded', String(an));
     regenKnopf.classList.toggle('is-on', an || regenLaeuft);
     regenLeisteZeigen();
-    if (an) { tafelZeigen(false); menueZeigen(false); regenAufZeigen(); kostraHolen(); }
+    // Bei offener Tafel weg: der Einstellungsknopf oben links verwirrte nur (so gewünscht)
+    einst.hidden = an;
+    if (an) { tafelZeigen(false); menueZeigen(false); regenOeffnen(); }
   }
   regenKnopf.addEventListener('click', () => regenTafelZeigen(regenTafel.hidden));
   function anordnen() {
@@ -1988,7 +1985,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   function bereichZeigen() {
     wurzel.classList.toggle('seite-zu', seiteZu);
     seite.querySelectorAll('[data-bereich]').forEach(sec => { sec.hidden = sec.dataset.bereich !== bereich; });
-    if (bereich === 'regen') { regenAufZeigen(); kostraHolen(); }
+    if (bereich === 'regen') regenOeffnen();
     wurzel.querySelectorAll('.lz-schiene [data-lz]').forEach(b =>
       b.classList.toggle('is-on', !seiteZu && b.dataset.lz === bereich));
     groesseSetzen();
@@ -2011,7 +2008,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const PFUETZE_CM = 2;
   let regenLetztesBild = 0, regenGrenze = 20;
   let regenAnsicht = 'punkte', regenMitGeb = true, regenBewuchsWeg = false, regenGebQuelle = '';
-  let regen = null, regenLaeuft = false, regenTempo = 'normal', regenAuf = 'alles', regenBilanzZeit = 0, regenLaedt = false;
+  let regen = null, regenLaeuft = false, regenTempo = 'normal', regenBilanzZeit = 0, regenLaedt = false;
   const regenTiefe = { p: new THREE.Vector3(), el: null, lage: 'translate(-50%, -125%)' };
   const regenAufl = { schilder: [] };
   const regenRegler = { menge: $('.lz-regen-menge'), dauer: $('.lz-regen-dauer'), sicker: $('.lz-regen-sicker'), hoch: $('.lz-regen-hoch') };
@@ -2082,20 +2079,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     ueberhoehungSetzen(+regenRegler.hoch.value);
   }
   Object.values(regenRegler).forEach(r => r.addEventListener('input', regenReglerZeigen));
-  /** Die zuletzt fertig gemessene Fläche (Messen → Fläche), sonst null. */
-  const letzteFlaeche = () => [...messungen].reverse().find(m => m.art === 'flaeche' && m.fertig) || null;
-  function regenAufZeigen() {
-    const f = letzteFlaeche(), knopf = $('[data-regen-auf="flaeche"]');
-    knopf.disabled = !f;
-    knopf.title = f ? '' : 'Erst unter Messen eine Fläche ziehen';
-    if (!f && regenAuf === 'flaeche') regenAuf = 'alles';
-    wurzel.querySelectorAll('[data-regen-auf]').forEach(b => b.classList.toggle('is-on', b.dataset.regenAuf === regenAuf));
-    if (regen) regen.bereichSetzen(regenAuf === 'flaeche' ? f.punkte : null);
-  }
-  wurzel.querySelectorAll('[data-regen-auf]').forEach(b => b.addEventListener('click', () => {
-    regenAuf = b.dataset.regenAuf;
-    regenAufZeigen();
-  }));
+  /* Es regnet immer auf den ganzen Ausschnitt — die Wahl „Gemessene Fläche“
+   * brauchte der Nutzer nicht (06.11.2026, entfernt; regen.bereichSetzen bliebe dafür). */
   wurzel.querySelectorAll('[data-tempo]').forEach(b => b.addEventListener('click', () => {
     regenTempo = b.dataset.tempo;
     wurzel.querySelectorAll('[data-tempo]').forEach(x => x.classList.toggle('is-on', x === b));
@@ -2145,7 +2130,6 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         regenTiefe.el.hidden = true;
         regenAufl.schilder = [];
         regenReglerZeigen();
-        regenAufZeigen();
       } catch (err) {
         console.warn(err);
         hinweis('Regen ließ sich nicht starten.');
@@ -2161,7 +2145,22 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   /* Leiste unten (nur am Handy): da, solange die Tafel offen ist oder ein Regen
    * läuft oder steht — so lässt er sich anhalten, ohne die Tafel zu öffnen. */
   function regenLeisteZeigen() {
-    regenLeiste.hidden = desktop.matches || !(!regenTafel.hidden || regenLaeuft || (regen && regen.zustand.zeit > 0));
+    regenLeiste.hidden = desktop.matches || !regenModus;
+  }
+  /* Regen-Modus: beginnt beim ersten Öffnen (Knopf am Handy, Abschnitt in der Leiste)
+   * und endet erst mit „Beenden“. So lange steht am Handy die Leiste unten — sie
+   * verschwand vorher mit der Tafel, und den Startknopf fand man nicht wieder.
+   * Beim Öffnen gleich das Geländemodell (so gewünscht). */
+  let regenModus = false;
+  async function regenOeffnen() {
+    kostraHolen();
+    if (regenModus) return;
+    regenModus = true;
+    regenLeisteZeigen();
+    regenKnoepfeZeigen();
+    regenAnsicht = 'gelaende';
+    if (regen) regenAnsichtZeigen();
+    else if (!(await regenVorbereiten())) { regenAnsicht = 'punkte'; regenAnsichtZeigen(); }
   }
   function regenStand(text) {
     const el = $('.lz-regen-stand');
@@ -2178,7 +2177,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     regenLos.title = name;
     const da = !!regen && (regen.zustand.zeit > 0 || regenLaeuft);
     regenNeu.disabled = !da;
-    $('.lz-regen-ende').disabled = !da && !regenBewuchsAus.length && regenAnsicht === 'punkte' && ueber === 1;
+    $('.lz-regen-ende').disabled = !regenModus;
   }
   /* Bewuchs und Sonstiges verdecken das Wasser (im Wald sah man nichts): beim
    * Start aus, Boden und Gebäude bleiben. „Beenden“ schaltet genau die wieder an. */
@@ -2214,6 +2213,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     for (const b of regenBewuchsAus) if (!b.classList.contains('is-on')) b.click();
     regenBewuchsAus = [];
     regenBewuchsWeg = false;
+    regenModus = false;
+    regenTafelZeigen(false);
     regenKnoepfeZeigen();
     neu = true;
   }
