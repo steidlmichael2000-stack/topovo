@@ -147,7 +147,14 @@ const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 const BODEN = new Set([2, 9, 23, 24]);
 
 /** Öffnet die Ansicht über der Karte. d: Ergebnis aus laser-werk.js,
- *  info: { kachel, quelle, seite }. Gibt eine Funktion zum Schließen zurück. */
+ *  info: { kachel, quelle, seite }. Gibt eine Funktion zum Schließen zurück.
+ *
+ *  Auch der PW-Viewer zeigt damit seine Drohnenwolken (Kopie unter
+ *  pw-viewer/topovo/, geholt mit werkzeug/topovo-holen.sh). Dafür ist alles,
+ *  was an Topovo hängt, nur da, wenn info es mitbringt: luftbild, gebaeude,
+ *  achsen, kml, exportieren, utm (Standort). Dazu kommen von dort titel,
+ *  unterzeile, datenName (vor der Quellenangabe) und in d die Punktfarben rgb
+ *  (Uint8, sRGB) — dann gibt es die Färbung „Farbe“ und sie ist die erste. */
 export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const wurzel = document.createElement('div');
   wurzel.className = 'laser-ansicht';
@@ -162,7 +169,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       <button type="button" data-lz="heim" class="lz-schiene-heim"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4.5l8 7"/><path d="M6.5 9.5V19h11V9.5"/></svg><span>Ansicht</span></button>
     </nav>
     <aside class="lz-seite">
-      <div class="lz-seite-kopf"><p class="bb-title">Laserpunkte</p><p class="bb-sub lz-seite-unter"></p></div>
+      <div class="lz-seite-kopf"><p class="bb-title lz-seite-titel-text"></p><p class="bb-sub lz-seite-unter"></p></div>
       <section data-bereich="darstellung"><h2 class="lz-seite-titel">Darstellung</h2></section>
       <section data-bereich="messen"><h2 class="lz-seite-titel">Messen</h2></section>
       <section data-bereich="export"><h2 class="lz-seite-titel">Export</h2>
@@ -214,19 +221,20 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     <div class="lz-tafel" hidden>
       <p class="pal-label">Färbung</p>
       <div class="seg seg-paar lz-faerbung" role="group" aria-label="Färbung">
+        <button type="button" class="seg-btn" data-faerbung="rgb">Farbe</button>
         <button type="button" class="seg-btn is-on" data-faerbung="klasse">Klasse</button>
         <button type="button" class="seg-btn" data-faerbung="hoehe">Höhe</button>
         <button type="button" class="seg-btn" data-faerbung="intensitaet">Intensität</button>
         <button type="button" class="seg-btn" data-faerbung="normalen">Normalen</button>
         <button type="button" class="seg-btn" data-faerbung="luftbild">Luftbild</button>
       </div>
-      <p class="pal-label">Klassen</p>
+      <p class="pal-label lz-klassen-titel">Klassen</p>
       <div class="lz-klassen"></div>
-      <p class="pal-label">Gebäude</p>
+      <p class="pal-label lz-geb-titel">Gebäude</p>
       <button type="button" class="seg-btn lz-klasse lz-geb" aria-pressed="false">
         <span class="lz-feld" style="background:#e4e7ec"></span><span class="lz-name">3D-Gebäudemodell LoD2</span><small></small></button>
-      <p class="pal-label">Auflagen</p>
-      <div class="lz-klassen">
+      <p class="pal-label lz-aufl-titel">Auflagen</p>
+      <div class="lz-klassen lz-aufl">
         <button type="button" class="seg-btn lz-klasse lz-achsen" aria-pressed="false">
           <span class="lz-feld" style="background:${ACHS_FARBE}"></span><span class="lz-name">Streckenachsen</span><small></small></button>
         <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden>
@@ -296,6 +304,22 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   document.body.appendChild(wurzel);
   const $ = s => wurzel.querySelector(s);
 
+  /* Was info nicht mitbringt, gibt es nicht (PW-Viewer: kein Luftbild, keine
+   * Gebäude, keine Auflagen, kein Export) — die Knöpfe gar nicht erst zeigen. */
+  const weg = sel => wurzel.querySelectorAll(sel).forEach(el => { el.hidden = true; });
+  if (!d.rgb) weg('[data-faerbung="rgb"]');
+  if (!d.iMax) weg('[data-faerbung="intensitaet"]');
+  // Drohnenwolken ohne Klassen (alles Klasse 0): Farbe statt einer einzigen Klassenfarbe
+  if (d.rgb && d.klassen.length < 2) weg('[data-faerbung="klasse"], .lz-klassen-titel, .lz-klassen:not(.lz-aufl)');
+  if (!info.luftbild) weg('[data-faerbung="luftbild"]');
+  if (!info.gebaeude) weg('.lz-geb, .lz-geb-titel');
+  if (!info.achsen) weg('.lz-achsen');
+  if (!info.achsen && !info.kml) weg('.lz-aufl, .lz-aufl-titel');
+  if (!info.exportieren) weg('[data-lz="export"], [data-bereich="export"]');
+  if (!info.utm) weg('.lz-ort');
+  $('.lz-seite-titel-text').textContent = info.titel || 'Laserpunkte';
+  if (info.zurueck) $('[data-lz="karte"]').setAttribute('aria-label', info.zurueck);
+
   /* ---------- Szene ---------- */
   const flaeche = $('.lz-flaeche');
   const renderer = new THREE.WebGLRenderer({ canvas: flaeche, antialias: false, alpha: true });
@@ -325,8 +349,15 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const farben = new Float32Array(n * 3);
   geo.setAttribute('farbe', new THREE.BufferAttribute(farben, 3));
   geo.setAttribute('klasse', new THREE.BufferAttribute(Float32Array.from(d.klasse), 1));
-  // Normalen aus laser-werk.js, als Int8 ×127 — normalized liefert −1…1 im Shader
-  geo.setAttribute('normale', new THREE.BufferAttribute(d.normalen, 3, true));
+  /* Normalen aus laser-werk.js, als Int8 ×127 — normalized liefert −1…1 im Shader.
+   * Der PW-Viewer reicht sie nach (info.normalen, ein Promise): bis dahin alle
+   * senkrecht, Schatten und „Normalen“ gesperrt (unten bei den Reglern). */
+  let normalenDa = d.normalen;
+  if (!normalenDa) {
+    normalenDa = new Int8Array(n * 3);
+    for (let i = 2; i < n * 3; i += 3) normalenDa[i] = 127;
+  }
+  geo.setAttribute('normale', new THREE.BufferAttribute(normalenDa, 3, true));
   geo.computeBoundingSphere();
   const masken = new Array(32).fill(1);
   const material = new THREE.ShaderMaterial({
@@ -425,7 +456,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   heim();
 
   /* ---------- Färbung ---------- */
-  let faerbung = 'klasse';
+  let faerbung = d.rgb ? 'rgb' : 'klasse';
+  if (d.rgb) wurzel.querySelectorAll('[data-faerbung]').forEach(b => b.classList.toggle('is-on', b.dataset.faerbung === 'rgb'));
   const tmp = new THREE.Color();
   // Intensität: zwischen dem 2. und 98. Prozent strecken, sonst ist fast alles dunkel
   /* Intensität per Histogrammausgleich: Jeder Wert wird zu seinem Rang unter allen
@@ -447,9 +479,10 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   function faerben() {
     for (let i = 0; i < n; i++) {
       let c;
-      if (faerbung === 'luftbild') {
-        // Unverändert durchgereicht: Das Bild ist schon sRGB, die Shader rechnen nicht um
-        farben[3 * i] = luftbild[3 * i] / 255; farben[3 * i + 1] = luftbild[3 * i + 1] / 255; farben[3 * i + 2] = luftbild[3 * i + 2] / 255;
+      if (faerbung === 'luftbild' || faerbung === 'rgb') {
+        // Unverändert durchgereicht: Bild und Punktfarben sind schon sRGB, die Shader rechnen nicht um
+        const q = faerbung === 'rgb' ? d.rgb : luftbild;
+        farben[3 * i] = q[3 * i] / 255; farben[3 * i + 1] = q[3 * i + 1] / 255; farben[3 * i + 2] = q[3 * i + 2] / 255;
         continue;
       }
       if (faerbung === 'klasse') c = klassenFarben.get(d.klasse[i]);
@@ -505,7 +538,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     hinweisUhr = setTimeout(() => t.classList.add('weg'), 5000);
   }
   const quellenNeu = () => {
-    const was = ['Laserdaten', luftbild && 'Luftbild', geb && 'Gebäude LoD2'].filter(Boolean);
+    const was = [info.datenName || 'Laserdaten', luftbild && 'Luftbild', geb && 'Gebäude LoD2'].filter(Boolean);
     $('.lz-fuss').textContent = `${was.join(', ').replace(/, ([^,]*)$/, ' und $1')}: ${info.quelle}` +
       (achsen && achsen.anzahl ? ' · Streckenachsen: DB InfraGO (CC BY 4.0), bearbeitet' : '');
   };
@@ -916,6 +949,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * Strecken im Ausschnitt alle (laserAchsen nimmt jede, die ihn berührt). */
   const achsMat = new THREE.LineBasicMaterial({ color: ACHS_FARBE, depthTest: false });
   async function achsenLaden() {
+    if (!info.achsen) return;
     achsKnopf.classList.add('laedt');
     achsKnopf.querySelector('small').textContent = 'lädt …';
     let liste = [];
@@ -1230,6 +1264,19 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   groesse.addEventListener('input', reglerZeigen);
   edlRegler.addEventListener('input', reglerZeigen);
   lichtRegler.addEventListener('input', reglerZeigen);
+  if (!d.normalen && info.normalen) {
+    const normKnopf = $('[data-faerbung="normalen"]'), lichtWert = lichtRegler.value;
+    normKnopf.disabled = lichtRegler.disabled = true;
+    lichtRegler.value = 0;
+    info.normalen.then(a => {
+      if (!laeuft || !a) return;
+      geo.attributes.normale.array.set(a);
+      geo.attributes.normale.needsUpdate = true;
+      normKnopf.disabled = lichtRegler.disabled = false;
+      lichtRegler.value = lichtWert;
+      reglerZeigen();
+    }, err => console.warn(err));
+  }
   $('.lz-heim').addEventListener('click', heim);
 
   /* ---------- Antippen: Punkt im Bild suchen ----------
@@ -1571,7 +1618,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     bereichZeigen();
   }));
   desktop.addEventListener('change', anordnen);
-  $('.lz-seite-unter').textContent = `Kachel ${info.kachel} · ${info.seite} × ${info.seite} m`;
+  $('.lz-seite-unter').textContent = info.unterzeile || `Kachel ${info.kachel} · ${info.seite} × ${info.seite} m`;
 
   /* ---------- Zeichnen ---------- */
   let neu = true, laeuft = true;
@@ -1682,10 +1729,10 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     : 'Ziehen: drehen · rechte Taste oder Shift: schieben · Rad: zoomen · Doppelklick: Drehpunkt';
   quellenNeu();
   $('.lz-info').innerHTML = [
-    `Kachel ${info.kachel}`,
-    `${d.anzahl.toLocaleString('de-DE')} Punkte${d.schritt > 1 ? `, jeder ${d.schritt}.` : ''} · ${info.seite} × ${info.seite} m`,
+    info.kachel ? `Kachel ${info.kachel}` : '',
+    `${d.anzahl.toLocaleString('de-DE')} Punkte${d.schritt > 1 ? `, jeder ${d.schritt}.` : ''} · ${info.unterzeile || `${info.seite} × ${info.seite} m`}`,
     d.zeiten ? [d.zeiten.megabyte ? `Laden ${zahl(d.zeiten.laden, 0)} s (${zahl(d.zeiten.megabyte, 0)} MB)` : 'Kacheln aus dem Speicher',
-      `Entpacken ${zahl(d.zeiten.lesen, 0)} s`, `Normalen ${zahl(d.zeiten.normalen, 0)} s`].join(' · ') : '',
+      `Entpacken ${zahl(d.zeiten.lesen, 0)} s`, d.normalen ? `Normalen ${zahl(d.zeiten.normalen, 0)} s` : 'Normalen im Hintergrund'].join(' · ') : '',
     bedienung
   ].filter(Boolean).map(z => `<p class="fine">${z}</p>`).join('');
   const tipp = $('.lz-tipp');

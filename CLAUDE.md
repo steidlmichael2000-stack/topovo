@@ -581,6 +581,13 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   „Auflagen“ in der Tafel. Kleine Schilder, die ein großes berühren, treten über alle Gruppen zurück (`bild`).
 - Namensnennung CC BY 4.0: `LASER_QUELLE` (unten in der Ansicht, mit „ausgeschnitten und
   ausgedünnt") und `LASER_ATTR` (Kartenattribution, solange Laserpunkte offen ist).
+- **Der PW-Viewer zeigt seine Drohnenwolken mit demselben `laser.js`** (seit 06.11.2026, Kopie in
+  `../pw-viewer/topovo/`, geholt mit `pw-viewer/werkzeug/topovo-holen.sh`; dort `wolke.html` und
+  `topovo/wolke-werk.js`, der `laser-werk.js` per `importScripts` lädt und dessen `onmessage` ersetzt).
+  Deshalb ist in `laser.js` alles Topovo-Eigene nur da, wenn `info` es mitbringt (`luftbild`, `gebaeude`,
+  `achsen`, `kml`, `exportieren`, `utm`); dazu `info.titel`, `unterzeile`, `datenName`, `zurueck` und
+  `d.rgb` (Färbung „Farbe“). Normalen darf der PW-Viewer nachreichen (`d.normalen` null, `info.normalen`
+  als Promise). Wer `laser.js`/`laser-werk.js` ändert, holt die Kopie neu und prüft `wolke.html`.
 
 ## Beim Deployen
 
