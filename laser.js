@@ -379,6 +379,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   if (!info.gebaeude && !info.achsen && !info.kml && !info.strassen) weg('.lz-aufl-titel');
   if (!info.exportieren) weg('[data-lz="export"], [data-bereich="export"]');
   if (!info.utm) weg('.lz-ort');
+  // Höhenlinien kommen aus den Bodenpunkten — Drohnenwolken (PW-Viewer) haben keine
+  if (!d.klassen.some(([k]) => BODEN.has(k))) weg('[data-effekt="linien"]');
   /* In den Rastern zu zwei Spalten nimmt ein allein stehender letzter Knopf die
    * ganze Breite. Nach den sichtbaren gezählt — :nth-child zählt ausgeblendete
    * mit, dann stand „Neigung“ allein und „Luftbild“ breit darunter. */
