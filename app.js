@@ -2038,8 +2038,9 @@ const DL_ZERO = lizenzLink(LIZENZ_URL.dlzero, 'dl-de/zero-2-0');
 const BVV_QUELLE = `Parzellen: <a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (${CC_BY}), bearbeitet`;
 /* Urheber je Land, wie es die Dienste verlangen (Wortlaut aus Fees bzw.
  * AccessConstraints der GetCapabilities, am 06.11.2026 nachgesehen); wo ein Jahr
- * des Datenbezugs gefordert ist, das laufende. Bremen nennt nur „CC-BY“ ohne
- * Fassung — so übernommen, verlinkt auf die geltende 4.0. Das DOP20 nennt nur
+ * des Datenbezugs gefordert ist, das laufende. Bremen nennt im Dienst nur
+ * „CC-BY“; die Fassung 4.0 steht in der Verfügung des Landesamts vom 22.05.2024
+ * (gilt ab 09.06.2024 für alle offenen Geobasisdaten und Dienste). Das DOP20 nennt nur
  * die Länder, die gerade im Bild sind (dopQuelleErneuern), das Relief kommt
  * immer aus Bayern und BW. */
 const JAHR = new Date().getFullYear();
@@ -2058,7 +2059,7 @@ const LAND_URHEBER = {
   be: `Geoportal Berlin (${DL_ZERO})`,
   mv: `© GeoBasis-DE/M-V ${JAHR}`,
   sh: `© GeoBasis-DE/LVermGeo SH/${CC_BY}`,
-  hb: `Landesamt GeoInformation Bremen (${lizenzLink(LIZENZ_URL.ccby, 'CC BY')})`,
+  hb: `Landesamt GeoInformation Bremen (${CC_BY})`,
   hh: `FHH, LGV (${DL_BY})`
 };
 /* bearbeitet: an Landesgrenzen setzt die App die Bilder je Bildpunkt aus
@@ -9314,7 +9315,9 @@ function pdfAngaben(z) {
 function pdfGenauigkeit(s, x, y, quellen) {
   const F = PDF_FARBEN;
   const zeilen = [
-    ['Gleislage, km', 'OSM, typisch ±10–30 m, vereinzelt mehr'],
+    // Seit InfraGO die erste Quelle ist (IFG_ERR, gemessen an 6271 Bahnübergängen)
+    ['Gleislage, km', `InfraGO ±${String(IFG_ERR.typical).replace('.', ',')}–${Math.round(IFG_ERR.worst)} m, ` +
+      `sonst OSM ±${Math.round(IFG_ERR.osmTypical)}–${IFG_ERR.osmWorst} m`],
     ['Koordinaten', 'so genau wie die Lage, aus der sie stammen'],
     quellen.by !== false && [quellen.bw ? 'DGM1 Bayern' : 'Gelände DGM1', 'Höhe ±0,2 m, Lage ±0,5 m (freies Gelände)'],
     quellen.bw && ['DGM1 BW', 'Genauigkeit 0,15 m laut Kachelangaben des LGL'],
