@@ -1951,6 +1951,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     regenTafel.hidden = !an;
     regenKnopf.setAttribute('aria-expanded', String(an));
     regenKnopf.classList.toggle('is-on', an || regenLaeuft);
+    // Bei offener Tafel zeigt die Leiste unten nur die Knöpfe (CSS) — sonst lägen Tafel und Kennzahlen übereinander
+    wurzel.classList.toggle('regen-tafel-offen', an);
     regenLeisteZeigen();
     // Bei offener Tafel weg: der Einstellungsknopf oben links verwirrte nur (so gewünscht)
     einst.hidden = an;
@@ -2146,6 +2148,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * läuft oder steht — so lässt er sich anhalten, ohne die Tafel zu öffnen. */
   function regenLeisteZeigen() {
     regenLeiste.hidden = desktop.matches || !regenModus;
+    /* Im Regen-Modus am Handy: Startansicht, Messen und Einstellungen weg (so gewünscht),
+     * die Leiste unten nimmt die ganze Breite (CSS .regen-modus) */
+    wurzel.classList.toggle('regen-modus', !regenLeiste.hidden);
+    // Eine offene Messung beenden: ihre Leiste verdrängt die Regenleiste (CSS), und Messen ist hier aus
+    if (!regenLeiste.hidden) { tafelZeigen(false); menueZeigen(false); if (messArt) messArtSetzen(null); }
   }
   /* Regen-Modus: beginnt beim ersten Öffnen (Knopf am Handy, Abschnitt in der Leiste)
    * und endet erst mit „Beenden“. So lange steht am Handy die Leiste unten — sie
@@ -2189,7 +2196,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       const k = Number(b.dataset.klasse);
       if (!BODEN.has(k) && k !== 6) { b.click(); regenBewuchsAus.push(b); }
     });
-    if (regenBewuchsAus.length) hinweis('Bewuchs ausgeblendet — „Beenden“ zeigt ihn wieder.');
+    // Ohne Meldung (so gewünscht) — „Beenden“ schaltet ihn wieder ein
   }
   async function regenUmschalten() {
     if (!(await regenVorbereiten())) return;

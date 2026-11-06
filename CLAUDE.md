@@ -628,6 +628,9 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   v114: Hinweise (`.lz-tipp`) stehen bei sichtbarer Regenleiste oben (lagen über den Kennzahlen); Regler in den
   Tafeln mit `touch-action: pan-y` — die Überhöhung verstellte sich am Handy beim Rollen der Tafel „von selbst“
   (vermutete Ursache, am Gerät nicht nachgestellt).
+  v115, Regen-Modus am Handy (`.regen-modus`, so gewünscht): Startansicht, Messen, Einstellungen weg (offene Messung
+  wird beendet), Leiste unten volle Breite; Regen-Knopf oben links, Standort unter dem ×, Tafel klappt von oben auf
+  (`.regen-tafel-offen`: Kennzahlen unten und Standort dann aus). Keine Meldung „Bewuchs ausgeblendet“ mehr.
   Am Handy bleibt das Luftbild fürs Gelände auf 1536 px verkleinert. Am Gerät (Xiaomi, iPhone) noch ungetestet. Höhenraster aus den Bodenpunkten (0,5 m, höchstens 500 Zellen je Seite), Lücken gefüllt, einmal
   geglättet. Gebäude als Hindernis aus den **LoD2-Grundrissen** (Dachringe gerastert, bis zum First) — so vom
   Nutzer gewünscht: Die Dachpunkte (Klasse 6) haben Lücken, durch die Wasser ins Haus lief; sie sind nur der

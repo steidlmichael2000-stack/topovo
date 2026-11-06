@@ -2206,6 +2206,22 @@ body { font-variant-numeric: tabular-nums; }
 .lz-regen-leiste .lz-regen-los { box-shadow: var(--shadow); }
 /* Beim Messen steht unten die Messleiste — dann tritt die Regenleiste zurück */
 .lz-leiste:not([hidden]) ~ .lz-regen-leiste { display: none; }
+/* Regen-Modus am Handy: nur Regen-Knopf, Standort, Schließen und die Leiste unten (volle Breite) */
+.regen-modus .lz-einst, .regen-modus .lz-messen, .regen-modus .lz-heim,
+.regen-modus .lz-tafel, .regen-modus .lz-mess-menue, .regen-modus .lz-leiste { display: none; }
+.regen-modus .lz-regen-leiste { left: var(--gap); right: var(--gap); max-width: 420px; }
+/* Die breite Leiste deckte Regen-Knopf und Standort: der Regen-Knopf rückt nach oben links (wo die
+ * Einstellungen waren), der Standort unter das ×, die Tafel klappt von oben auf bis über die Knöpfe */
+.regen-modus .lz-regen-knopf { top: calc(var(--gap) + env(safe-area-inset-top)); bottom: auto; }
+.regen-modus .lz-ort { top: calc(var(--gap) + 52px + env(safe-area-inset-top)); bottom: auto; }
+.regen-modus .lz-regen-tafel {
+  top: calc(var(--gap) + 52px + env(safe-area-inset-top)); bottom: auto;
+  max-height: calc(100% - 2 * var(--gap) - 104px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+.regen-modus .lz-regen-tafel:not([hidden]) { animation: von-oben .24s var(--auf); }
+.regen-tafel-offen .lz-regen-leiste .lz-regen-werte { display: none; }
+/* Der Standort unter dem × ragte in die Ecke der offenen Tafel */
+.regen-tafel-offen .lz-ort { display: none; }
 /* Mit den Kennzahlen ist die Leiste bis 200 px hoch: Hinweise („Bewuchs ausgeblendet …“) lagen darüber.
  * Solange sie steht, kommen sie oben unter die Quellenangabe. */
 .lz-regen-leiste:not([hidden]) ~ .lz-tipp { top: calc(var(--gap) + 52px + env(safe-area-inset-top)); bottom: auto; }
