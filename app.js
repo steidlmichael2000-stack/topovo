@@ -7522,6 +7522,57 @@ function laserLuftbildUrl(e0, n0, e1, n1, w, h) {
   return LAND_WMS.dop.by.replace('EPSG:3857', 'EPSG:25832') + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}&FORMAT=image/jpeg`;
 }
 
+/* KOSTRA-DWD-2020 für den Regen in der Laseransicht: Niederschlagshöhe je
+ * Dauerstufe und Jährlichkeit an der Stelle. Daten aus werkzeug/kostra-bauen.py
+ * in kostra/ (Blöcke zu 50 km, je rund 23 kB) — der DWD gibt KOSTRA nur zum
+ * Herunterladen her, ohne CORS. Raster in ETRS89-LAEA (EPSG:3035). */
+let kostraIndex = null;
+const kostraBloecke = new Map();
+/** Geografisch (Grad, ETRS89) → EPSG:3035. Formel nach EPSG Guidance Note 7-2;
+ *  deren Beispiel 50° N, 5° O → 3962799,45 / 2999718,85 trifft sie auf den mm. */
+function laea3035(lat, lon) {
+  const a = 6378137, f = 1 / 298.257222101, e2 = f * (2 - f), e = Math.sqrt(e2), r = Math.PI / 180;
+  const q = s => (1 - e2) * (s / (1 - e2 * s * s) - Math.log((1 - e * s) / (1 + e * s)) / (2 * e));
+  const p0 = 52 * r, qP = q(1), b0 = Math.asin(q(Math.sin(p0)) / qP), b = Math.asin(q(Math.sin(lat * r)) / qP);
+  const Rq = a * Math.sqrt(qP / 2);
+  const D = a * Math.cos(p0) / Math.sqrt(1 - e2 * Math.sin(p0) ** 2) / (Rq * Math.cos(b0));
+  const dl = (lon - 10) * r;
+  const B = Rq * Math.sqrt(2 / (1 + Math.sin(b0) * Math.sin(b) + Math.cos(b0) * Math.cos(b) * Math.cos(dl)));
+  return [4321000 + B * D * Math.cos(b) * Math.sin(dl), 3210000 + B / D * (Math.cos(b0) * Math.sin(b) - Math.sin(b0) * Math.cos(b) * Math.cos(dl))];
+}
+/** { dauern (min), jahre, hn[Dauer][Jahr] in mm, zelle (INDEX_RC des DWD), quelle } oder null. */
+async function laserKostra(e, n) {
+  if (!kostraIndex) kostraIndex = fetch('kostra/index.json').then(r => {
+    if (!r.ok) throw new Error(`KOSTRA ${r.status}`);
+    return r.json();
+  }).catch(err => { kostraIndex = null; throw err; });
+  const ix = await kostraIndex;
+  const [x, y] = laea3035(...utm32Zurueck(e, n));
+  const c = Math.floor((x - ix.x0) / ix.zelle), z = Math.floor((y - ix.y0) / ix.zelle);
+  if (c < 0 || z < 0 || c >= ix.spalten || z >= ix.zeilen) return null;
+  const name = `${Math.floor(c / ix.block)}_${Math.floor(z / ix.block)}`;
+  if (!ix.bloecke.includes(name)) return null;
+  if (!kostraBloecke.has(name)) kostraBloecke.set(name, fetch(`kostra/${name}.bin`).then(r => {
+    if (!r.ok) throw new Error(`KOSTRA ${r.status}`);
+    return r.arrayBuffer();
+  }).then(b => new Uint16Array(b)).catch(err => { kostraBloecke.delete(name); throw err; }));
+  const werte = await kostraBloecke.get(name);
+  const nd = ix.dauern.length, nj = ix.jahre.length;
+  const start = ((z % ix.block) * ix.block + c % ix.block) * nd * nj;
+  const hn = [];
+  for (let di = 0; di < nd; di++) {
+    const zeile = [];
+    for (let ji = 0; ji < nj; ji++) {
+      const v = werte[start + di * nj + ji];
+      if (v === ix.leer) return null;
+      zeile.push(v / ix.faktor);
+    }
+    hn.push(zeile);
+  }
+  const zelle = String(ix.zeilen - 1 - z).padStart(3, '0') + String(c).padStart(3, '0');
+  return { dauern: ix.dauern, jahre: ix.jahre, hn, zelle, quelle: ix.quelle };
+}
+
 /** Gebäude aus dem LoD2 (gebaeude.js), deren Umring den Bereich berührt. */
 async function laserGebaeude(e0, n0, e1, n1) {
   // Für den Export auch über mehrere Kacheln: jede 2-km-Kachel dazwischen
@@ -7892,7 +7943,7 @@ async function laserLaden() {
         if (!laserAn) return;                // beim ersten Mal lädt three.js — inzwischen beendet?
         const da = namen.filter(k => !m.fehlen.includes(k));
         laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden,
-          utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude,
+          utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude, kostra: laserKostra,
           achsen: laserAchsen, strassen: laserStrassen, kml: laserKml, ziel: laserZiel,
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); } });

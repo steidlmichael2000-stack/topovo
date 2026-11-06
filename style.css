@@ -2166,6 +2166,18 @@ body { font-variant-numeric: tabular-nums; }
 /* Standort über der Startansicht; an wie der Standortknopf der Karte (getöntes Glas) */
 .lz-ort { right: var(--gap); bottom: calc(var(--gap) + 52px + env(safe-area-inset-bottom)); }
 .lz-ort svg .voll { fill: currentColor; stroke: none; }
+/* Regen am Handy: Knopf über dem Messen (wie der Standort über der Startansicht),
+ * die Tafel darüber; leuchtet, solange es regnet */
+.lz-regen-knopf { left: var(--gap); bottom: calc(var(--gap) + 52px + env(safe-area-inset-bottom)); }
+.lz-regen-tafel {
+  position: absolute; z-index: 2; left: var(--gap); bottom: calc(var(--gap) + 104px + env(safe-area-inset-bottom));
+  width: min(340px, calc(100vw - 2 * var(--gap))); max-height: calc(100% - 180px - env(safe-area-inset-top)); overflow: auto;
+  padding: 2px 14px 14px; border: 1px solid transparent; border-radius: var(--r);
+  background: var(--glass); box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-regen-tafel:not([hidden]) { animation: von-unten .24s var(--auf); }
+.lz-regen-tafel .lz-seite-titel { margin: 12px 0 4px; font-size: .74rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 /* Wie der Standortknopf der Karte (.maploc): Fadenkreuz, beim Suchen gestrichelter Ring */
 .lz-ort.busy svg .ring { stroke-dasharray: 6 5; }
 .lz-tafel {
@@ -2198,6 +2210,40 @@ body { font-variant-numeric: tabular-nums; }
 .lz-ex-lauf { margin-top: 10px; }
 .lz-ex-hinweis { margin: 8px 0 0; font-size: .74rem; color: var(--muted); }
 .lz-geb.laedt { opacity: .7; }
+/* Regen (nur in der Leiste am Desktop): Kennzahlen als zwei Spalten, Zahlen rechtsbündig */
+.lz-regen-vorher { margin: 4px 0 2px; }
+/* Start/Pause (gefüllt in der Signalfarbe), Von vorn, Beenden — Symbole statt Text */
+.lz-regen-knoepfe { display: flex; gap: 8px; margin: 12px 0 2px; }
+.lz-regen-knoepfe button {
+  flex: 1 1 0; height: 42px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid transparent; border-radius: var(--r-knopf);
+  background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text);
+}
+.lz-regen-knoepfe button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 14%, transparent); }
+.lz-regen-knoepfe .lz-regen-los { flex-grow: 1.6; background: var(--accent); color: var(--accent-ink); }
+.lz-regen-knoepfe .lz-regen-los:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, var(--text)); }
+.lz-regen-knoepfe button:disabled { opacity: .38; cursor: default; }
+.lz-regen-knoepfe svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.lz-regen-knoepfe svg .voll { fill: currentColor; stroke: none; }
+.lz-regen-los .ik-halt, .lz-regen-los.laeuft .ik-los { display: none; }
+.lz-regen-los.laeuft .ik-halt { display: block; }
+.lz-regen-stand { margin: 6px 0 0; color: var(--muted); }
+.lz-regen-kostra { margin: 6px 0 0; font-size: .74rem; color: var(--muted); }
+/* Fünf Jährlichkeiten in einer Reihe — mit Umbruch stand „100 a“ allein darunter */
+.lz-regen-jahre { flex-wrap: nowrap; }
+.lz-regen-jahre .seg-btn { min-width: 0; padding-left: 2px; padding-right: 2px; }
+.lz-regen-werte {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 12px 0 4px;
+  padding: 10px 12px; border-radius: var(--r-klein); background: color-mix(in srgb, var(--text) 6%, transparent);
+  font-size: .8rem; color: var(--muted);
+}
+.lz-regen-werte b { color: var(--text); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.lz-regen-legende { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; font-size: .74rem; color: var(--muted); }
+.lz-regen-legende span { display: inline-flex; align-items: center; gap: 6px; }
+.lz-regen-legende span[hidden] { display: none; }
+.lz-regen-legende b { font-weight: inherit; }
+.lz-regen-legende i { width: 10px; height: 10px; border-radius: 3px; }
+.lz-regen-hinweis { margin: 12px 0 0; font-size: .74rem; color: var(--muted); }
 /* Fünf Färbungen: Luftbild allein in der letzten Zeile über die ganze Breite */
 .lz-feld { flex: none; width: 10px; height: 10px; border-radius: 3px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); }
 .lz-skala {
@@ -2307,7 +2353,7 @@ body { font-variant-numeric: tabular-nums; }
   .lz-seite .lz-mess-menue button { padding: 10px 16px; }
   .lz-seite .lz-leiste { margin-top: 12px; padding: 12px 14px 13px; border-radius: var(--r); background: var(--panel-2); position: relative; left: auto; right: auto; bottom: auto; }
   /* Die runden Knöpfe der Ecken übernimmt die Spalte */
-  .lz-einst, .lz-messen, .lz-heim, .lz-zu { display: none; }
+  .lz-einst, .lz-messen, .lz-heim, .lz-zu, .lz-regen-knopf, .lz-regen-tafel { display: none; }
   /* Standort wie in Topovo oben rechts, nicht in der Spalte */
   .lz-ort { top: 16px; right: 16px; bottom: auto; }
   /* Fußzeile, Hinweis und Farbskala in der Mitte der freien Fläche */

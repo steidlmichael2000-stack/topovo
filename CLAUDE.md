@@ -615,6 +615,40 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   `d.rgb` (Färbung „Farbe“). Normalen darf der PW-Viewer nachreichen (`d.normalen` null, `info.normalen`
   als Promise). Wer `laser.js`/`laser-werk.js` ändert, holt die Kopie neu und prüft `wolke.html`.
 
+- **Regen** (`regen.js`, 06.11.2026, v110; Vorbild: Video von „CutSheetRX“). Ab 1010 px Feld „Regen“ in der Spalte,
+  am Handy runder Knopf `.lz-regen-knopf` über dem Messen mit eigener Tafel `.lz-regen-tafel` — `anordnen` hängt
+  denselben Abschnitt `[data-bereich="regen"]` um; beim Start klappt die Tafel am Handy zu, der Knopf leuchtet.
+  Am Handy bleibt das Luftbild fürs Gelände auf 1536 px verkleinert. Am Gerät (Xiaomi, iPhone) noch ungetestet. Höhenraster aus den Bodenpunkten (0,5 m, höchstens 500 Zellen je Seite), Lücken gefüllt, einmal
+  geglättet. Gebäude als Hindernis aus den **LoD2-Grundrissen** (Dachringe gerastert, bis zum First) — so vom
+  Nutzer gewünscht: Die Dachpunkte (Klasse 6) haben Lücken, durch die Wasser ins Haus lief; sie sind nur der
+  Rückfall ohne LoD2. Schalter „Als Hindernis | Weglassen“ baut das Raster neu (`lod2Holen` holt das LoD2 einmal
+  für Auflage und Regen). „Zeigen: Geländemodell“ zeigt genau dieses Raster als graue Schummerung in der Szene der
+  Punkte (Punkte aus): Boden gemessen hell, aufgefüllt (Lücken ab 2 Zellen) dunkler, Gebäude rötlich — nicht
+  bläulich, Blau ist dem Wasser vorbehalten. Trockene Ecken der Wasserfläche liegen auf dem niedrigsten nassen
+  Nachbarn, sonst zog sich Wasser an jeder Hauswand hoch. Röhrenmodell (Mei et al. 2007) auf der Grafikkarte, zwei
+  Durchgänge je Schritt, Reibung nach Manning (n 0,05) — ohne sie war in 10 min der halbe Regen weg. Am Rand
+  fließt Wasser ab („Abgeflossen“ = gefallen − steht − versickert; mit dichtem Rand bleibt die Masse auf 0,0 m³).
+  Schritte je Bild regelt `bild()` nach der Bildrate (`TEMPO_RAFFUNG`), Kennzahlen höchstens 1 × je s
+  (`readRenderTargetPixels`, bremst). Überhöhung streckt alle Szenen in z (`ueber`); `punktAn`, Schilder,
+  Messkugeln und `tiefeAnpassen` rechnen sie ein — gemessen wird weiter in echten Metern. Beim ersten Start
+  werden alle Klassen außer Boden und Gebäude ausgeblendet (im Wald sah man sonst kein Wasser).
+  „Gemessene Fläche“ nimmt die letzte fertige Flächenmessung. Braucht `EXT_color_buffer_float`.
+  Der PW-Viewer zeigt „Regen“ nicht (keine Bodenklasse); `topovo-holen.sh` kopiert `regen.js` nicht mit.
+  **Bedienung:** Start/Pause, Von vorn, Beenden als Symbole (so gewünscht). „Beenden“ (`regenBeenden`) stellt die
+  Ansicht wie vor dem Regen her: Wasser weg, Punkte, Überhöhung 1 ×, genau die beim Start ausgeblendeten Klassen
+  (`regenBewuchsAus`) wieder an. Zurücksetzen über `regenZuruecksetzen()`, nicht `regenNeu.click()` — auf einen
+  gesperrten Knopf wirkt click() nicht.
+  **Zeigen: Punkte | Gelände | Luftbild** — „Luftbild“ legt das DOP20 als Textur aufs Geländemodell (`luftbildSetzen`
+  in regen.js, unverändert sRGB wie die Punktfarben, leicht geschummert). Dafür behält `luftbildHolen` am Rechner
+  (`desktop.matches`) das Canvas als `luftbildFlaeche` (bis 3000 px, ~36 MB); am Handy wird es wie bisher gleich frei.
+  **KOSTRA-DWD-2020** (`laserKostra`/`laea3035` in `app.js`, als `info.kostra`): Jährlichkeit Frei | 1 | 10 | 30 | 100 a,
+  Start 100 a / 60 min (Nutzer: „gleich das HQ100“ — gemeint ist T = 100 a beim Starkregen). Mit Jährlichkeit läuft
+  der Dauer-Regler über die 13 Dauerstufen 15 min…24 h, Regen = Hn / D als Blockregen. Daten: `kostra/` aus
+  `python3 werkzeug/kostra-bauen.py` (ASCII-Raster Hn des DWD-Open-Data-Servers, 5 km, EPSG:3035, Blöcke 10 × 10
+  Zellen, Uint16 Hn × 10, 4,7 MB, ~23 kB je Abruf) — der DWD gibt KOSTRA nur zum Herunterladen, ohne CORS, und
+  nicht über maps.dwd.de. Geprüft: EPSG-Beispiel 50° N 5° O auf den mm; Gollhofen Rasterfeld 172146 D60 T100
+  45,5 mm wie in der CSV des DWD (15 min, 100 a: 32,0 mm = 128 mm/h). Quellenvermerk steht unter den Knöpfen.
+
 ## Beim Deployen
 
 **Seit 01.11.2026 erst lokal:** Änderungen nicht gleich pushen. Der Nutzer sieht sie in seinem Firefox
