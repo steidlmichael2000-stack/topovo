@@ -100,8 +100,10 @@ const TOUR_SCHRITTE = [
     }
   },
   {
-    titel: 'Lange drücken setzt einen Punkt',
-    text: 'Lange auf die Karte drücken (am Rechner: Rechtsklick) setzt einen Punkt — mit Koordinate, ' +
+    /* Mit der Maus gibt es keinen langen Druck, nur den Rechtsklick */
+    get titel() { return matchMedia('(pointer: fine)').matches ? 'Rechtsklick setzt einen Punkt' : 'Lange drücken setzt einen Punkt'; },
+    text: (matchMedia('(pointer: fine)').matches ? 'Ein Rechtsklick auf die Karte' : 'Lange auf die Karte drücken') +
+      ' setzt einen Punkt — mit Koordinate, ' +
       'Google Maps, „Kilometer bestimmen" und der Route mit dem Auto. Ein kurzer Tipp tut absichtlich nichts: Im Gelände tippt ' +
       'man oft aus Versehen.',
     ziel: () => tourSichtbar('.leaflet-popup'),
@@ -120,18 +122,19 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Messen und Profil',
-    /* Ab 1010 px gibt es keinen Messknopf: Die Werkzeuge stehen hochkant rechts unten */
+    /* Ab 1010 px: Profil und Mappe in der Spalte, Messen als runder Knopf rechts unten */
     get text() {
       return (SEITENLEISTE.matches
-        ? 'Die Messwerkzeuge rechts unten; das Lineal klappt Polygon und Abstand aus. '
+        ? 'Profil und Profilmappe stehen links in der Spalte, ihre Bedienung in der Leiste; der Messknopf ' +
+          'rechts unten klappt Polygon und Abstand aus. '
         : 'Der Messknopf öffnet vier Werkzeuge. ') +
         'Profil: der Geländeschnitt zwischen zwei getippten Punkten. Profilmappe: Querprofile an einer ' +
         'Liste von Kilometern, als ein PDF. Polygon: Strecken und — geschlossen — Flächen. Abstand: die ' +
-        'Entfernung vom Startpunkt zum Fadenkreuz. ' + (SEITENLEISTE.matches
+        'Entfernung vom Startpunkt zum ' + (matchMedia('(pointer: fine)').matches ? 'Mauszeiger. ' : 'Fadenkreuz. ') + (SEITENLEISTE.matches
         ? 'Ein zweiter Klick auf ein Werkzeug beendet es.'
         : 'Ein zweiter Tipp auf den Messknopf beendet, was gerade läuft.');
     },
-    ziel: () => SEITENLEISTE.matches ? tourSichtbar('#werkzeuge') : tourSichtbar('#messMenue'),
+    ziel: () => SEITENLEISTE.matches ? tourSichtbar('#profilSchieneBtn') : tourSichtbar('#messMenue'),
     vorher: () => { if (!SEITENLEISTE.matches) messMenueAuf(true); },
     nachher: () => { if (!SEITENLEISTE.matches) messMenueAuf(false); }
   },
@@ -186,7 +189,7 @@ const TOUR_SCHRITTE = [
     get text() {
       return (SEITENLEISTE.matches ? 'Unter „Karte“ in der Spalte links: ' : 'Hinter dem Regler-Symbol: ') +
         'Karte, dunkle Karte, das amtliche Luftbild (DOP20) und das Geländerelief. Darüber lassen sich ' +
-        'Bahn-Layer, Parzellen, Straßen und Ortsnamen legen — lange drücken (am Rechner: Rechtsklick) auf ' +
+        'Bahn-Layer, Parzellen, Straßen und Ortsnamen legen — ' + (matchMedia('(pointer: fine)').matches ? 'ein Rechtsklick' : 'lange drücken') + ' auf ' +
         '„Parzellen" wählt ihre Farbe. Unter „Erklärung" steht zu jedem mehr.';
     },
     ziel: () => tourSichtbar('#sheet'),
@@ -400,7 +403,28 @@ const HILFE = {
     }
   ],
 
-  live: () => [
+  live: () => matchMedia('(pointer: fine)').matches ? [
+    // Mit der Maus: Linie zum Zeiger, kein Fadenkreuz und kein „Mitte“ (messLiveZeichnen)
+    {
+      titel: 'Vom Start zum Mauszeiger',
+      text: 'Ein Klick setzt den Startpunkt, ein neuer Klick setzt ihn neu. Dann die Maus bewegen: Die ' +
+        'Luftlinie vom Start zum Zeiger läuft hier und neben dem Zeiger mit. Steine und KML-Punkte ' +
+        'werden gefangen wie beim Polygon.',
+      ziel: () => tourSichtbar('#bottom .mess-zahl')
+    },
+    {
+      titel: 'Fangen',
+      text: 'Der Start ist auf einen Stein oder KML-Punkt gesprungen. Diese Knöpfe wechseln zwischen dem ' +
+        'Fangpunkt und der Stelle, die angeklickt wurde.',
+      ziel: () => tourSichtbar('#bottom .pick')
+    },
+    {
+      titel: 'Standort',
+      text: '„Standort" legt den Start auf die eigene Position. Läuft die Standortverfolgung, steht oben ' +
+        'zusätzlich die Entfernung vom Start zum eigenen Standort.',
+      ziel: () => tourSichtbar('#bottom .bb-actions')
+    }
+  ] : [
     {
       titel: 'Vom Start zum Fadenkreuz',
       text: 'Ein Tipp setzt den Startpunkt, ein neuer Tipp setzt ihn neu. Dann die Karte schieben: Die ' +

@@ -382,8 +382,22 @@ und Werkzeugleiste. Das **Regenradar oben mittig** (03.11.2026, so gewünscht: k
 die Quere); `kartePassen` hält oben seinen Platz frei.
 `#bottom[data-art="werkzeug"]` unterscheidet Werkzeug von Ergebnis — wer eine neue Leiste in
 `#bottom` schreibt, setzt oder löscht das. Standort, Abstecken, Nord oben rechts;
-`#werkzeuge` (nur Messwerkzeuge über `data-messart` — Radar und KML seit 04.11.2026 nicht mehr, sie laufen über Wetter und KML; Knopf `#werkzeugeBtn` „Profil“ in der Spalte blendet sie aus, `body.werkzeuge-zu`, gemerkt in `prefs.werkzeugeAus`) **hochkant** unten rechts (`--werkzeug-b`, seit 03.11.2026 —
-quer stieß sie an die Anwendungen); Messknopf und Messmenü sind aus, die Tour zeigt dort auf `#werkzeuge`.
+`#werkzeuge` unten rechts ist seit 06.11.2026 nur noch der **runde Messknopf** (`#werkzeugMessBtn`, 42 px =
+`--werkzeug-b`), Polygon und Abstand klappen **nach oben** aus (`#werkzeugMessMenue`), als Pillen aus Glas (Name + Symbol,
+rechts bündig, Symbol über der Knopfmitte) — ein eckiger Block „passte gar nicht“, getrennte Namensschilder neben
+runden Knöpfen sahen auch nicht gut aus; Messknopf und Messmenü
+des Handys sind aus. **Profil und Mappe** stehen als Felder in der Spalte (`#profilSchieneBtn`,
+`#mappeSchieneBtn`, `schieneWerkzeug`), ihre ganze Bedienung in der Leiste unter der Suche
+(`#bottom[data-art="profil"]`, wie die Route; rollt, wenn sie nicht passt). Steht sie dort, ist ihr Feld gefüllt
+(`.gewaehlt`, `werkzeugInLeiste`), liegt ein Menüabschnitt darüber oder ist die Leiste zu, nur getönt — ein Tipp
+holt sie dann nach vorn, sonst beendet er das Werkzeug. Zugeklappt ist die Bedienung weg (nicht unten mittig);
+`profStart`/`mappeStart` klappen die Leiste auf. Die Tour zeigt am Desktop auf `#profilSchieneBtn`.
+
+**Abstand mit der Maus** (06.11.2026, nach Zeiger `(pointer: fine)` = `MAUS`, nicht nach Breite): Die Linie läuft vom
+Start zum Mauszeiger (`messMaus`, Stelle im Kartenbild aus `mousemove`), nicht zur Kartenmitte; `#mitteKreuz` folgt
+dem Zeiger unsichtbar (`.maus`) und trägt nur die Zahl, „Mitte“ fehlt. `HILFE.live` hat dafür eigene Schritte. Beim **Polygon** ebenso: gestrichelt vom letzten Punkt zum Zeiger, daneben
+die Länge dieses Abschnitts; bei geschlossener Fläche nichts.
+Ebenso ohne „lang drücken“ am Rechner: der Street-View-Hinweis ist ganz raus, die Tour sagt dort „Rechtsklick“.
 
 Der Griff `#leisteGriff` mittig an der Kante oder ein Tipp aufs gewählte Symbol klappt die Leiste zu (`leisteZu`, `body.leiste-zu`), jedes Symbol
 und jedes neue Ergebnis (`renderBottom`, `showStatus`, `showError`, `showPicker`, `openSheet`) wieder auf.
@@ -581,6 +595,18 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   „Auflagen“ in der Tafel. Kleine Schilder, die ein großes berühren, treten über alle Gruppen zurück (`bild`).
 - Namensnennung CC BY 4.0: `LASER_QUELLE` (unten in der Ansicht, mit „ausgeschnitten und
   ausgedünnt") und `LASER_ATTR` (Kartenattribution, solange Laserpunkte offen ist).
+- **Tafel, Effekte, Straßen, Export getrennt** (06.11.2026): Tafel oben fest „Punktgröße“, darunter
+  `<details class="sheet-sec">` (Färbung, Effekte, Klassen, Auflagen, Ansicht, Ausschnitt) — so gewünscht,
+  sie wurde zu lang. Effekte frei kombinierbar: Schatten/Kanten (Regler), *Verdeckung* (SSAO im `EDL_FS`,
+  Uniform `verdeckung`), *Kugeln* (Define `KUGELN`, schreibt `gl_FragDepth` — nur dann, sonst ist die frühe
+  Tiefenprüfung weg), *Höhenlinien* als echte Linien (`hoehenlinienBauen`: Bodenraster 1/2 m, Lücken gefüllt,
+  geglättet, Marching Squares, verdeckt über `GEB_FS`); Punkte einfärben fand der Nutzer schlechter.
+  „Neigung“ ist eine Färbung. Zwei-Spalten-Raster: `breitSetzen` zählt nur sichtbare Knöpfe
+  (`:nth-child` zählte ausgeblendete mit). Klassenliste heißt `.lz-klassenliste` — nicht über `.lz-klassen`
+  greifen, das trifft auch Effekte/Auflagen. *Straßen* (Auflage): `laserStrassen` in `app.js` liest die
+  OpenFreeMap-Vektorkacheln (Stufe 14, `mvtLesen`, Ebenen transportation/transportation_name, ohne Tunnel),
+  drei Stufen in Gelb (`STR_FARBEN`), Namen höchstens 40. Export „Boden + Rest“: `lasBauen` mit `getrennt`
+  schreibt in einem Durchgang zwei LAS (`_boden`, `_rest`) — für ReCap (je Datei ein Scan, in Civil ausblendbar).
 - **Der PW-Viewer zeigt seine Drohnenwolken mit demselben `laser.js`** (seit 06.11.2026, Kopie in
   `../pw-viewer/topovo/`, geholt mit `pw-viewer/werkzeug/topovo-holen.sh`; dort `wolke.html` und
   `topovo/wolke-werk.js`, der `laser-werk.js` per `importScripts` lädt und dessen `onmessage` ersetzt).

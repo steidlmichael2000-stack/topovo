@@ -158,17 +158,18 @@ const gmapsUrl = (lat, lon) => `https://www.google.com/maps?q=${lat.toFixed(6)},
  * ab Nord, am Gleis die Richtung steigender Kilometer.
  *
  * Überall derselbe Griff: Street View liegt hinter einem langen Druck auf „In Google
- * Maps öffnen" (svBinden), mit dem Hinweis darunter. In den Sprechblasen ist der
+ * Maps öffnen" (svBinden), am Rechner hinter dem Rechtsklick. Ohne Hinweis darunter
+ * (06.11.2026 so gewünscht: am Rechner ergab „lang drücken“ keinen Sinn und brach den
+ * Knopf zweizeilig um, dann auch am Handy weg). In den Sprechblasen ist der
  * Maps-Link dafür ein Knopf wie „Kilometer bestimmen" und steht zuerst (mapsKnopf) —
  * als kleiner Textlink war er dort zu umständlich zu treffen. */
 const svUrl = (lat, lon, blick) =>
   `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}` +
   (Number.isFinite(blick) ? `&heading=${Math.round(((blick % 360) + 360) % 360)}` : '');
 const svAttr = (lat, lon) => ` data-sv="${lat.toFixed(6)},${lon.toFixed(6)}"`;
-const SV_HINWEIS = '<small class="sv-hinweis">lang drücken: Street View</small>';
 const mapsKnopf = (lat, lon) =>
   `<a class="kml-km" href="${gmapsUrl(lat, lon)}"${svAttr(lat, lon)} target="_blank" rel="noopener">` +
-  `In Google Maps öffnen${SV_HINWEIS}</a>`;
+  'In Google Maps öffnen</a>';
 
 /** "12+250" → 12.25, "12,5" → 12.5 */
 function toKm(token) {
@@ -2540,6 +2541,7 @@ function initMap() {
   map.on('zoom rotate', gesteBild);
   map.on('zoomend rotateend moveend', gesteEnde);
   map.on('move zoom rotate', messLiveZeichnen);
+  messMausBinden();
   map.on('rotate rotateend', abNachziehen);      // die Pfeile beim Abstecken zeigen auf den Bildschirm
   map.on('zoomend', drawMilestones);
   // Die InfraGO-Kilometer werden nur für den Ausschnitt gerechnet — nach dem Schieben neu
@@ -6825,8 +6827,6 @@ function svBinden() {
   const umstellen = a => {
     a.href = url(a);
     delete a.dataset.sv;
-    const h = a.querySelector('.sv-hinweis');
-    if (h) h.textContent = 'tippen: Street View';
   };
   const oeffnen = a => {
     if (Date.now() - zuletzt < 700) return;
@@ -7036,19 +7036,47 @@ function messKandidatenFinden(latlng) {
 
 let messLiveLinie = null;
 
+/* Mit der Maus (06.11.2026: „das müsste doch nach der Maus gehen und nichts mit Mitte“)
+ * läuft die Linie zum Mauszeiger statt zur Kartenmitte; das Kreuz ist dann unsichtbar
+ * und trägt nur die Zahl neben dem Zeiger. messMaus ist die Stelle im Kartenbild —
+ * schiebt man die Karte, bleibt der Zeiger stehen und die Linie läuft trotzdem mit.
+ * Beim Polygon ebenso (06.11.2026 gewünscht): vom letzten Punkt zum Zeiger, daneben die
+ * Länge des Abschnitts, der mit dem nächsten Klick entsteht — nicht bei geschlossener Fläche. */
+const MAUS = matchMedia('(pointer: fine)');
+let messMaus = null;
+
+function messMausBinden() {
+  map.on('mousemove', ev => {
+    if (!messModus || !MAUS.matches) return;
+    messMaus = ev.containerPoint;
+    messLiveZeichnen();
+  });
+}
+
 function messLiveZeichnen() {
   const zahl = $('#mitteZahl');
   const gross = $('#liveZahl');
+  const kreuz = $('#mitteKreuz');
+  const maus = MAUS.matches && messModus;
+  const poly = maus && messArt !== 'live';
+  if (kreuz) kreuz.classList.toggle('maus', maus);
 
-  if (!messModus || messArt !== 'live' || !messPunkte.length) {
+  if (!messModus || (messArt !== 'live' && !poly) || (poly && messZu) || !messPunkte.length || (maus && !messMaus)) {
     if (messLiveLinie) { messLiveLinie.remove(); messLiveLinie = null; }
     if (zahl) zahl.textContent = '';
     if (gross) gross.textContent = '—';
+    if (maus && kreuz) kreuz.hidden = true;
     return;
   }
 
-  const von = messPunkte[0];
-  const mitte = map.getCenter();
+  const von = poly ? messPunkte[messPunkte.length - 1] : messPunkte[0];
+  const mitte = maus ? map.containerPointToLatLng(messMaus) : map.getCenter();
+  if (maus && kreuz) {
+    const r = map.getContainer().getBoundingClientRect();
+    kreuz.style.left = (r.left + messMaus.x) + 'px';
+    kreuz.style.top = (r.top + messMaus.y) + 'px';
+    kreuz.hidden = false;
+  }
   const d = ellipsoidAbstand(von, [mitte.lat, mitte.lng]);
 
   if (!messLiveLinie) {
@@ -7176,10 +7204,12 @@ function messLeiste() {
   if (live) {
     titel = 'Abstand';
     schild = '<span class="tag warn">Luftlinie</span>';
-    zahl = `<span id="liveZahl">—</span>${n ? ' <small>bis zum Fadenkreuz</small>' : ''}`;
-    if (!n) notizen.push('Startpunkt antippen — dann die Karte schieben: Die Entfernung zum Fadenkreuz läuft mit.');
+    const maus = MAUS.matches;
+    zahl = `<span id="liveZahl">—</span>${n ? ` <small>bis zum ${maus ? 'Mauszeiger' : 'Fadenkreuz'}</small>` : ''}`;
+    if (!n) notizen.push(maus ? 'Startpunkt anklicken — dann die Maus bewegen: Die Entfernung zum Zeiger läuft mit.'
+      : 'Startpunkt antippen — dann die Karte schieben: Die Entfernung zum Fadenkreuz läuft mit.');
     else {
-      notizen.push((gefangen ? `Start ${gefangen}. ` : '') + 'Ein neuer Tipp setzt den Start neu.');
+      notizen.push((gefangen ? `Start ${gefangen}. ` : '') + (maus ? 'Ein neuer Klick' : 'Ein neuer Tipp') + ' setzt den Start neu.');
       if (!ortAn()) notizen.push('Mit Standortverfolgung steht oben auch die Entfernung vom Start zum eigenen Standort.');
     }
   } else if (messZu) {
@@ -7194,10 +7224,11 @@ function messLeiste() {
     schild = '<span class="tag warn">Luftlinie</span>';
     zahl = n > 1 ? esc(messTextFein(messLaenge())) : '—';
     const letzte = n > 1 ? ellipsoidAbstand(messPunkte[n - 2], messPunkte[n - 1]) : 0;
-    if (!n) notizen.push('Auf die Karte tippen setzt den ersten Punkt.');
-    else if (n === 1) notizen.push('Nächsten Punkt antippen' + (gefangen ? ` — ${gefangen}` : '') + '.');
+    const klick = MAUS.matches;
+    if (!n) notizen.push(klick ? 'Ein Klick in die Karte setzt den ersten Punkt.' : 'Auf die Karte tippen setzt den ersten Punkt.');
+    else if (n === 1) notizen.push((klick ? 'Nächsten Punkt anklicken' : 'Nächsten Punkt antippen') + (gefangen ? ` — ${gefangen}` : '') + '.');
     else notizen.push(`${n} Punkte · letzter Abschnitt ${messTextFein(letzte)}${gefangen ? ' · ' + gefangen : ''}`);
-    if (n >= 3) notizen.push('Tipp auf den ersten Punkt schließt die Fläche.');
+    if (n >= 3) notizen.push((klick ? 'Ein Klick' : 'Tipp') + ' auf den ersten Punkt schließt die Fläche.');
     const kd = messKmDifferenz();
     if (kd) {
       notizen.push(`Nach Kilometrierung ${messText(kd.km * 1000)} — von km ${fmtKm(kd.von)} bis km ${fmtKm(kd.bis)} ` +
@@ -7219,7 +7250,7 @@ function messLeiste() {
       ? `<p class="bb-note plain">${esc(t)}</p>` : `<p class="bb-note">${esc(t.warn)}</p>`).join('')}
     ${wahl}
     <div class="bb-actions knapp">
-      ${live ? `<button type="button" id="messMitte">Mitte</button>
+      ${live ? `${MAUS.matches ? '' : '<button type="button" id="messMitte">Mitte</button>'}
       <button type="button" id="messHier"${ortAn() ? '' : ' disabled'}>Standort</button>`
       // Beim Polygon kein Fadenkreuz und kein Standort: Punkte werden getippt und gezogen
       : `<button type="button" id="messZurueck"${n ? '' : ' disabled'}>Zurück</button>
@@ -7297,6 +7328,7 @@ function messStart(art = 'polygon') {
 
 function messEnde() {
   messModus = false;
+  messMaus = null;
   messPunkte = [];
   messZu = false;
   messKandidaten = [];
@@ -7377,8 +7409,8 @@ function messMenueTaste(ev) {
   if (ev.key === 'Escape') messMenueAuf(false);
 }
 
-/* Am Desktop steht Messen in der Werkzeugleiste nur als Symbol und klappt
- * Polygon und Abstand nach links aus — Profil und Mappe stehen dort schon. */
+/* Am Desktop steht Messen unten rechts als runder Knopf und klappt Polygon und
+ * Abstand nach oben aus — Profil und Mappe stehen in der Symbolspalte. */
 function werkzeugMessAuf(auf) {
   const m = $('#werkzeugMessMenue'), k = $('#werkzeugMessBtn');
   if (!m || !k) return;
@@ -7527,6 +7559,125 @@ async function laserAchsen(e0, n0, e1, n1) {
     }
   }
   return raus;
+}
+
+/* ---------- Straßennetz für die 3D-Ansicht ----------
+ * Aus den Vektorkacheln von OpenFreeMap (OpenMapTiles-Schema), aus denen auch
+ * die Karte ihre Straßen zeichnet — kein weiterer Dienst, der Service Worker
+ * legt die Kacheln ab. Stufe 14 ist die feinste und trägt alle Wege. Gelesen
+ * werden nur die Ebenen transportation (Linien mit class) und
+ * transportation_name (Namen); Tunnel bleiben weg, sie lägen sonst auf dem
+ * Gelände darüber. Die Höhe gibt laser.js vom Laserboden. */
+const STR_KLASSEN = { motorway: 0, trunk: 0, primary: 0, secondary: 0, tertiary: 1, minor: 1, service: 1, busway: 1, track: 2, path: 2 };
+let ofmVorlage = null;
+function ofmKachelVorlage() {
+  if (!ofmVorlage) ofmVorlage = fetch(OFM_KACHELN).then(r => {
+    if (!r.ok) throw new Error(`OpenFreeMap: HTTP ${r.status}`);
+    return r.json();
+  }).then(j => j.tiles[0]).catch(err => { ofmVorlage = null; throw err; });
+  return ofmVorlage;
+}
+const mvtZz = v => (v % 2 ? -(v + 1) / 2 : v / 2);
+/** Eine Vektorkachel (Mapbox Vector Tile, Protobuf) lesen, nur die genannten
+ *  Ebenen: { name: [{ typ, eig, linien: [[[u, v] 0…1]] }] }. */
+function mvtLesen(daten, ebenen) {
+  const b = new Uint8Array(daten), td = new TextDecoder(), dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let p = 0;
+  const vi = () => { let r = 0, f = 1, x; do { x = b[p++]; r += (x & 0x7f) * f; f *= 128; } while (x & 0x80); return r; };
+  const ueber = typ => {
+    if (typ === 0) vi(); else if (typ === 1) p += 8; else if (typ === 2) p += vi(); else if (typ === 5) p += 4;
+    else throw new Error(`Vektorkachel: Feldtyp ${typ}`);
+  };
+  const gepackt = () => { const ende = vi() + p, r = []; while (p < ende) r.push(vi()); return r; };
+  const text = () => { const l = vi(), t = td.decode(b.subarray(p, p + l)); p += l; return t; };
+  const raus = {};
+  while (p < b.length) {
+    const t = vi();
+    if (t >> 3 !== 3 || (t & 7) !== 2) { ueber(t & 7); continue; }
+    const ende = vi() + p;
+    let name = '', extent = 4096;
+    const schluessel = [], werte = [], merkmale = [];
+    while (p < ende) {
+      const t2 = vi(), f = t2 >> 3;
+      if (f === 1) name = text();
+      else if (f === 2) {
+        const fe = vi() + p, m = { tags: [], typ: 0, geo: [] };
+        while (p < fe) {
+          const t3 = vi(), f3 = t3 >> 3;
+          if (f3 === 2) m.tags = gepackt(); else if (f3 === 3) m.typ = vi(); else if (f3 === 4) m.geo = gepackt(); else ueber(t3 & 7);
+        }
+        merkmale.push(m);
+      } else if (f === 3) schluessel.push(text());
+      else if (f === 4) {
+        const we = vi() + p;
+        let w = null;
+        while (p < we) {
+          const t3 = vi(), f3 = t3 >> 3;
+          if (f3 === 1) w = text();
+          else if (f3 === 2) { w = dv.getFloat32(p, true); p += 4; }
+          else if (f3 === 3) { w = dv.getFloat64(p, true); p += 8; }
+          else if (f3 === 4 || f3 === 5) w = vi();
+          else if (f3 === 6) w = mvtZz(vi());
+          else if (f3 === 7) w = !!vi();
+          else ueber(t3 & 7);
+        }
+        werte.push(w);
+      } else if (f === 5) extent = vi();
+      else ueber(t2 & 7);
+    }
+    p = ende;
+    if (!ebenen.includes(name)) continue;
+    raus[name] = merkmale.map(m => {
+      const eig = {};
+      for (let i = 0; i + 1 < m.tags.length; i += 2) eig[schluessel[m.tags[i]]] = werte[m.tags[i + 1]];
+      // Geometrie: Befehle MoveTo (1), LineTo (2), ClosePath (7), Versätze im Zickzack
+      const linien = [];
+      let x = 0, y = 0, akt = null;
+      for (let i = 0; i < m.geo.length;) {
+        const bef = m.geo[i] & 7, anz = Math.floor(m.geo[i] / 8);
+        i++;
+        if (bef === 7) { if (akt && akt.length) akt.push(akt[0]); continue; }
+        for (let k = 0; k < anz; k++) {
+          x += mvtZz(m.geo[i++]); y += mvtZz(m.geo[i++]);
+          if (bef === 1) { akt = []; linien.push(akt); }
+          akt.push([x / extent, y / extent]);
+        }
+      }
+      return { typ: m.typ, eig, linien };
+    });
+  }
+  return raus;
+}
+/** Straßen und Wege im Rechteck (UTM32): { strassen: [{ stufe 0 Haupt | 1 Neben | 2 Weg, pts }],
+ *  namen: [{ name, pts }] }. */
+async function laserStrassen(e0, n0, e1, n1) {
+  const [s, w, n, o] = laserGrad(e0, n0, e1, n1);
+  const Z = 14, N = 2 ** Z;
+  const kx = lon => Math.floor((lon + 180) / 360 * N);
+  const ky = lat => Math.floor((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * N);
+  const x0 = kx(w), x1 = kx(o), y0 = ky(n), y1 = ky(s);
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > 100) throw new Error('Der Ausschnitt ist für das Straßennetz zu groß.');
+  const vorlage = await ofmKachelVorlage();
+  const kacheln = [];
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) kacheln.push([x, y]);
+  const strassen = [], namen = [];
+  await Promise.all(kacheln.map(async ([x, y]) => {
+    const r = await fetch(vorlage.replace('{z}', Z).replace('{x}', x).replace('{y}', y));
+    if (!r.ok) throw new Error(`OpenFreeMap: HTTP ${r.status}`);
+    const ebenen = mvtLesen(await r.arrayBuffer(), ['transportation', 'transportation_name']);
+    const utm = ([u, v]) => utm32Hin(Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + v) / N))) * 180 / Math.PI, (x + u) / N * 360 - 180);
+    for (const f of ebenen.transportation || []) {
+      const stufe = STR_KLASSEN[f.eig.class];
+      if (f.typ !== 2 || stufe == null || f.eig.brunnel === 'tunnel') continue;
+      for (const l of f.linien) strassen.push({ stufe, pts: l.map(utm) });
+    }
+    for (const f of ebenen.transportation_name || []) {
+      const name = f.eig['name:de'] || f.eig.name || f.eig.ref;
+      if (f.typ !== 2 || !name || f.eig.brunnel === 'tunnel') continue;
+      for (const l of f.linien) namen.push({ name, pts: l.map(utm) });
+    }
+  }));
+  return { strassen, namen };
 }
 
 /* Sichtbare KML-Dateien im Ausschnitt: Punkte, Linien, Flächen als Umring.
@@ -7742,7 +7893,7 @@ async function laserLaden() {
         const da = namen.filter(k => !m.fehlen.includes(k));
         laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden,
           utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude,
-          achsen: laserAchsen, kml: laserKml, ziel: laserZiel,
+          achsen: laserAchsen, strassen: laserStrassen, kml: laserKml, ziel: laserZiel,
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); } });
       } catch (err) {
@@ -8075,6 +8226,7 @@ function profStart() {
   profFreigabe = false;
   profWahl = -1;
   profLauf++;
+  leisteZu(false);                 // ab 1010 px steht die Bedienung in der Leiste
   map.closePopup();
   if (!profLayer) profLayer = L.layerGroup().addTo(map);
   // Wie beim Messen: Zwei schnelle Tipps wären sonst ein Doppeltipp-Zoom
@@ -8442,7 +8594,7 @@ function profNeigung(p) {
  * Wird ein Knopf zwischen Drücken und Loslassen ersetzt, gibt es keinen Klick. */
 function profLeiste() {
   const b = $('#bottom');
-  b.dataset.art = 'werkzeug';      // ab 1010 px unten mittig statt in der Leiste
+  b.dataset.art = 'profil';        // ab 1010 px in der Leiste links unter der Suche (wie die Route)
   b.hidden = false;
   const g = profGleis;
   const n = profPunkte.length;
@@ -9447,6 +9599,7 @@ function mappeStart() {
   mappeOffen = true;
   mappeFertig = null;
   mappeFehlt = [];
+  leisteZu(false);                 // ab 1010 px steht die Bedienung in der Leiste
   closeSheet();
   mappeLeiste();
   syncButtons();
@@ -9472,7 +9625,7 @@ function mappeZaehlen() {
 
 function mappeLeiste() {
   const b = $('#bottom');
-  b.dataset.art = 'werkzeug';      // ab 1010 px unten mittig statt in der Leiste
+  b.dataset.art = 'profil';        // ab 1010 px in der Leiste links unter der Suche (wie die Route)
   b.hidden = false;
   const W = mappeBreite(), u = mappeUeber();
   const ebene = (id, an, text, geb) => `<button type="button" class="prof-dom${geb ? ' prof-geb' : ''}${an ? ' is-on' : ''}" ` +
@@ -10751,7 +10904,7 @@ function renderBottom() {
     </button>
     <!-- Navigation läuft über Google Maps; Route und Profil als Symbole daneben. -->
     <div class="bb-actions">
-      <a id="mapsBtn" class="maps" href="${gmapsUrl(p.lat, p.lon)}"${svAttr(p.lat, p.lon)} target="_blank" rel="noopener">Google Maps${SV_HINWEIS}</a>
+      <a id="mapsBtn" class="maps" href="${gmapsUrl(p.lat, p.lon)}"${svAttr(p.lat, p.lon)} target="_blank" rel="noopener">Google Maps</a>
       ${routeKnopfBB}
       ${profilKnopf}
       ${laserKnopfBB}
@@ -13088,7 +13241,7 @@ function schieneWaehlen(sec) {
   // sonst bliebe Laser markiert, obwohl man längst woanders ist
   if (laserAn && !laserStelle && !laserLaedt) laserEnde();
   const sh = $('#sheet'), zu = document.body.classList.contains('leiste-zu');
-  const gewaehlt = sh.hidden ? sec === 'suche' : sh.dataset.nur === sec;
+  const gewaehlt = sh.hidden ? sec === 'suche' && !werkzeugInLeiste() : sh.dataset.nur === sec;
   if (!zu && gewaehlt) { leisteZu(true); return; }
   if (zu) leisteZu(false);
   if (sec === 'suche') {
@@ -13106,11 +13259,39 @@ function schieneWaehlen(sec) {
 function schieneSync() {
   const sh = $('#sheet'), nur = !sh.hidden && sh.dataset.nur;
   const zu = document.body.classList.contains('leiste-zu');
+  const wz = !zu && sh.hidden && werkzeugInLeiste();
   document.querySelectorAll('#schiene [data-schiene]').forEach(b => {
-    const an = !zu && (nur ? b.dataset.schiene === nur : b.dataset.schiene === 'suche');
+    const an = !zu && !wz && (nur ? b.dataset.schiene === nur : b.dataset.schiene === 'suche');
     b.classList.toggle('is-on', an);
     b.setAttribute('aria-pressed', String(an));
   });
+  // Steht Profil oder Mappe gerade in der Leiste, ist ihr Feld das gewählte (gefüllt)
+  const p = $('#profilSchieneBtn'), m = $('#mappeSchieneBtn');
+  if (p) p.classList.toggle('gewaehlt', wz === 'profil');
+  if (m) m.classList.toggle('gewaehlt', wz === 'mappe');
+}
+
+/** Welches Werkzeug ('profil', 'mappe') seine Bedienung in #bottom hat, sonst ''. */
+function werkzeugInLeiste() {
+  const b = $('#bottom');
+  if (b.hidden || b.dataset.art !== 'profil') return '';
+  return profModus ? 'profil' : mappeOffen ? 'mappe' : '';
+}
+
+/* Profil und Mappe in der Symbolspalte (ab 1010 px, 06.11.2026 so gewünscht): Ihre
+ * Bedienung steht in der Leiste unter der Suche. Läuft das Werkzeug, liegt aber ein
+ * Menüabschnitt darüber oder ist die Leiste zu, holt der Tipp es nach vorn; steht es
+ * schon da, beendet er es — wie bisher ein zweiter Klick auf ein Werkzeug. */
+function schieneWerkzeug(art) {
+  const an = art === 'profil' ? profModus : mappeOffen;
+  const zu = document.body.classList.contains('leiste-zu');
+  if (an && (zu || !$('#sheet').hidden)) {
+    leisteZu(false);
+    closeSheet();
+    return;
+  }
+  if (art === 'profil') { if (an) profEnde(); else profStart(); }
+  else if (an) mappeEnde(); else mappeStart();
 }
 
 /** Leiste links zu- oder aufklappen (ab 1010 px; schmaler wirkt die Klasse nicht). */
@@ -13228,7 +13409,8 @@ function syncButtons() {
 
   // Das Fadenkreuz gehört nur zu Live (Mitte, laufende Zahl) — nicht zu Polygon und Profil
   const kreuz = $('#mitteKreuz');
-  if (kreuz) kreuz.hidden = !(messModus && messArt === 'live');
+  if (kreuz && !MAUS.matches) kreuz.hidden = !(messModus && messArt === 'live');
+  else if (kreuz && !messModus) kreuz.hidden = true;   // mit der Maus: messLiveZeichnen, auch beim Polygon
 
   const mb = $('#mapMessBtn');
   if (mb) {
@@ -13240,7 +13422,7 @@ function syncButtons() {
   /* Werkzeugleiste „Messen“ (ab 1010 px): das laufende Werkzeug markiert. Radar und
    * KML standen bis November 2026 auch hier — keine Messwerkzeuge (raus auf Wunsch,
    * erreichbar über Wetter und KML in der Symbolspalte). */
-  document.querySelectorAll('#werkzeuge [data-messart]').forEach(b => {
+  document.querySelectorAll('#werkzeugMessMenue [data-messart]').forEach(b => {
     const w = b.dataset.messart;
     const an = w === 'profil' ? profModus : w === 'mappe' ? mappeOffen : messModus && messArt === w;
     b.classList.toggle('is-on', !!an);
@@ -13248,8 +13430,11 @@ function syncButtons() {
   });
   const wm = $('#werkzeugMessBtn');
   if (wm) { wm.classList.toggle('is-on', messModus); wm.setAttribute('aria-pressed', String(messModus)); }
-  const ps = $('#profilSchieneBtn');
-  if (ps) { ps.classList.toggle('is-on', profModus); ps.setAttribute('aria-pressed', String(profModus)); }
+  for (const [id, an] of [['#profilSchieneBtn', profModus], ['#mappeSchieneBtn', mappeOffen]]) {
+    const k = $(id);
+    if (k) { k.classList.toggle('is-on', an); k.setAttribute('aria-pressed', String(an)); }
+  }
+  schieneSync();
   abKnopf();
   // Laserpunkte: runder Knopf am Handy, Feld in der Symbolspalte am Desktop
   for (const id of ['#mapLaserBtn', '#laserSchieneBtn']) {
@@ -13434,7 +13619,7 @@ function bind() {
     suchZu();
     /* Leeren heißt auch: weg mit dem Gesuchten — Pin, Ergebnis und die
      * hervorgehobene Strecke. Ein offenes Werkzeug (Profil, Messen, Route) bleibt. */
-    if (!['werkzeug', 'route'].includes($('#bottom').dataset.art)) {
+    if (!['werkzeug', 'route', 'profil'].includes($('#bottom').dataset.art)) {
       closeBottom();
       view.ref = '';
       view.km = null;
@@ -13546,20 +13731,21 @@ function bind() {
     if (mappeOffen) { mappeEnde(); return; }
     messMenueAuf($('#messMenue').hidden);
   });
-  /* Werkzeugleiste: In der Einfangphase, also vor der data-messart-Bindung unten —
-   * ein laufendes Werkzeug beendet der eigene Knopf, statt es neu zu starten. */
+  /* Messknopf unten rechts: In der Einfangphase — misst es gerade, beendet ein Tipp
+   * darauf das Messen, statt das Menü aufzuklappen. */
   $('#werkzeuge').addEventListener('click', ev => {
     const b = ev.target.closest('button');
     if (!b) return;
     if (!$('#sheet').hidden) closeSheet();
     if (!b.classList.contains('is-on')) return;
     ev.stopPropagation();
-    if (messModus) messEnde(); else if (profModus) profEnde(); else if (mappeOffen) mappeEnde();
+    messEnde();
   }, true);
   document.querySelectorAll('#schiene [data-schiene]').forEach(b =>
     b.addEventListener('click', () => schieneWaehlen(b.dataset.schiene)));
   on('#leisteGriff', 'click', () => leisteZu(!document.body.classList.contains('leiste-zu')));
-  on('#profilSchieneBtn', 'click', () => { if (profModus) profEnde(); else profStart(); });
+  on('#profilSchieneBtn', 'click', () => schieneWerkzeug('profil'));
+  on('#mappeSchieneBtn', 'click', () => schieneWerkzeug('mappe'));
   // Messen: läuft Polygon oder Abstand, beendet der Knopf es (Einfangphase oben), sonst klappt er aus
   on('#werkzeugMessBtn', 'click', () => werkzeugMessAuf($('#werkzeugMessMenue').hidden));
   for (const id of ['#mapLaserBtn', '#laserSchieneBtn']) on(id, 'click', () => { if (laserAn) laserEnde(); else laserStart(); });
