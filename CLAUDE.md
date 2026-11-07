@@ -607,6 +607,13 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   OpenFreeMap-Vektorkacheln (Stufe 14, `mvtLesen`, Ebenen transportation/transportation_name, ohne Tunnel),
   drei Stufen in Gelb (`STR_FARBEN`), Namen höchstens 40. Export „Boden + Rest“: `lasBauen` mit `getrennt`
   schreibt in einem Durchgang zwei LAS (`_boden`, `_rest`) — für ReCap (je Datei ein Scan, in Civil ausblendbar).
+- **07.11.2026 (v118):** Einstellungen der Ansicht in localStorage (`topovo-laser-einst`, PW-Viewer eigener Schlüssel;
+  `einstStand`/`einstAnwenden`, gespeichert in `schliessen` und bei `visibilitychange`). Zurück-Geste: Wache im Verlauf
+  (`wacheAuffuellen` in app.js, Karte 1 Eintrag, 3D-Ansicht 2; aufgefüllt nur bei `pointerup`/`keydown`, weil Chrome
+  Einträge ohne Nutzerzutun überspringt) — `updateHash` muss `history.state` behalten. Größe 1000 m = ganze Kachel
+  (`laserGanzeKachel`, `laserBereich` rastet ein). Quellenzeile am Handy kurz (`info.quelleKurz`, Tipp klappt auf).
+  Dächer im Luftbild (`DACHBILD`-Define nur am Flächenmaterial der Gebäude — ein zweiter Sampler in GEB_FS ohne Wert
+  läge auf derselben Einheit wie `tiefe`). KML-Punkte auf eigener Höhe (`hoehe` aus `kmlGeo`, z = 0 gilt als keine).
 - **Der PW-Viewer zeigt seine Drohnenwolken mit demselben `laser.js`** (seit 06.11.2026, Kopie in
   `../pw-viewer/topovo/`, geholt mit `pw-viewer/werkzeug/topovo-holen.sh`; dort `wolke.html` und
   `topovo/wolke-werk.js`, der `laser-werk.js` per `importScripts` lädt und dessen `onmessage` ersetzt).

@@ -2250,6 +2250,7 @@ body { font-variant-numeric: tabular-nums; }
 /* Gebäude: ein Schalter über die ganze Breite, wie die Klassen gebaut */
 .lz-geb, .lz-ex-geb { width: 100%; }
 .lz-aufl .lz-geb { grid-column: 1 / -1; }
+.lz-aufl .lz-geb-dach { grid-column: 1 / -1; margin: -2px 0 2px; }
 /* Tafel: Punktgröße fest oben, darunter die Abschnitte zum Aufklappen */
 .lz-tafel .lz-oben { margin: 14px 0 16px; }
 .lz-tafel .sheet-sec { padding: 10px 0; }
@@ -2347,6 +2348,14 @@ body { font-variant-numeric: tabular-nums; }
 }
 /* Die Lizenzlinks darin bleiben antippbar, die Fläche drumherum nicht */
 .lz-fuss a { pointer-events: auto; color: inherit; }
+/* Am Handy nur die kurze Zeile, blasser; ein Tipp darauf zeigt die ganze Angabe */
+@media (max-width: 1009.98px) {
+  .lz-fuss.mit-kurz { left: 50%; right: auto; transform: translateX(-50%); max-width: calc(100% - 128px);
+    width: max-content; font-size: .58rem; opacity: .75; pointer-events: auto; cursor: pointer; }
+  .lz-fuss.mit-kurz:not(.offen) .lz-fuss-lang, .lz-fuss.mit-kurz.offen .lz-fuss-kurz { display: none; }
+  .lz-fuss.mit-kurz.offen { opacity: 1; }
+}
+@media (min-width: 1010px) { .lz-fuss-kurz { display: none; } }
 .lz-regen-kostra a { color: inherit; }
 /* Bedienung beim Öffnen, verblasst nach einigen Sekunden */
 .lz-tipp {

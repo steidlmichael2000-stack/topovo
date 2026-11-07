@@ -191,6 +191,42 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
 }
 
+/* ============================ Zurück-Geste ============================
+ *
+ * Am Handy beendet das Wischen vom Rand (Android: Zurück) die App ohne
+ * Rückfrage — im Laserviewer passierte das leicht aus Versehen (07.11.2026).
+ * Deshalb liegen über dem Eintrag der Seite eigene Einträge im Verlauf, die
+ * Wache: auf der Karte einer, in der 3D-Ansicht zwei. Zurück nimmt einen weg —
+ * in der 3D-Ansicht kommt erst ein Hinweis, das zweite Zurück schließt sie;
+ * auf der Karte ebenso ein Hinweis, erst das nächste Zurück beendet die App.
+ * Aufgefüllt wird beim nächsten Tippen (pointerup, keydown): Chrome überspringt
+ * Einträge, die eine Seite ohne Zutun des Nutzers anlegt. */
+const wacheTiefe = () => (history.state && history.state.wache) || 0;
+let wacheUebergehen = 0;           // selbst ausgelöste Zurück-Schritte, die popstate überhört
+function wacheAuffuellen() {
+  const soll = laserSchliessen ? 2 : 1;
+  try {
+    for (let t = wacheTiefe(); t < soll; t++) history.pushState({ ...(history.state || {}), wache: t + 1 }, '');
+  } catch { /* in eingebetteten Ansichten gesperrt */ }
+}
+window.addEventListener('pointerup', wacheAuffuellen, { capture: true, passive: true });
+window.addEventListener('keydown', wacheAuffuellen, { capture: true, passive: true });
+window.addEventListener('popstate', () => {
+  if (wacheUebergehen) { wacheUebergehen--; return; }
+  if (laserSchliessen) {
+    if (wacheTiefe() >= 1) { laserSchliessen.hinweis('Noch einmal zurück schließt die 3D-Ansicht.'); return; }
+    laserSchliessen();
+    wacheAuffuellen();
+    return;
+  }
+  if (!wacheTiefe()) toast('Noch einmal zurück beendet Topovo.');
+});
+/** Die 3D-Ansicht ging anders zu (×, Esc): ihren Eintrag der Wache zurücknehmen. */
+function wacheLaserZu() {
+  laserSchliessen = null;
+  if (wacheTiefe() > 1) { wacheUebergehen++; history.back(); }
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -5223,8 +5259,13 @@ function kmlKoord(roh) {
 function kmlGeo(el, raus) {
   switch (el.localName) {
     case 'Point': {
-      const c = kmlKoord(kmlText(el, 'coordinates'));
-      if (c.length) raus.push({ art: 'p', koord: c[0] });
+      const roh = kmlText(el, 'coordinates');
+      const c = kmlKoord(roh);
+      /* Die Höhe des Punkts (dritte Zahl) für den Laserviewer: Dort steht er auf
+       * seiner eigenen Höhe statt auf dem Gelände (so gewünscht, 07.11.2026).
+       * 0 heißt in KML meist „keine Höhe“ — dann doch aufs Gelände. */
+      const z = parseFloat(String(roh || '').trim().split(/\s+/)[0].split(',')[2]);
+      if (c.length) raus.push({ art: 'p', koord: c[0], ...(isFinite(z) && z !== 0 ? { hoehe: z } : {}) });
       break;
     }
     case 'LineString': case 'LinearRing': {
@@ -7481,6 +7522,8 @@ const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
 /* CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen: in der
  * Ansicht unten (LASER_QUELLE), auf der Karte in der Quellenangabe (LASER_ATTR). */
 const LASER_QUELLE = 'Bayerische Vermessungsverwaltung (CC BY 4.0), bearbeitet';
+// Am Handy in der Ansicht nur kurz, ein Tipp zeigt die ganze Angabe (laser.js, quellenNeu)
+const LASER_QUELLE_KURZ = '© BVV (CC BY 4.0), bearbeitet';
 const LASER_ATTR = landQuelle('Laserpunkte', ['by']);
 let laserAn = false;
 let laserStelle = null;      // { e, n } — Mitte des Rahmens in UTM32
@@ -7495,6 +7538,7 @@ let laserWerk = null;
 let laserLayer = null, laserRasterLayer = null, laserRahmen = null;
 let laserFehler = '';
 let laserGezogen = 0;        // Zeit des letzten Ziehens — der Tipp danach setzt nicht neu
+let laserSchliessen = null;  // solange die 3D-Ansicht offen ist: schließt sie (Zurück-Geste)
 
 function laserStart() {
   if (routeAn) routeEnde(false);
@@ -7534,10 +7578,20 @@ function laserEnde(zeigen = true) {
   if (zeigen) renderBottom();
 }
 
+/* Bei 1000 m rastet der Rahmen auf die Kachel unter seiner Mitte ein — von Hand
+ * ließ sich das Raster nicht genau treffen, und ein freier Kilometer berührt
+ * meist vier Kacheln (so gewünscht, 07.11.2026). Ziehen springt dann von Kachel
+ * zu Kachel. */
+const laserGanzeKachel = () => laserSeite >= 1000;
 function laserBereich() {
   const { e, n } = laserStelle, h = laserSeite / 2;
+  if (laserGanzeKachel()) {
+    const e0 = Math.floor(e / 1000) * 1000, n0 = Math.floor(n / 1000) * 1000;
+    return { e0, n0, e1: e0 + 1000, n1: n0 + 1000 };
+  }
   return { e0: e - h, n0: n - h, e1: e + h, n1: n + h };
 }
+const laserSeiteText = () => laserGanzeKachel() ? 'Kachel' : `${laserSeite} m`;
 
 /* Für die 3D-Ansicht (laser.js). Die Laserpunkte der BVV haben keine Farbe
  * (Punktformat 1); die Färbung „Luftbild“ holt sie aus dem DOP20 der BVV,
@@ -7770,7 +7824,7 @@ function laserKml(e0, n0, e1, n1) {
       if (!kmlSichtbarObj(a, ob)) continue;
       const linie = ob.art === 'l' ? ob.koord : ob.art === 'a' ? [...ob.koord[0], ob.koord[0][0]] : null;
       if (ob.art === 'p' ? !drin(ob.koord) : !linie.some(drin)) continue;
-      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe,
+      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe, hoehe: ob.hoehe,
         pts: (ob.art === 'p' ? [ob.koord] : linie).map(([la, lo]) => utm32Hin(la, lo)) });
     }
   }
@@ -7968,11 +8022,12 @@ async function laserLaden() {
         const { laserAnsicht } = await import('./laser.js');
         if (!laserAn) return;                // beim ersten Mal lädt three.js — inzwischen beendet?
         const da = namen.filter(k => !m.fehlen.includes(k));
-        laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, seite, nurBoden,
+        laserSchliessen = laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, quelleKurz: LASER_QUELLE_KURZ, seite, nurBoden,
           utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude, kostra: laserKostra,
           achsen: laserAchsen, strassen: laserStrassen, kml: laserKml, ziel: laserZiel,
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
-          { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); } });
+          { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); wacheLaserZu(); } });
+        wacheAuffuellen();
       } catch (err) {
         console.warn(err);
         laserFehler = err && err.message === 'WebGL2' ? 'Dieses Gerät kann die 3D-Ansicht nicht zeigen (kein WebGL2).'
@@ -8059,7 +8114,7 @@ function laserLeiste() {
       <p class="bb-sub" id="laserKosten">${esc(laserKosten())}</p>
       <label class="slider-row" for="laserSeite">Größe
         <input id="laserSeite" type="range" min="${LASER_SEITE.min}" max="${LASER_SEITE.max}" step="${LASER_SEITE.schritt}" value="${laserSeite}"${L_ ? ' disabled' : ''}>
-        <span id="laserSeiteWert" class="slider-val">${laserSeite} m</span>
+        <span id="laserSeiteWert" class="slider-val">${laserSeiteText()}</span>
       </label>
       <div class="seg seg-paar" role="group" aria-label="Welche Punkte" style="margin-top:9px">
         <button type="button" class="seg-btn${laserNurBoden ? '' : ' is-on'}" data-laser-boden="0"${L_ ? ' disabled' : ''}>Alle Punkte</button>
@@ -8068,7 +8123,9 @@ function laserLeiste() {
       ${L_ ? `<div class="laser-lade${anteil == null ? ' unbestimmt' : ''}"><div class="laser-lade-balken" id="laserLadeBalken"${anteil == null ? '' : ` style="width:${Math.round(anteil * 100)}%"`}></div></div>
         <p class="bb-note plain" id="laserLadeText">${esc(stufe)}</p>` : ''}
       ${laserFehler ? `<p class="bb-note">${esc(laserFehler)}</p>` : ''}
-      ${!L_ && !laserFehler ? '<p class="bb-note plain">Rahmen ziehen zum Verschieben, Tipp daneben setzt ihn neu.</p>' : ''}
+      ${!L_ && !laserFehler ? `<p class="bb-note plain">${laserGanzeKachel()
+        ? 'Ganze Kachel 1 × 1 km. Tipp in eine andere Kachel oder Rahmen ziehen wechselt sie.'
+        : 'Rahmen ziehen zum Verschieben, Tipp daneben setzt ihn neu. Ganz rechts am Regler: ganze Kachel.'}</p>` : ''}
       <div class="bb-actions">${L_ ? '<button type="button" id="laserAbbrechenBtn">Abbrechen</button>'
         : `<button type="button" id="laserLadenBtn" class="maps"${keine ? ' disabled' : ''}>In 3D ansehen</button>`}</div>`;
   }
@@ -8085,7 +8142,7 @@ function laserLeiste() {
     // Beim Ziehen nur Rahmen und Zahlen nachführen; die Leiste neu erst beim Loslassen
     regler.addEventListener('input', () => {
       laserSeite = Number(regler.value);
-      $('#laserSeiteWert').textContent = `${laserSeite} m`;
+      $('#laserSeiteWert').textContent = laserSeiteText();
       laserRahmenZeichnen();
       $('#laserKosten').textContent = laserKosten();
     });
@@ -13560,7 +13617,8 @@ function updateHash() {
   // Auf den Meter gerundet: Aus dem Standort kam sonst „k=90.00496258884965" in den Link
   else if (view.km != null) p.set('k', String(Math.round(view.km * 1000) / 1000));
   const hash = '#' + p.toString();
-  try { window.history.replaceState(null, '', hash); } catch { location.hash = hash; }
+  // Den Zustand behalten: Darin steht die Zurück-Wache (wacheTiefe)
+  try { window.history.replaceState(history.state, '', hash); } catch { location.hash = hash; }
 }
 
 function readHash() {
