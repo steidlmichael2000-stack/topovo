@@ -842,7 +842,8 @@ input[type="range"] { min-width: 0; }
   white-space: nowrap;
 }
 /* Zwei gleich breite Knöpfe je Reihe (Auswahl der Festpunkte) */
-.seg-paar .seg-btn { flex: 1 1 0; }
+.seg-paar .seg-btn, .seg-drei .seg-btn { flex: 1 1 0; }
+.seg-drei .seg-btn { min-width: 0; padding-left: 4px; padding-right: 4px; }
 /* Rückmeldung beim Tippen — vor allem für die Aktionsknöpfe (Layer laden, Aktualisieren) */
 .seg-btn:active { filter: brightness(1.12); }
 /* Gewählt: volle Signalfarbe. Ohne Rahmen ging eine bloße Tönung auf dem Glas unter. */
@@ -1825,7 +1826,7 @@ input[type="range"] { min-width: 0; }
 .schiene, .werkzeuge, .leiste-griff, .marke { display: none; }
 
 @media (min-width: 1010px) {
-  :root { --schiene: 64px; --seite: 320px; --links: calc(var(--schiene) + var(--seite)); --werkzeug-b: 42px; }
+  :root { --schiene: 64px; --seite: 380px; --links: calc(var(--schiene) + var(--seite)); --werkzeug-b: 42px; }
 
   /* Icon und Name oben links: eine Kopfzeile über Spalte und Leiste. Das Icon ist so
      groß wie die Knöpfe der Spalte (52 × 52, links 6 = Spaltenrand), Mitte 32 auf 32;
@@ -1869,11 +1870,12 @@ input[type="range"] { min-width: 0; }
   .schiene .sec-ikon .voll { fill: currentColor; }
   .schiene button:hover { background: var(--panel-2); color: var(--text); }
   .schiene button.is-on { background: var(--accent); color: var(--accent-ink); }
-  /* Profil und Laser sind Werkzeuge, keine Bereiche: laufen sie, getönt wie in der
-     Werkzeugleiste rechts — gefüllt ist nur der Bereich, der in der Leiste offen ist */
-  .schiene .schiene-werkzeug.is-on { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
-  /* Profil und Mappe zeigen ihre Bedienung in der Leiste: steht sie dort, ist ihr Feld
-     das gewählte wie ein Bereich (gefüllt); liegt ein Abschnitt darüber, nur getönt */
+  /* Profil, Mappe und Laser zeigen ihre Bedienung in der Leiste: steht sie dort, ist ihr
+     Feld das gewählte wie ein Bereich (gefüllt). Liegt ein anderer Abschnitt darüber,
+     ist es nicht mehr markiert — bis 11.11.2026 blieb es dann orange getönt, das las
+     sich beim Durchklicken wie eine zweite Auswahl. Ein Tipp holt es wieder nach vorn. */
+  .schiene .schiene-werkzeug.is-on:not(.gewaehlt) { background: none; color: var(--muted); }
+  .schiene .schiene-werkzeug.is-on:not(.gewaehlt):hover { background: var(--panel-2); color: var(--text); }
   .schiene .schiene-werkzeug.gewaehlt { background: var(--accent); color: var(--accent-ink); }
   /* Hinweise ganz unten (so gewünscht, 04.11.2026) */
   .schiene .schiene-unten { margin-top: auto; }
@@ -2251,6 +2253,8 @@ body { font-variant-numeric: tabular-nums; }
 .lz-geb, .lz-ex-geb { width: 100%; }
 .lz-aufl .lz-geb { grid-column: 1 / -1; }
 .lz-aufl .lz-geb-dach { grid-column: 1 / -1; margin: -2px 0 2px; }
+.lz-aufl .lz-str-breite { grid-column: 1 / -1; margin: 0 2px 2px; }
+.lz-aufl .lz-str-breite[hidden] { display: none; }
 /* Tafel: Punktgröße fest oben, darunter die Abschnitte zum Aufklappen */
 .lz-tafel .lz-oben { margin: 14px 0 16px; }
 .lz-tafel .sheet-sec { padding: 10px 0; }
@@ -2394,7 +2398,7 @@ body { font-variant-numeric: tabular-nums; }
   .lz-schiene [data-lz="karte"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -6px; height: 1px; background: var(--line); }
   .lz-schiene-heim { margin-top: auto; }
   .lz-seite {
-    display: block; position: absolute; z-index: 2; left: 64px; top: 0; bottom: 0; width: 320px;
+    display: block; position: absolute; z-index: 2; left: var(--schiene); top: 0; bottom: 0; width: var(--seite);
     padding: 14px 16px 20px; overflow: auto;
     background: var(--glass-dicht); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
     box-shadow: inset -.5px 0 0 var(--line), 8px 0 24px rgba(0, 0, 0, .18);
@@ -2420,9 +2424,9 @@ body { font-variant-numeric: tabular-nums; }
   /* Standort wie in Topovo oben rechts, nicht in der Spalte */
   .lz-ort { top: 16px; right: 16px; bottom: auto; }
   /* Fußzeile, Hinweis und Farbskala in der Mitte der freien Fläche */
-  .lz-fuss { left: calc(384px + 16px); right: 74px; top: 16px; }
-  .lz-tipp { left: calc(50% + 192px); max-width: calc(100% - 440px); }
-  .lz-skala { left: calc(50% + 192px); }
+  .lz-fuss { left: calc(var(--schiene) + var(--seite) + 16px); right: 74px; top: 16px; }
+  .lz-tipp { left: calc(50% + (var(--schiene) + var(--seite)) / 2); max-width: calc(100% - var(--schiene) - var(--seite) - 56px); }
+  .lz-skala { left: calc(50% + (var(--schiene) + var(--seite)) / 2); }
   .seite-zu .lz-fuss { left: calc(64px + 16px); }
   .seite-zu .lz-tipp, .seite-zu .lz-skala { left: calc(50% + 32px); }
 }

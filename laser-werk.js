@@ -44,7 +44,57 @@ const ABGEBROCHEN = 'abgebrochen';
 const vorrat = new Map();       // Kachel → { zeiger, groesse }, in der Reihenfolge der Nutzung
 
 function vorratMelden() {
-  self.postMessage({ art: 'vorrat', kacheln: [...vorrat.keys()] });
+  self.postMessage({ art: 'vorrat', kacheln: [...new Set([...vorrat.keys(), ...entpackt.keys()])] });
+}
+
+/* Entpackte Kacheln (11.11.2026, nur am PC — app.js gibt am Handy entpacktMax 0):
+ * Die LAZ der BVV sind nach Flugstreifen geordnet, jeder neue Ausschnitt müsste
+ * die ganze Kachel neu entpacken. Deshalb hier je Kachel alle Punkte, knapp:
+ * Lage relativ zur Kachelecke und Höhe als Float32, Klasse, Intensität — 15 Byte
+ * je Punkt statt 30–40 im LAS. Verschieben heißt dann nur noch Durchsehen. */
+const ENTPACKT_BYTE = 15;
+const entpackt = new Map();     // Kachel → { x, y, z, kl, st, n, e0, n0, kopf, groesse, bytes }, zuletzt benutzt hinten
+let entpacktSumme = 0;
+/** Platz für bedarf Byte; false, wenn es auch ohne die Kacheln in behalten nicht reicht. */
+function entpacktPlatz(bedarf, behalten, max) {
+  for (const [k, v] of entpackt) {
+    if (entpacktSumme + bedarf <= max) break;
+    if (behalten.has(k)) continue;
+    entpackt.delete(k);
+    entpacktSumme -= v.bytes;
+  }
+  return entpacktSumme + bedarf <= max;
+}
+/** Alle Punkte einer gepackten Kachel in Felder; meldet den Fortschritt wie das Ausschneiden. */
+async function entpacken(LP, { kachel, zeiger, groesse, kopf: k }, nr, von) {
+  const laszip = new LP.LASZip(), punkt = LP._malloc(64);
+  try {
+    laszip.open(zeiger, groesse);
+    const anzahl = laszip.getCount() || k.anzahl;
+    const [ke, kn] = kachel.split('_').map(Number), e0 = ke * 1000, n0 = kn * 1000;
+    const x = new Float32Array(anzahl), y = new Float32Array(anzahl), z = new Float32Array(anzahl);
+    const kl = new Uint8Array(anzahl), st = new Uint16Array(anzahl);
+    const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
+    let puffer = null, d = null;
+    for (let i = 0; i < anzahl; i++) {
+      laszip.getPoint(punkt);
+      if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
+      if ((i & 0xfffff) === 0) {
+        senden({ art: 'lesen', nr, von, gelesen: i, gesamt: anzahl });
+        await new Promise(r => setTimeout(r));
+        if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
+      }
+      x[i] = d.getInt32(0, true) * sx + ox - e0;
+      y[i] = d.getInt32(4, true) * sy + oy - n0;
+      z[i] = d.getInt32(8, true) * sz + oz;
+      kl[i] = k.format >= 6 ? d.getUint8(16) : d.getUint8(15) & 31;
+      st[i] = d.getUint16(12, true);
+    }
+    return { x, y, z, kl, st, n: anzahl, e0, n0, kopf: k, groesse, bytes: anzahl * ENTPACKT_BYTE };
+  } finally {
+    laszip.delete();
+    LP._free(punkt);
+  }
 }
 
 /* Meldungen eines Exports tragen export: true — app.js reicht sie an die
@@ -203,7 +253,7 @@ function kopfLesen(b) {
 }
 
 /** Holt die Kacheln, eine nach der anderen: aus dem Vorrat oder neu geladen. */
-async function kachelnHolen(LP, kacheln, vorratMax) {
+async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false) {
   const von = kacheln.length, behalten = new Set(kacheln.map(k => k.kachel));
   const da = [], fehlen = [];
   let megabyte = 0;
@@ -232,32 +282,85 @@ async function kachelnHolen(LP, kacheln, vorratMax) {
     vorratMelden();
     da.push({ kachel, ...v, kopf });
   }
-  if (!da.length) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
+  if (!da.length && !leerErlaubt) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
   return { da, fehlen, megabyte };
 }
 
-async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
+/* Freihand-Umriss (11.11.2026): Statt jeden Punkt gegen das Vieleck zu prüfen,
+ * einmal ein Raster über das Rechteck füllen (Zeile für Zeile, gerade/ungerade)
+ * und je Punkt nur eine Zelle nachsehen. Bei 2 km Kante und 0,5 m Zellen 16 MB. */
+function umrissMaske(umriss, { e0, n0, e1, n1 }) {
+  const res = Math.max(0.25, Math.max(e1 - e0, n1 - n0) / 4000);
+  const w = Math.ceil((e1 - e0) / res), h = Math.ceil((n1 - n0) / res), m = new Uint8Array(w * h);
+  let zellen = 0;
+  for (let r = 0; r < h; r++) {
+    const y = n0 + (r + 0.5) * res, xs = [];
+    for (let i = 0, j = umriss.length - 1; i < umriss.length; j = i++) {
+      const [xa, ya] = umriss[j], [xb, yb] = umriss[i];
+      if ((ya > y) !== (yb > y)) xs.push(xa + (y - ya) * (xb - xa) / (yb - ya));
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const c0 = Math.max(0, Math.ceil((xs[k] - e0) / res - 0.5)), c1 = Math.min(w - 1, Math.floor((xs[k + 1] - e0) / res - 0.5));
+      for (let c = c0; c <= c1; c++) { m[r * w + c] = 1; zellen++; }
+    }
+  }
+  return { m, w, h, res, e0, n0, flaeche: zellen * res * res };
+}
+const inMaske = (M, e, n) => {
+  const c = Math.floor((e - M.e0) / M.res), r = Math.floor((n - M.n0) / M.res);
+  return c >= 0 && r >= 0 && c < M.w && r < M.h && M.m[r * M.w + c] === 1;
+};
+
+async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0 }) {
   if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
   const LP = lazPerf;
 
   // Erst alle Kacheln da haben, eine nach der anderen. Die Zeiten je Schritt
   // stehen unten in der Ansicht — damit sich sagen lässt, wo es hängt.
+  // Schon entpackte brauchen ihr LAZ nicht (es kann längst aus dem Vorrat sein).
   const zeiten = { laden: 0, megabyte: 0, lesen: 0, normalen: 0 };
   let uhr = performance.now();
-  const { da, fehlen, megabyte } = await kachelnHolen(LP, kacheln, vorratMax);
+  const behalten = new Set(kacheln.map(k => k.kachel));
+  const offen = kacheln.filter(k => !entpackt.has(k.kachel));
+  const { da, fehlen, megabyte } = offen.length ? await kachelnHolen(LP, offen, vorratMax, true) : { da: [], fehlen: [], megabyte: 0 };
   zeiten.megabyte = megabyte;
   zeiten.laden = (performance.now() - uhr) / 1000;
   uhr = performance.now();
+
+  // In der Reihenfolge des Auftrags: je Kachel die entpackten Felder oder das LAZ
+  const quellen = [];
+  for (const { kachel } of kacheln) {
+    const e = entpackt.get(kachel);
+    if (e) { entpackt.delete(kachel); entpackt.set(kachel, e); quellen.push({ kachel, kopf: e.kopf, groesse: e.groesse, felder: e }); continue; }
+    const v = da.find(x => x.kachel === kachel);
+    if (v) quellen.push(v);
+  }
+  if (!quellen.length) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
+  // Neu geladene entpacken und merken, soweit der Platz reicht — sonst wie bisher im Durchgang
+  if (entpacktMax) {
+    for (let t = 0; t < quellen.length; t++) {
+      const q = quellen[t];
+      if (q.felder || !entpacktPlatz(q.kopf.anzahl * ENTPACKT_BYTE, behalten, entpacktMax)) continue;
+      const e = await entpacken(LP, q, t, quellen.length);
+      entpackt.set(q.kachel, e);
+      entpacktSumme += e.bytes;
+      q.felder = e;
+    }
+    vorratMelden();
+  }
 
   /* Wie viele Punkte liegen etwa im Ausschnitt? Danach die Ausdünnung, damit
    * es höchstens rund max werden — gleichmäßig, jeder schritt-te Punkt. Beim
    * Boden allein grob die Hälfte (gezählt wird beim Lesen nur, was passt). */
   const { e0, n0, e1, n1 } = bereich;
+  const maske = umriss && umriss.length > 2 ? umrissMaske(umriss, bereich) : null;
+  const anteil = maske ? maske.flaeche / Math.max(1, (e1 - e0) * (n1 - n0)) : 1;
   let erwartet = 0;
-  for (const { kopf: k } of da) {
+  for (const { kopf: k } of quellen) {
     const flaeche = Math.max(1, (k.max[0] - k.min[0]) * (k.max[1] - k.min[1]));
     const ueber = Math.max(0, Math.min(e1, k.max[0]) - Math.max(e0, k.min[0])) * Math.max(0, Math.min(n1, k.max[1]) - Math.max(n0, k.min[1]));
-    erwartet += k.anzahl * Math.min(1, ueber / flaeche) * (nurBoden ? 0.5 : 1);
+    erwartet += k.anzahl * Math.min(1, ueber / flaeche) * (nurBoden ? 0.5 : 1) * anteil;
   }
   const schritt = Math.max(1, Math.ceil(erwartet / max));
   const ce = (e0 + e1) / 2, cn = (n0 + n1) / 2;
@@ -266,55 +369,72 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
   let xyz = new Float32Array(platz * 3), klasse = new Uint8Array(platz), staerke = new Uint16Array(platz);
   const klassen = new Map();
   let n = 0, drin = 0, zMin = Infinity, zMax = -Infinity, iMax = 0;
-  const punkt = LP._malloc(64);
-  try {
-    for (let t = 0; t < da.length; t++) {
-      const { zeiger, groesse, kopf: k } = da[t];
-      const laszip = new LP.LASZip();
-      try {
-        laszip.open(zeiger, groesse);
-        // LAS 1.4 (alle neueren Befliegungen) lässt das alte 32-Bit-Feld leer, laz-perf meldet dann 0
-        const anzahl = laszip.getCount() || k.anzahl;
-        const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
-        // Ganzzahlige Grenzen: der Vergleich je Punkt ohne Umrechnung
-        const X0 = (e0 - ox) / sx, X1 = (e1 - ox) / sx, Y0 = (n0 - oy) / sy, Y1 = (n1 - oy) / sy;
-        let puffer = null, d = null;
-        for (let i = 0; i < anzahl; i++) {
-          laszip.getPoint(punkt);
-          if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
-          if ((i & 0xfffff) === 0) {
-            senden({ art: 'lesen', nr: t, von: da.length, gelesen: i, gesamt: anzahl });
-            await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) durchlassen
-            if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
-          }
-          const X = d.getInt32(0, true), Y = d.getInt32(4, true);
-          if (X < X0 || X > X1 || Y < Y0 || Y > Y1) continue;
-          // Formate 0–5: Klasse in den unteren 5 Bit von Byte 15; ab 6 ein ganzes Byte 16
-          const kl = k.format >= 6 ? d.getUint8(16) : d.getUint8(15) & 31;
-          if (nurBoden && !BODEN.has(kl)) continue;
-          if (drin++ % schritt) continue;
-          if (n === platz) {
-            platz *= 2;
-            const a = new Float32Array(platz * 3); a.set(xyz); xyz = a;
-            const b = new Uint8Array(platz); b.set(klasse); klasse = b;
-            const c = new Uint16Array(platz); c.set(staerke); staerke = c;
-          }
-          const z = d.getInt32(8, true) * sz + oz;
-          xyz[3 * n] = X * sx + ox - ce; xyz[3 * n + 1] = Y * sy + oy - cn; xyz[3 * n + 2] = z;
-          klasse[n] = kl;
-          staerke[n] = d.getUint16(12, true);
-          klassen.set(kl, (klassen.get(kl) || 0) + 1);
-          if (z < zMin) zMin = z;
-          if (z > zMax) zMax = z;
-          if (staerke[n] > iMax) iMax = staerke[n];
-          n++;
-        }
-      } finally {
-        laszip.delete();
-      }
+  /** Ein Punkt im Rechteck: Umriss, Klasse, Ausdünnung prüfen und übernehmen. */
+  const nimm = (e, nn, z, kl, s) => {
+    if (maske && !inMaske(maske, e, nn)) return;
+    if (nurBoden && !BODEN.has(kl)) return;
+    if (drin++ % schritt) return;
+    if (n === platz) {
+      platz *= 2;
+      const a = new Float32Array(platz * 3); a.set(xyz); xyz = a;
+      const b = new Uint8Array(platz); b.set(klasse); klasse = b;
+      const c = new Uint16Array(platz); c.set(staerke); staerke = c;
     }
-  } finally {
-    LP._free(punkt);
+    xyz[3 * n] = e - ce; xyz[3 * n + 1] = nn - cn; xyz[3 * n + 2] = z;
+    klasse[n] = kl;
+    staerke[n] = s;
+    klassen.set(kl, (klassen.get(kl) || 0) + 1);
+    if (z < zMin) zMin = z;
+    if (z > zMax) zMax = z;
+    if (s > iMax) iMax = s;
+    n++;
+  };
+  for (let t = 0; t < quellen.length; t++) {
+    const q = quellen[t];
+    if (q.felder) {
+      // Aus den entpackten Feldern: nur noch durchsehen
+      const { x, y, z, kl, st, n: anzahl, e0: ke, n0: kn } = q.felder;
+      const X0 = e0 - ke, X1 = e1 - ke, Y0 = n0 - kn, Y1 = n1 - kn;
+      for (let i = 0; i < anzahl; i++) {
+        if ((i & 0x3fffff) === 0) {
+          senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i, gesamt: anzahl });
+          await new Promise(r => setTimeout(r));
+          if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
+        }
+        const xi = x[i], yi = y[i];
+        if (xi < X0 || xi > X1 || yi < Y0 || yi > Y1) continue;
+        nimm(xi + ke, yi + kn, z[i], kl[i], st[i]);
+      }
+      continue;
+    }
+    const { zeiger, groesse, kopf: k } = q;
+    const laszip = new LP.LASZip(), punkt = LP._malloc(64);
+    try {
+      laszip.open(zeiger, groesse);
+      // LAS 1.4 (alle neueren Befliegungen) lässt das alte 32-Bit-Feld leer, laz-perf meldet dann 0
+      const anzahl = laszip.getCount() || k.anzahl;
+      const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
+      // Ganzzahlige Grenzen: der Vergleich je Punkt ohne Umrechnung
+      const X0 = (e0 - ox) / sx, X1 = (e1 - ox) / sx, Y0 = (n0 - oy) / sy, Y1 = (n1 - oy) / sy;
+      let puffer = null, d = null;
+      for (let i = 0; i < anzahl; i++) {
+        laszip.getPoint(punkt);
+        if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
+        if ((i & 0xfffff) === 0) {
+          senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i, gesamt: anzahl });
+          await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) durchlassen
+          if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
+        }
+        const X = d.getInt32(0, true), Y = d.getInt32(4, true);
+        if (X < X0 || X > X1 || Y < Y0 || Y > Y1) continue;
+        // Formate 0–5: Klasse in den unteren 5 Bit von Byte 15; ab 6 ein ganzes Byte 16
+        nimm(X * sx + ox, Y * sy + oy, d.getInt32(8, true) * sz + oz,
+          k.format >= 6 ? d.getUint8(16) : d.getUint8(15) & 31, d.getUint16(12, true));
+      }
+    } finally {
+      laszip.delete();
+      LP._free(punkt);
+    }
   }
   if (!n) throw new Error('Im Ausschnitt liegen keine Laserpunkte.');
   // Höhen relativ zum tiefsten Punkt — Float32 reicht dann auf den Millimeter
@@ -323,7 +443,7 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
    * voller Dichte (7–10 Punkte je m²) 0,8 m, ausgedünnt entsprechend mehr. */
   zeiten.lesen = (performance.now() - uhr) / 1000;
   uhr = performance.now();
-  const dichte = n / Math.max(1, (e1 - e0) * (n1 - n0));
+  const dichte = n / Math.max(1, maske ? maske.flaeche : (e1 - e0) * (n1 - n0));
   const normalen = normalenRechnen(xyz, n, Math.max(0.8, Math.sqrt(12 / (Math.PI * dichte))));
   zeiten.normalen = (performance.now() - uhr) / 1000;
   if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);     // abgebrochen, während die Normalen liefen
@@ -331,7 +451,7 @@ async function ausschneiden({ kacheln, bereich, max, nurBoden, vorratMax }) {
     art: 'fertig', anzahl: n, schritt, fehlen, zeiten,
     mitte: [ce, cn], zMin, zMax, iMax,
     // Für den Export (Größe vorab): je Kachel Punkte, Format und Größe des LAZ
-    kacheln: da.map(k => ({ kachel: k.kachel, anzahl: k.kopf.anzahl, format: k.kopf.format, groesse: k.groesse })),
+    kacheln: quellen.map(k => ({ kachel: k.kachel, anzahl: k.kopf.anzahl, format: k.kopf.format, groesse: k.groesse })),
     xyz: xyz.slice(0, n * 3), klasse: klasse.slice(0, n), staerke: staerke.slice(0, n), normalen,
     klassen: [...klassen].sort((a, b) => a[0] - b[0])
   };
@@ -677,7 +797,7 @@ async function luftbildHolen(f) {
  *  farbeFuer(t): das Luftbild für Kachel t (luftbildHolen), oder null ohne Farbe.
  *  getrennt: zwei Dateien in einem Durchgang — [0] Boden (BODEN), [1] der Rest.
  *  Für ReCap: jede Datei wird dort ein eigener Scan, in Civil einzeln ausblendbar. */
-async function lasBauen(LP, da, b, { nurBoden, getrennt, ziel, farbeFuer }) {
+async function lasBauen(LP, da, b, { nurBoden, getrennt, ziel, farbeFuer, maske }) {
   const neu = da.some(k => k.kopf.format >= 6);
   const mitRgb = !!farbeFuer || da.some(k => LAS_RGB[k.kopf.format] != null);
   const format = neu ? (mitRgb ? 7 : 6) : (mitRgb ? 3 : 1), L = LAS_LAENGE[format];
@@ -718,6 +838,7 @@ async function lasBauen(LP, da, b, { nurBoden, getrennt, ziel, farbeFuer }) {
           const quelle = new DataView(heap.buffer, q, 40);
           const X = quelle.getInt32(0, true), Y = quelle.getInt32(4, true);
           if (X < X0 || X >= X1 || Y < Y0 || Y >= Y1) continue;
+          if (maske && !inMaske(maske, X * sx + ox, Y * sy + oy)) continue;
           const kl = altNeu ? heap[q + 16] : heap[q + 15] & 31;
           if (nurBoden && !BODEN.has(kl)) continue;
           const a = ausgaben[getrennt && !BODEN.has(kl) ? 1 : 0];
@@ -805,7 +926,7 @@ function dxfBauen({ ecken, wand }, ziel) {
   return new Blob(teile, { type: 'application/dxf' });
 }
 
-async function exportieren({ kacheln, bereich, einzeln, nurBoden, getrennt, ziel, luftbild, gebaeude, name, zusatz, vorratMax }) {
+async function exportieren({ kacheln, bereich, umriss, einzeln, nurBoden, getrennt, ziel, luftbild, gebaeude, name, zusatz, vorratMax }) {
   if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
   const LP = lazPerf;
   const { da, fehlen } = await kachelnHolen(LP, kacheln, vorratMax);
@@ -826,7 +947,9 @@ async function exportieren({ kacheln, bereich, einzeln, nurBoden, getrennt, ziel
       bild = await luftbildHolen(einzeln ? luftbild[da[t].kachel] : luftbild);
       return bild;
     };
-    const ergebnis = await lasBauen(LP, da, b, { nurBoden, getrennt, ziel, farbeFuer });
+    // Ausschnitt einer Freihand-Auswahl: nur, was im Umriss liegt
+    const maske = !einzeln && umriss && umriss.length > 2 ? umrissMaske(umriss, b) : null;
+    const ergebnis = await lasBauen(LP, da, b, { nurBoden, getrennt, ziel, farbeFuer, maske });
     if (!ergebnis.some(e => e.blob)) throw new Error(einzeln ? 'In den Kacheln liegen keine passenden Punkte.' : 'Im Ausschnitt liegen keine Laserpunkte.');
     const endung = getrennt ? ['_boden', '_rest'] : [''];
     ergebnis.forEach(({ blob, punkte }, i) => { if (blob) datei(`${name}${zusatz}${endung[i]}.las`, blob, punkte); });

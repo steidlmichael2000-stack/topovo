@@ -421,6 +421,10 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
             <span class="lz-feld" style="background:${ACHS_FARBE}"></span><span class="lz-name">Streckenachsen</span><small></small></button>
           <button type="button" class="seg-btn lz-klasse lz-strassen" aria-pressed="false">
             <span class="lz-feld" style="background:${STR_FARBEN[0]}"></span><span class="lz-name">Straßen</span><small>aus</small></button>
+          <label class="slider-row lz-str-breite" hidden>Breite
+            <input type="range" class="lz-str-breite-regler" min="0" max="10" step="0.5" value="0">
+            <span class="slider-val lz-str-breite-wert">Linie</span>
+          </label>
           <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden>
             <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">KML</span><small></small></button>
         </div>
@@ -1362,13 +1366,74 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
 
   /* Straßennetz: erst beim ersten Einschalten geholt. Haupt- und Nebenstraßen
    * durchgezogen, Wege gestrichelt und blasser. Namen je Straße einmal, am
-   * längsten Stück, höchstens STR_NAMEN_MAX — sonst deckt Text die Wolke zu. */
+   * längsten Stück, höchstens STR_NAMEN_MAX — sonst deckt Text die Wolke zu.
+   *
+   * Breite (11.11.2026 gewünscht, für Wanderwege): ganz links „Linie“ wie bisher,
+   * sonst ein Band in Metern auf dem Laserboden — so liegt der Weg so breit über
+   * der Wolke, wie man ihn einstellt, und bleibt beim Zoomen maßstäblich. Ein
+   * Band, weil WebGL Linien nur einen Pixel breit zeichnet. */
   const STR_NAMEN_MAX = 40;
   const strMats = STR_FARBEN.map((f, i) => i < 2
     ? new THREE.LineBasicMaterial({ color: f, depthTest: false, transparent: true, opacity: i ? 0.7 : 0.95 })
     : new THREE.LineDashedMaterial({ color: f, depthTest: false, transparent: true, opacity: 0.6, dashSize: 1.2, gapSize: 0.8 }));
+  const strBandMats = STR_FARBEN.map((f, i) => new THREE.MeshBasicMaterial({ color: f, depthTest: false, depthWrite: false,
+    transparent: true, opacity: [0.75, 0.6, 0.6][i], side: THREE.DoubleSide }));
+  const strBreiteZeile = $('.lz-str-breite'), strBreiteRegler = $('.lz-str-breite-regler'), strBreiteWert = $('.lz-str-breite-wert');
+  const strBreite = () => Number(strBreiteRegler.value);
+  if (Number.isFinite(gemerkt.strBreite)) strBreiteRegler.value = String(gemerkt.strBreite);
+  const strBreiteText = () => strBreite() ? `${zahl(strBreite(), strBreite() % 1 ? 1 : 0)} m` : 'Linie';
+  strBreiteWert.textContent = strBreiteText();
+  /** Band der Breite b (m) entlang des Linienzugs, auf dessen Höhe. An jedem Knick
+   *  die Mittelsenkrechte, gekappt, damit spitze Kehren nicht ausfransen. */
+  function band(punkte, b) {
+    const n = punkte.length, pos = new Float32Array(n * 6), idx = [];
+    for (let i = 0; i < n; i++) {
+      const p = punkte[i], a = punkte[Math.max(0, i - 1)], c = punkte[Math.min(n - 1, i + 1)];
+      let dx1 = p.x - a.x, dy1 = p.y - a.y, dx2 = c.x - p.x, dy2 = c.y - p.y;
+      const l1 = Math.hypot(dx1, dy1) || 1, l2 = Math.hypot(dx2, dy2) || 1;
+      dx1 /= l1; dy1 /= l1; dx2 /= l2; dy2 /= l2;
+      if (i === 0) { dx1 = dx2; dy1 = dy2; }
+      if (i === n - 1) { dx2 = dx1; dy2 = dy1; }
+      let nx = -(dy1 + dy2), ny = dx1 + dx2;
+      const ln = Math.hypot(nx, ny) || 1;
+      nx /= ln; ny /= ln;
+      // Gehrung: im Knick breiter, damit das Band gleich breit wirkt — höchstens doppelt
+      const cos = Math.max(0.5, nx * -dy1 + ny * dx1), h = b / 2 / cos;
+      pos.set([p.x + nx * h, p.y + ny * h, p.z, p.x - nx * h, p.y - ny * h, p.z], i * 6);
+      if (i) idx.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    return g;
+  }
+  /** Die Linien bzw. Bänder der Straßen neu in die Gruppe legen (beim Laden und bei neuer Breite). */
+  function strassenZeichnen() {
+    const { gruppe, stuecke } = strassen;
+    for (const o of [...gruppe.children]) { gruppe.remove(o); o.geometry.dispose(); }
+    const b = strBreite();
+    for (const { stufe, st } of stuecke) {
+      let o;
+      if (b) o = new THREE.Mesh(band(st, b), strBandMats[stufe]);
+      else {
+        o = auflLinie(st, strMats[stufe]);
+        if (stufe === 2) o.computeLineDistances();
+      }
+      o.renderOrder = 4;
+      gruppe.add(o);
+    }
+    neu = true;
+  }
+  strBreiteRegler.addEventListener('input', () => {
+    strBreiteWert.textContent = strBreiteText();
+    if (strassen) strassenZeichnen();
+  });
   let strLaedt = false;
   const strText = () => 'an';
+  function strZeigen(an) {
+    auflZeigen(strassen, strKnopf, an, strassen.stuecke.length ? strText() : 'keine');
+    strBreiteZeile.hidden = !an || !strassen.stuecke.length;
+  }
   async function strassenLaden() {
     strLaedt = true;
     strKnopf.classList.add('laedt');
@@ -1380,17 +1445,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (!laeuft) return;
     strKnopf.classList.remove('laedt');
     if (!liste) { strKnopf.querySelector('small').textContent = 'aus'; hinweis('Das Straßennetz ließ sich nicht laden.'); return; }
-    const gruppe = new THREE.Group(), schilder = [];
-    let anzahl = 0;
-    for (const s of liste.strassen) {
-      for (const st of aufBoden(s.pts)) {
-        const l = auflLinie(st, strMats[s.stufe]);
-        if (s.stufe === 2) l.computeLineDistances();
-        l.renderOrder = 4;
-        gruppe.add(l);
-        anzahl++;
-      }
-    }
+    const gruppe = new THREE.Group(), schilder = [], stuecke = [];
+    for (const s of liste.strassen) for (const st of aufBoden(s.pts)) stuecke.push({ stufe: s.stufe, st });
     const laengste = new Map();
     for (const nm of liste.namen) {
       for (const st of aufBoden(nm.pts)) if (!laengste.has(nm.name) || laengste.get(nm.name).length < st.length) laengste.set(nm.name, st);
@@ -1398,15 +1454,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     [...laengste].sort((a, b) => b[1].length - a[1].length).slice(0, STR_NAMEN_MAX)
       .forEach(([name, st]) => schilder.push(schild(st[st.length >> 1], esc(name), 'strasse')));
     auflSzene.add(gruppe);
-    strassen = { gruppe, schilder, anzahl };
-    auflZeigen(strassen, strKnopf, true, anzahl ? strText() : 'keine');
+    strassen = { gruppe, schilder, stuecke };
+    strassenZeichnen();
+    strZeigen(true);
     quellenNeu();
-    if (!anzahl) hinweis(liste.strassen.length ? 'Unter den Straßen liegen hier keine Bodenpunkte.' : 'Im Ausschnitt liegt keine Straße.');
+    if (!stuecke.length) hinweis(liste.strassen.length ? 'Unter den Straßen liegen hier keine Bodenpunkte.' : 'Im Ausschnitt liegt keine Straße.');
   }
   if (strKnopf) strKnopf.addEventListener('click', () => {
     if (strLaedt) return;
     if (!strassen) { strassenLaden(); return; }
-    auflZeigen(strassen, strKnopf, !strassen.gruppe.visible, strText());
+    strZeigen(!strassen.gruppe.visible);
     quellenNeu();
   });
 
@@ -2033,7 +2090,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const desktop = window.matchMedia('(min-width: 1010px)');
   const seite = $('.lz-seite'), fussVor = $('.lz-marken');
   let bereich = 'darstellung', seiteZu = false;
-  const freiLinks = () => !desktop.matches ? 0 : seiteZu ? 64 : 384;
+  // Breite von Spalte und Leiste aus dem Stylesheet (--schiene, --seite), nicht doppelt hier
+  const cssPx = name => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 0;
+  const freiLinks = () => !desktop.matches ? 0 : seiteZu ? cssPx('--schiene') : cssPx('--schiene') + cssPx('--seite');
   /* Regen am Handy: eigene Tafel über dem Regen-Knopf (links, über dem Messen).
    * Wie Tafel und Messmenü ist immer nur eins offen. */
   const regenSektion = $('[data-bereich="regen"]'), regenTafel = $('.lz-regen-tafel'), regenKnopf = $('.lz-regen-knopf');
@@ -2579,7 +2638,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       klassenAus: [...(gemerkt.klassenAus || []).filter(k => !hier.has(k)), ...klassenAus],
       geb: geb ? geb.gruppe.visible : gebLaeuft || false, dach: dachBild ? 'luftbild' : 'grau',
       achsen: achsen ? achsen.gruppe.visible : gemerkt.achsen,
-      strassen: strassen ? strassen.gruppe.visible : strLaedt || false,
+      strassen: strassen ? strassen.gruppe.visible : strLaedt || false, strBreite: strBreite(),
       kml: kmlAufl && kmlAufl.anzahl ? kmlAufl.gruppe.visible : gemerkt.kml,
       kamera: kamera === orthoKamera ? 'ortho' : 'perspektive',
       grund: wurzel.dataset.grund,
