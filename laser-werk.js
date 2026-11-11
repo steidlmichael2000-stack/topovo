@@ -398,6 +398,101 @@ async function speichern({ kacheln }) {
   self.postMessage({ art: 'fertig' });
 }
 
+/* ===================== Entpackt auf dem Gerät (11.11.2026) =====================
+ *
+ * Auf Wunsch, für Geräte mit viel Platz: zu einer gespeicherten Kachel auch die
+ * entpackte Fassung, <kachel>.pts neben <kachel>.laz. Beim Öffnen entfällt dann das
+ * Entpacken (rund 10 s je Kachel) — gelesen wird nur noch die Datei. Das LAZ bleibt
+ * liegen: Der Export baut aus ihm, und es ist die Quelle, falls sich das Format hier
+ * einmal ändert. Inhalt wie die entpackten Kacheln im Arbeitsspeicher (15 Byte je
+ * Punkt, bei den BVV-Kacheln rund 2,4-mal das LAZ):
+ *   0     „TPVE“, u32 Fassung (1), u32 Punkte n, u32 Länge des JSON-Kopfs
+ *   16    JSON { kopf, groesse (des LAZ), e0, n0 }
+ *   4096  x, y, z (je Float32 × n, relativ zur Kachelecke bzw. absolut), Intensität
+ *         (Uint16 × n), Klasse (Uint8 × n)
+ * Geschrieben erst als <kachel>.pts.teil, dann umbenannt — wie beim LAZ.
+ *
+ * Auftrag { art: 'entpacktSpeichern', kacheln: [name] } im Speicher-Worker. Meldungen:
+ *   { art: 'lesen', nr, von, gelesen, gesamt }  beim Entpacken
+ *   { art: 'gespeichert', kachel, groesse, entpackt: true }   { art: 'fehlt', kachel }
+ *   { art: 'fertig' }, { art: 'fehler', text }, { art: 'abgebrochen' } */
+const PTS_KOPF = 4096, PTS_FASSUNG = 1;
+const ptsLage = n => ({ x: PTS_KOPF, y: PTS_KOPF + 4 * n, z: PTS_KOPF + 8 * n, st: PTS_KOPF + 12 * n, kl: PTS_KOPF + 14 * n,
+  ende: PTS_KOPF + 15 * n });
+
+async function entpacktSpeichern({ kacheln }) {
+  if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
+  const LP = lazPerf, ordner = await geraetOrdner(), von = kacheln.length;
+  for (let i = 0; i < von; i++) {
+    const kachel = kacheln[i];
+    const v = await vomGeraet(LP, kachel, new Set(), Infinity);
+    if (!v) { self.postMessage({ art: 'fehlt', kachel }); continue; }
+    let e;
+    try {
+      const kopf = kopfLesen(LP.HEAPU8.subarray(v.zeiger, v.zeiger + 375));
+      e = await entpacken(LP, { kachel, ...v, kopf }, i, von);
+    } finally { LP._free(v.zeiger); }
+    const teil = await ordner.getFileHandle(`${kachel}.pts.teil`, { create: true });
+    const h = await teil.createSyncAccessHandle();
+    try {
+      const json = new TextEncoder().encode(JSON.stringify({ kopf: e.kopf, groesse: e.groesse, e0: e.e0, n0: e.n0 }));
+      if (16 + json.length > PTS_KOPF) throw new Error('Kopf zu groß');
+      const k = new Uint8Array(PTS_KOPF), d = new DataView(k.buffer);
+      k.set([84, 80, 86, 69]);                    // TPVE
+      d.setUint32(4, PTS_FASSUNG, true); d.setUint32(8, e.n, true); d.setUint32(12, json.length, true);
+      k.set(json, 16);
+      const L = ptsLage(e.n);
+      h.truncate(0);
+      h.write(k, { at: 0 });
+      h.write(e.x, { at: L.x }); h.write(e.y, { at: L.y }); h.write(e.z, { at: L.z });
+      h.write(e.st, { at: L.st }); h.write(e.kl, { at: L.kl });
+      h.flush();
+      if (h.getSize() !== L.ende) throw new Error('Die entpackte Kachel ließ sich nicht vollständig schreiben.');
+    } catch (err) {
+      h.close();
+      await ordner.removeEntry(`${kachel}.pts.teil`).catch(() => {});
+      if (err && err.name === 'QuotaExceededError') throw new Error('Der Speicher auf dem Gerät ist voll.');
+      throw err;
+    }
+    h.close();
+    await ordner.removeEntry(`${kachel}.pts`).catch(() => {});
+    if (teil.move) await teil.move(`${kachel}.pts`);
+    else throw new Error('Dieser Browser kann die Datei nicht umbenennen.');
+    self.postMessage({ art: 'gespeichert', kachel, groesse: ptsLage(e.n).ende, entpackt: true });
+    if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
+  }
+  self.postMessage({ art: 'fertig' });
+}
+
+/** Die entpackte Kachel öffnen (Griff bleibt offen); null, wenn es keine passende gibt. */
+async function entpacktOeffnen(kachel) {
+  let h;
+  try {
+    h = await (await (await geraetOrdner()).getFileHandle(`${kachel}.pts`)).createSyncAccessHandle();
+  } catch (err) { return null; }
+  try {
+    const k = new Uint8Array(PTS_KOPF);
+    h.read(k, { at: 0 });
+    const d = new DataView(k.buffer);
+    if (String.fromCharCode(k[0], k[1], k[2], k[3]) !== 'TPVE' || d.getUint32(4, true) !== PTS_FASSUNG) throw 0;
+    const n = d.getUint32(8, true), lj = d.getUint32(12, true);
+    if (h.getSize() !== ptsLage(n).ende) throw 0;
+    const j = JSON.parse(new TextDecoder().decode(k.subarray(16, 16 + lj)));
+    return { h, n, e0: j.e0, n0: j.n0, kopf: j.kopf, groesse: j.groesse, bytes: n * ENTPACKT_BYTE };
+  } catch (err) {
+    h.close();
+    return null;                               // beschädigt oder alte Fassung: dann wie bisher über das LAZ
+  }
+}
+
+/** Stück [i0, i1) der Felder aus der Datei; ganz gelesen ergibt es die Felder wie entpacken(). */
+function entpacktStueck(D, i0, i1) {
+  const L = ptsLage(D.n), m = i1 - i0;
+  const lies = (Typ, at, b) => { const a = new Typ(m); D.h.read(new Uint8Array(a.buffer), { at: at + i0 * b }); return a; };
+  return { x: lies(Float32Array, L.x, 4), y: lies(Float32Array, L.y, 4), z: lies(Float32Array, L.z, 4),
+    st: lies(Uint16Array, L.st, 2), kl: lies(Uint8Array, L.kl, 1) };
+}
+
 /** Holt die Kacheln, eine nach der anderen: aus dem Vorrat oder neu geladen. */
 async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false) {
   const von = kacheln.length, behalten = new Set(kacheln.map(k => k.kachel));
@@ -471,7 +566,15 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   const zeiten = { laden: 0, megabyte: 0, lesen: 0, normalen: 0 };
   let uhr = performance.now();
   const behalten = new Set(kacheln.map(k => k.kachel));
-  const offen = kacheln.filter(k => !entpackt.has(k.kachel));
+  // Entpackt auf dem Gerät (<kachel>.pts): weder LAZ laden noch entpacken
+  const vonDatei = new Map();
+  try {
+  for (const k of kacheln) {
+    if (!k.geraet || entpackt.has(k.kachel)) continue;
+    const D = await entpacktOeffnen(k.kachel);
+    if (D) vonDatei.set(k.kachel, D);
+  }
+  const offen = kacheln.filter(k => !entpackt.has(k.kachel) && !vonDatei.has(k.kachel));
   const { da, fehlen, megabyte } = offen.length ? await kachelnHolen(LP, offen, vorratMax, true) : { da: [], fehlen: [], megabyte: 0 };
   zeiten.megabyte = megabyte;
   zeiten.laden = (performance.now() - uhr) / 1000;
@@ -482,6 +585,17 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   for (const { kachel } of kacheln) {
     const e = entpackt.get(kachel);
     if (e) { entpackt.delete(kachel); entpackt.set(kachel, e); quellen.push({ kachel, kopf: e.kopf, groesse: e.groesse, felder: e }); continue; }
+    const D = vonDatei.get(kachel);
+    if (D) {
+      // Am PC ganz in den Arbeitsspeicher (dann geht Verschieben ohne Datei), sonst Stück für Stück
+      if (entpacktMax && entpacktPlatz(D.bytes, behalten, entpacktMax)) {
+        const f = { ...entpacktStueck(D, 0, D.n), n: D.n, e0: D.e0, n0: D.n0, kopf: D.kopf, groesse: D.groesse, bytes: D.bytes };
+        entpackt.set(kachel, f);
+        entpacktSumme += f.bytes;
+        quellen.push({ kachel, kopf: D.kopf, groesse: D.groesse, felder: f });
+      } else quellen.push({ kachel, kopf: D.kopf, groesse: D.groesse, datei: D });
+      continue;
+    }
     const v = da.find(x => x.kachel === kachel);
     if (v) quellen.push(v);
   }
@@ -490,7 +604,7 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   if (entpacktMax) {
     for (let t = 0; t < quellen.length; t++) {
       const q = quellen[t];
-      if (q.felder || !entpacktPlatz(q.kopf.anzahl * ENTPACKT_BYTE, behalten, entpacktMax)) continue;
+      if (q.felder || q.datei || !entpacktPlatz(q.kopf.anzahl * ENTPACKT_BYTE, behalten, entpacktMax)) continue;
       const e = await entpacken(LP, q, t, quellen.length);
       entpackt.set(q.kachel, e);
       entpacktSumme += e.bytes;
@@ -556,6 +670,22 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
       }
       continue;
     }
+    if (q.datei) {
+      // Entpackt auf dem Gerät, ohne Platz im Arbeitsspeicher: in Stücken zu 2^20 Punkten
+      const D = q.datei, X0 = e0 - D.e0, X1 = e1 - D.e0, Y0 = n0 - D.n0, Y1 = n1 - D.n0;
+      for (let i0 = 0; i0 < D.n; i0 += 1 << 20) {
+        senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i0, gesamt: D.n });
+        await new Promise(r => setTimeout(r));
+        if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
+        const { x, y, z, kl, st } = entpacktStueck(D, i0, Math.min(D.n, i0 + (1 << 20)));
+        for (let i = 0; i < x.length; i++) {
+          const xi = x[i], yi = y[i];
+          if (xi < X0 || xi > X1 || yi < Y0 || yi > Y1) continue;
+          nimm(xi + D.e0, yi + D.n0, z[i], kl[i], st[i]);
+        }
+      }
+      continue;
+    }
     const { zeiger, groesse, kopf: k } = q;
     const laszip = new LP.LASZip(), punkt = LP._malloc(64);
     try {
@@ -605,6 +735,9 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
     klassen: [...klassen].sort((a, b) => a[0] - b[0])
   };
   self.postMessage(ergebnis, [ergebnis.xyz.buffer, ergebnis.klasse.buffer, ergebnis.staerke.buffer, normalen.buffer]);
+  } finally {
+    for (const D of vonDatei.values()) { try { D.h.close(); } catch (err) { /* schon zu */ } }
+  }
 }
 
 /* Normalen je Punkt: Hauptachsen der Nachbarn im Umkreis r (Kovarianz, die
@@ -1116,6 +1249,7 @@ self.onmessage = async ev => {
   exportLaeuft = istExport;
   try {
     if (ev.data.art === 'speichern') await speichern(ev.data);
+    else if (ev.data.art === 'entpacktSpeichern') await entpacktSpeichern(ev.data);
     else if (istExport) await exportieren(ev.data);
     else await ausschneiden(ev.data);
   } catch (err) {

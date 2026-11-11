@@ -491,7 +491,8 @@ const HILFE = {
       titel: 'Auf dem Gerät',
       text: 'Was gespeichert ist, mit Größe; ein Tipp auf den Namen zeigt die Kachel auf der Karte, das × ' +
         'löscht sie. Darüber steht, wie viel belegt und frei ist. Steht dort nicht „dauerhaft“, darf der ' +
-        'Browser die Kacheln bei Platzmangel räumen.',
+        'Browser die Kacheln bei Platzmangel räumen. „Entpackt speichern“ legt zu jeder Kachel auch die ' +
+        'entpackte Fassung ab, etwa zwei- bis dreimal so groß — dann öffnet sie ohne Entpacken.',
       ziel: () => tourSichtbar('#bottom .laser-geraet')
     },
     {

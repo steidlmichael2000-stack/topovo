@@ -7561,6 +7561,8 @@ let laserSchliessen = null;  // solange die 3D-Ansicht offen ist: schließt sie 
 /* Auf dem Gerät gespeicherte Kacheln (laser-werk.js, „Auf dem Gerät speichern“):
  * gelesen aus dem Origin Private File System, Ordner „laser“. */
 const laserGeraet = new Map();     // Kachel → Bytes
+const laserGeraetEntpackt = new Map();   // Kachel → Bytes der entpackten Fassung (<kachel>.pts), seit 11.11.2026
+const laserGeraetPunkte = new Map();     // Kachel → Punktzahl aus dem Kopf des LAZ (für die Größe entpackt)
 let laserGeraetFehler = '';        // kann der Browser es nicht (privates Fenster), steht es hier
 let laserGeraetStand = null;       // { belegt, frei, dauerhaft } aus navigator.storage
 let laserGeraetOffen = false;      // Abschnitt „Auf dem Gerät“ aufgeklappt
@@ -8349,17 +8351,28 @@ async function laserGeraetOrdner() {
 async function laserGeraetLesen() {
   try {
     const ordner = await laserGeraetOrdner();
-    const neu = new Map();
+    const neu = new Map(), entpackt = new Map();
     for await (const [name, h] of ordner.entries()) {
       if (h.kind !== 'file') continue;
-      const m = /^(\d+_\d+)\.(laz|teil)$/.exec(name);
+      const m = /^(\d+_\d+)\.(laz|teil|pts|pts\.teil)$/.exec(name);
       if (!m) continue;
       // Liegengebliebene halbe Kachel (App beim Speichern geschlossen) — nicht die gerade laufende
-      if (m[2] === 'teil') { if (!laserSpeichert) ordner.removeEntry(name).catch(() => {}); continue; }
-      neu.set(m[1], (await h.getFile()).size);
+      if (m[2].endsWith('teil')) { if (!laserSpeichert) ordner.removeEntry(name).catch(() => {}); continue; }
+      const datei = await h.getFile();
+      if (m[2] === 'pts') { entpackt.set(m[1], datei.size); continue; }
+      neu.set(m[1], datei.size);
+      // Punktzahl aus dem LAS-Kopf: ab LAS 1.4 im 64-Bit-Feld, davor im 32-Bit-Feld
+      if (!laserGeraetPunkte.has(m[1])) {
+        try {
+          const d = new DataView(await datei.slice(0, 255).arrayBuffer());
+          laserGeraetPunkte.set(m[1], d.getUint32(107, true) || Number(d.getBigUint64(247, true)));
+        } catch (err) { /* dann geschätzt */ }
+      }
     }
     laserGeraet.clear();
     [...neu].sort((a, b) => a[0].localeCompare(b[0])).forEach(([k, v]) => laserGeraet.set(k, v));
+    laserGeraetEntpackt.clear();
+    for (const [k, v] of entpackt) if (neu.has(k)) laserGeraetEntpackt.set(k, v);
     laserGeraetFehler = '';
   } catch (err) {
     console.warn(err);
@@ -8435,10 +8448,74 @@ async function laserSpeichern() {
   laserLeiste();
 }
 
+/** Größe der entpackten Fassung: 15 Byte je Punkt; ohne Punktzahl grob dreimal das LAZ (gemessen 2,4 ×). */
+const laserEntpacktGroesse = k => laserGeraetPunkte.has(k) ? laserGeraetPunkte.get(k) * 15 + 4096 : (laserGeraet.get(k) || 0) * 3;
+
+/* Zu den gespeicherten Kacheln auch die entpackte Fassung ablegen (11.11.2026, so gewünscht für Geräte mit
+ * viel Platz): Öffnen spart dann das Entpacken. Läuft im Speicher-Worker (laser-werk.js, entpacktSpeichern). */
+function laserEntpacktSpeichern(wahl) {
+  if (laserSpeichert) return;
+  // Ohne Wahl alle, denen die entpackte Fassung fehlt; mit Wahl (Tipp in der Zeile) nur diese
+  const namen = (wahl || [...laserGeraet.keys()]).filter(k => laserGeraet.has(k) && !laserGeraetEntpackt.has(k));
+  if (!namen.length) return;
+  const bedarf = namen.reduce((s, k) => s + laserEntpacktGroesse(k), 0);
+  if (laserGeraetStand && bedarf > laserGeraetStand.frei) {
+    laserSpeicherMeldung = `Zu wenig Platz: entpackt ${laserGB(bedarf)}, frei ${laserGB(laserGeraetStand.frei)}.`;
+    laserLeiste();
+    return;
+  }
+  laserSpeichert = { modus: 'entpacken', art: 'lesen', nr: 0, von: namen.length, kachel: namen[0], wert: 0, gesamt: 0, fertig: 0, fehlen: 0 };
+  laserSpeicherMeldung = '';
+  laserSpeicherWerk = new Worker('laser-werk.js');
+  laserSpeicherWerk.onmessage = ev => {
+    const m = ev.data, S = laserSpeichert;
+    if (!S) return;
+    if (m.art === 'lesen') {
+      const neu = m.nr !== S.nr;
+      Object.assign(S, { art: 'lesen', nr: m.nr, kachel: namen[m.nr], wert: m.gelesen, gesamt: m.gesamt });
+      if ((!neu && laserSpeicherFortschritt()) || laserSpeicherFortschritt()) return;
+      laserLeiste();
+      return;
+    }
+    if (m.art === 'gespeichert') { S.fertig++; laserGeraetEntpackt.set(m.kachel, m.groesse); laserSpeicherFortschritt(); return; }
+    if (m.art === 'fehlt') { S.fehlen++; return; }
+    laserSpeicherWerk.terminate();
+    laserSpeicherWerk = null;
+    laserSpeichert = null;
+    const fertig = `${S.fertig} ${S.fertig === 1 ? 'Kachel' : 'Kacheln'} entpackt gespeichert`;
+    laserSpeicherMeldung = m.art === 'fertig' ? fertig
+      : m.art === 'abgebrochen' ? `Abgebrochen — ${fertig}.`
+      : `${m.text} ${S.fertig ? `(${fertig}.)` : ''}`.trim();
+    laserGeraetLesen();
+  };
+  laserSpeicherWerk.postMessage({ art: 'entpacktSpeichern', kacheln: namen });
+  laserLeiste();
+}
+
+/** Schalter „entpackt“ in der Zeile einer gespeicherten Kachel. */
+function laserEntpacktKnopf(k, aus) {
+  const an = laserGeraetEntpackt.has(k);
+  const gr = laserGB(an ? laserGeraetEntpackt.get(k) : laserEntpacktGroesse(k));
+  return `<button type="button" class="laser-geraet-ent${an ? ' is-on' : ''}" data-laser-ent="${k}" aria-pressed="${an}"${aus}
+    title="${an ? `Entpackt gespeichert (${gr}) — antippen löscht nur diese Fassung` : `Auch entpackt speichern (${gr}) — öffnet dann ohne Entpacken`}">${an ? 'entpackt' : 'entpacken'}</button>`;
+}
+
+const summeEntpackt = () => [...laserGeraetEntpackt.values()].reduce((s, v) => s + v, 0);
+
+async function laserEntpacktLoeschen(wahl) {
+  try {
+    const ordner = await laserGeraetOrdner();
+    for (const k of wahl || [...laserGeraetEntpackt.keys()]) await ordner.removeEntry(`${k}.pts`).catch(err => console.warn(err));
+  } catch (err) { console.warn(err); }
+  laserSpeicherMeldung = '';
+  await laserGeraetLesen();
+}
+
 function laserSpeicherStand(S) {
   const anteil = S.gesamt ? (S.nr + S.wert / S.gesamt) / S.von : S.nr / S.von;
   const vorn = `Kachel ${S.nr + 1} von ${S.von}${S.kachel ? ` (${S.kachel})` : ''}`;
-  const text = S.art === 'warten' && S.abgeschnitten ? `${vorn}: kam unvollständig an — neuer Versuch in ${S.sekunden} s.`
+  const text = S.art === 'lesen' ? `${vorn}: entpacken … ${Math.round(100 * S.wert / Math.max(1, S.gesamt))} %`
+    : S.art === 'warten' && S.abgeschnitten ? `${vorn}: kam unvollständig an — neuer Versuch in ${S.sekunden} s.`
     : S.art === 'warten' ? `${vorn}: Verbindung unterbrochen — neuer Versuch in ${S.sekunden} s oder sobald wieder Netz da ist.`
     : `${vorn} … ${laserMB(S.wert)}${S.gesamt ? ` von ${laserMB(S.gesamt)}` : ''}`;
   return { anteil, text };
@@ -8458,7 +8535,7 @@ function laserSpeicherTeil() {
   if (laserSpeichert) {
     const { anteil, text } = laserSpeicherStand(laserSpeichert);
     return `<div class="laser-speichern">
-      <p class="laser-speichern-kopf">Offline speichern</p>
+      <p class="laser-speichern-kopf">${laserSpeichert.modus === 'entpacken' ? 'Entpackt speichern' : 'Offline speichern'}</p>
       <div class="laser-lade"><div class="laser-lade-balken" id="laserSpeicherBalken" style="width:${Math.round(anteil * 100)}%"></div></div>
       <p class="bb-note plain" id="laserSpeicherText">${esc(text)}</p>
       <div class="bb-actions"><button type="button" id="laserSpeichernStopp">Speichern abbrechen</button></div>
@@ -8472,10 +8549,20 @@ function laserGeraetTeil() {
   if (laserGeraetFehler) return `<p class="bb-note plain">${esc(laserGeraetFehler)}</p>`;
   const summe = [...laserGeraet.values()].reduce((s, v) => s + v, 0);
   const st = laserGeraetStand;
-  const kopf = laserGeraet.size ? `${laserGeraet.size} ${laserGeraet.size === 1 ? 'Kachel' : 'Kacheln'} · ${laserGB(summe)}` : 'keine';
+  const summeEnt = [...laserGeraetEntpackt.values()].reduce((s, v) => s + v, 0);
+  const kopf = laserGeraet.size ? `${laserGeraet.size} ${laserGeraet.size === 1 ? 'Kachel' : 'Kacheln'} · ${laserGB(summe + summeEnt)}` : 'keine';
+  // Entpackt speichern, solange einer Kachel die Fassung fehlt; sonst wieder freigeben
+  const ohne = [...laserGeraet.keys()].filter(k => !laserGeraetEntpackt.has(k));
+  const aus = laserSpeichert ? ' disabled' : '';
+  // Je Kachel schaltet der Knopf in der Zeile; unten nur „alle“, wenn es mehrere betrifft
+  const entpacktKnopf = ohne.length > 1
+    ? `<button type="button" id="laserEntpacktBtn" data-ik="wuerfel" title="Öffnet dann ohne Entpacken; die Zahl ist der zusätzliche Platz"${aus}>Alle entpackt speichern · ${
+      laserGB(ohne.reduce((s, k) => s + laserEntpacktGroesse(k), 0))}</button>`
+    : !ohne.length && laserGeraetEntpackt.size > 1 ? `<button type="button" id="laserEntpacktWeg" data-ik="muell" title="Nur die entpackten Fassungen löschen, das LAZ bleibt"${aus}>Entpackte löschen · ${laserGB(summeEnt)}</button>` : '';
   const zeilen = [...laserGeraet].map(([k, v]) => `<li>
       <button type="button" class="laser-geraet-name" data-laser-zeigen="${k}" title="Auf der Karte zeigen">${k}</button>
       <span class="laser-geraet-gr">${laserGB(v)}</span>
+      ${laserEntpacktKnopf(k, aus)}
       <button type="button" class="laser-geraet-weg" data-laser-weg="${k}" aria-label="${k} löschen">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>`).join('');
   return `<details class="sheet-sec laser-geraet"${laserGeraetOffen ? ' open' : ''}>
@@ -8483,7 +8570,8 @@ function laserGeraetTeil() {
     ${st ? `<p class="bb-note plain">${laserGB(st.belegt)} belegt · ${laserGB(st.frei)} frei${st.dauerhaft ? ' · dauerhaft' : ''}</p>` : ''}
     ${LASER_IOS && !laserInstalliert() ? '<p class="bb-note">Auf dem iPhone bleiben die Kacheln nur in der installierten App sicher erhalten (Teilen → Zum Home-Bildschirm).</p>' : ''}
     ${laserGeraet.size ? `<ul class="laser-geraet-liste">${zeilen}</ul>
-      <div class="bb-actions"><button type="button" id="laserGeraetAlleWeg"${laserSpeichert ? ' disabled' : ''}>Alle löschen</button></div>`
+      ${entpacktKnopf ? `<div class="bb-actions">${entpacktKnopf}</div>` : ''}
+      <div class="bb-actions"><button type="button" id="laserGeraetAlleWeg" data-ik="muell"${laserSpeichert ? ' disabled' : ''}>Alle löschen</button></div>`
       : '<p class="bb-note plain">Noch nichts gespeichert.</p>'}
   </details>`;
 }
@@ -8499,9 +8587,21 @@ function laserGeraetBinden(b) {
     kartePassen(L.latLngBounds(laserEcken(e * 1000, n * 1000, e * 1000 + 1000, n * 1000 + 1000)), { padding: [30, 30], maxZoom: 15 });
   }));
   b.querySelectorAll('[data-laser-weg]').forEach(k => k.addEventListener('click', () => laserGeraetLoeschen([k.dataset.laserWeg])));
+  const ent = $('#laserEntpacktBtn');
+  if (ent) ent.addEventListener('click', () => laserEntpacktSpeichern());
+  // Knopf in der Zeile: entpackt ablegen oder die entpackte Fassung wieder löschen
+  b.querySelectorAll('[data-laser-ent]').forEach(k => k.addEventListener('click', () => {
+    const name = k.dataset.laserEnt;
+    if (laserGeraetEntpackt.has(name)) laserEntpacktLoeschen([name]);
+    else laserEntpacktSpeichern([name]);
+  }));
+  const entWeg = $('#laserEntpacktWeg');
+  if (entWeg) entWeg.addEventListener('click', () => {
+    if (confirm(`Die entpackten Fassungen (${laserGB(summeEntpackt())}) löschen? Die Kacheln selbst bleiben.`)) laserEntpacktLoeschen();
+  });
   const alle = $('#laserGeraetAlleWeg');
   if (alle) alle.addEventListener('click', () => {
-    const summe = [...laserGeraet.values()].reduce((s, v) => s + v, 0);
+    const summe = [...laserGeraet.values(), ...laserGeraetEntpackt.values()].reduce((s, v) => s + v, 0);
     if (!confirm(`Alle ${laserGeraet.size} gespeicherten Laserkacheln (${laserGB(summe)}) vom Gerät löschen?`)) return;
     laserGeraetLoeschen([...laserGeraet.keys()]);
   });
@@ -8510,7 +8610,10 @@ function laserGeraetBinden(b) {
 async function laserGeraetLoeschen(namen) {
   try {
     const ordner = await laserGeraetOrdner();
-    for (const k of namen) await ordner.removeEntry(`${k}.laz`).catch(err => console.warn(err));
+    for (const k of namen) {
+      await ordner.removeEntry(`${k}.laz`).catch(err => console.warn(err));
+      await ordner.removeEntry(`${k}.pts`).catch(() => {});      // die entpackte Fassung, falls es sie gibt
+    }
   } catch (err) { console.warn(err); }
   laserSpeicherMeldung = '';
   await laserGeraetLesen();

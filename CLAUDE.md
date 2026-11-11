@@ -551,6 +551,11 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   `LASER_SPEICHERN_MAX` Kacheln wählbar, „In 3D ansehen“ bleibt bei `LASER_KACHELN_MAX` (4). `laserEnde` beendet
   ein laufendes Speichern; liegengebliebene `.teil` räumt `laserGeraetLesen` weg. `mitWiederholung` nimmt seit
   v120 eine Funktion `holen` statt der Ladeparameter. Steht im Datenschutz (`impressum.html`, Speicher auf dem Gerät).
+  **Entpackt speichern** (11.11.2026, so gewünscht, Knopf unter „Auf dem Gerät“): je Kachel zusätzlich `<kachel>.pts`
+  (Format in `laser-werk.js` bei `entpacktSpeichern`, 15 Byte je Punkt wie der Arbeitsspeicher-Vorrat `entpackt`).
+  `ausschneiden` öffnet sie für Kacheln mit `geraet` vor allem anderen (`entpacktOeffnen`): am PC ganz in `entpackt`,
+  am Handy (`entpacktMax` 0) in Stücken gelesen. Das LAZ bleibt (Export). Ändert sich das Format, `PTS_FASSUNG`
+  hochzählen — alte Dateien gelten dann als nicht da. Löschen einer Kachel nimmt beide Dateien.
 - **Abbrechen** über `{ art: 'abbrechen' }`: die Entpackschleife gibt alle 2^20 Punkte den Faden frei
   (`setTimeout`), sonst käme die Nachricht nicht an.
 - **CSP:** `script-src` trägt `'wasm-unsafe-eval'` — nur dafür (laz-perf). Nicht auf `unsafe-eval`

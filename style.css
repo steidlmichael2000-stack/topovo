@@ -2558,3 +2558,12 @@ body { font-variant-numeric: tabular-nums; }
   color: var(--accent); box-shadow: var(--accent-ring);
 }
 .bb-actions .maps:disabled, .bb-actions .primary:disabled { box-shadow: none; }
+/* Schalter „entpackt“ in der Zeile einer gespeicherten Kachel: aus = leise, an = Ton in Ton */
+.laser-geraet-ent {
+  /* Feste Breite: „entpackt“ und „entpacken“ stehen sonst verschieden breit untereinander */
+  flex: none; width: 76px; padding: 3px 0; text-align: center; border-radius: var(--r-klein); cursor: pointer;
+  font: inherit; font-size: .72rem; font-weight: 600;
+  background: none; border: 1px dashed var(--muted-2); color: var(--muted);
+}
+.laser-geraet-ent.is-on { background: var(--accent-flaeche); border: 1px solid transparent; color: var(--accent); box-shadow: var(--accent-ring); }
+.laser-geraet-ent:disabled { opacity: .5; cursor: default; }
