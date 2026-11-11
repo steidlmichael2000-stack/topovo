@@ -631,6 +631,27 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   → `entpackenParallel` in laser-werk.js startet je Kachel einen Hilfs-Worker (dieselbe Datei, Aufträge `teilEntpacken` +
   `teilDaten` mit Kopie des LAZ), Felder kommen übertragen zurück. Scheitert einer, entpackt der Haupt-Worker die Kachel
   selbst. Gilt nur für Kacheln, die in `entpacktMax` passen (vorher reserviert). Gemessen 613+614_5478: 22,1 → 12,2 s.
+  **Überlappend** (seit dem Abend des 11.11.): `entpackPool` statt `entpackenParallel`; `kachelnHolen` ruft `jeKachel` nach
+  jeder geladenen Kachel, `ausschneiden` gibt sie dort gleich in den Pool (Platz über `reservieren`), während die nächste lädt.
+  Der Pool meldet erst nach `alleGeladen()`, beendet wird er im äußeren `finally` (`pool.ende()`).
+  Beim Abbrechen erfüllt `stopp` **auch die laufenden** Versprechen mit null — sonst hing der Worker nach einem Abbruch im
+  Entpacken für immer (abbruch blieb gesetzt, jeder neue Auftrag wurde still verworfen). Geprüft: Abbruch beim Laden, beim
+  Entpacken, danach Neuladen.
+  Paralleler **Download** bringt nichts (gemessen: 1 Verbindung 10,5 MB/s, 2: 8,9, 3: 11,3 — die Leitung ist voll).
+- **Darstellung „Gelände“** (11.11.2026, so gewünscht): Bodenraster aus **allen** Bodenpunkten, gefüllt in `nimm` vor der
+  Ausdünnung (`gitterAnlegen`/`gitterFertig` in laser-werk.js; `LASER_GITTER` Handy 1 Mio., PC 4 Mio. Zellen → 0,5/1/2 m).
+  Lücken über eine Pyramide bilinear gefüllt, ohne Bodenpunkt im Umkreis ~32 m bleibt es leer (art 2). In laser.js
+  instanziert gezeichnet (`GEL_VS`/`GEL_FS`, Kachel `GEL_P` 64, Höhe aus RG32F-Textur), Farbe nach der Färbung der Punkte,
+  Bodenpunkte dann aus (`bodenAus`), Antippen/Messen trifft die Fläche (`gelaendeAn`, Strahl in halben Zellen). Der Regen
+  baut weiter sein eigenes Raster. PW-Viewer schickt kein `gitterZellen` → kein Umschalter.
+- **Limitbox** (11.11.2026, „Box mit Griffen“ gewählt statt Höhenscheibe): Abschnitt „Limitbox“ in der Tafel, Aus | Innen |
+  Außen, Griffe ein/aus, Neu setzen. Quader um die Hochachse drehbar (`box` in laser.js), ausgeblendet im Shader
+  (`boxModus`, `boxMitte`, `boxHalb`, `boxRot` — Punkte und Gelände teilen die Uniforms), `boxZeigt` für Antippen/Messen.
+  Griffe: Seiten weiß (Achse zum Sehstrahl, Gegenseite bleibt), Mitte blau (waagerecht verschieben), Drehgriff blau außen
+  an der Ostseite. Ziehen in der Einfangphase an der Wurzel **vor** den Messpunkten (`stopImmediatePropagation`). Wird
+  nicht gemerkt. Auflagen: einfache Materialien über sechs Schnittebenen (`boxEbenen`, Weltkoordinaten mit Überhöhung,
+  `renderer.localClippingEnabled`, gesetzt in `boxKlippen` vor dem Zeichnen; außen = Normalen nach außen + `clipIntersection`),
+  LoD2 und Höhenlinien über dieselben Uniforms in `GEB_FS`, Schilder der Auflagen über `boxZeigt`. Den Export schneidet sie nicht.
 - **KML-Höhen mit DB_REF-Aufschlag** (11.11.2026, Kempten 53,7 m, 5904 50,3 m zu hoch): Das Vermessungsprogramm nimmt die
   NHN-Höhe als Bessel-Ellipsoidhöhe und rechnet DB_REF → WGS84. `dbrefEllAufschlag` (app.js) gibt den Aufschlag je Punkt,
   `kmlBauen` zieht ihn je Datei ab, wenn der Median Höhe − Aufschlag − Laserboden innerhalb ±3 m liegt (Hinweis im Viewer).

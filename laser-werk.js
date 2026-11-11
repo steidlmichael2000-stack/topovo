@@ -102,59 +102,75 @@ async function entpacken(LP, { kachel, zeiger, groesse, kopf: k }, nr, von) {
 }
 
 /* Mehrere Kacheln gleichzeitig entpacken (11.11.2026, so gewünscht, nur am PC — app.js gibt
- * am Handy parallel 1): laz-perf rechnet auf einem Kern, je Kachel ein Hilfs-Worker (diese
- * Datei noch einmal, Auftrag teilEntpacken) bekommt eine Kopie des LAZ und schickt die Felder
- * zurück. Höchstens parallel zugleich. Der Fortschritt kommt als eine Meldung über alle
- * ('lesen' mit gleichzeitig). Ergebnis je Auftrag die Felder wie entpacken() oder null, wenn
- * der Hilfs-Worker scheiterte — dann entpackt der Aufrufer diese Kachel selbst. */
-async function entpackenParallel(LP, quellen, parallel) {
-  const gesamt = quellen.map(q => q.kopf.anzahl), gelesen = quellen.map(() => 0);
-  const summe = gesamt.reduce((a, b) => a + b, 0), zugleich = Math.min(parallel, quellen.length);
-  const ergebnisse = quellen.map(() => null), laufen = new Set();
-  let naechste = 0, zuletzt = 0;
-  const melden = () => {
+ * am Handy entpacktMax 0): laz-perf rechnet auf einem Kern, je Kachel ein Hilfs-Worker (diese
+ * Datei noch einmal, Aufträge teilEntpacken + teilDaten) bekommt eine Kopie des LAZ und schickt
+ * die Felder zurück. Höchstens parallel zugleich, der Rest wartet in der Reihe.
+ *
+ * Überlappend (seit dem Abend des 11.11.2026): ausschneiden gibt jede Kachel gleich nach dem
+ * Laden hinein (start), während die nächste noch lädt — gemessen bei Kempten 22 s Laden und rund
+ * 20 s Entpacken je Kachel. Solange noch geladen wird, meldet der Pool nichts (die Leiste zeigt
+ * das Laden); ab alleGeladen() den Fortschritt über alle als 'lesen' mit gleichzeitig.
+ * start(q) gibt ein Versprechen auf die Felder wie entpacken() oder null, wenn der Hilfs-Worker
+ * scheiterte — dann entpackt der Aufrufer diese Kachel selbst. Es scheitert nie (kein
+ * unbehandelter Fehler beim Abbrechen); ob abgebrochen wurde, prüft der Aufrufer. */
+function entpackPool(parallel) {
+  const reihe = [], laufen = new Map(), stand = [];      // laufen: Hilfs-Worker → sein fertig()
+  let melden = false, zuletzt = 0;
+  const fortschritt = () => {
+    if (!melden || !stand.length) return;
     const jetzt = performance.now();
     if (jetzt - zuletzt < 100) return;
     zuletzt = jetzt;
-    senden({ art: 'lesen', nr: 0, von: 1, gelesen: gelesen.reduce((a, b) => a + b, 0), gesamt: summe, gleichzeitig: zugleich });
+    const gelesen = stand.reduce((a, s) => a + s.gelesen, 0), gesamt = stand.reduce((a, s) => a + s.gesamt, 0);
+    const offen = stand.filter(s => s.gelesen < s.gesamt).length;
+    senden({ art: 'lesen', nr: 0, von: 1, gelesen, gesamt, gleichzeitig: Math.max(1, Math.min(parallel, offen)) });
   };
-  const einer = async () => {
-    while (naechste < quellen.length && !abbruch.signal.aborted) {
-      const i = naechste++, q = quellen[i];
+  const weiter = () => {
+    while (laufen.size < parallel && reihe.length && !abbruch.signal.aborted) {
+      const { q, s, fertig } = reihe.shift();
       let w = null;
-      try {
-        w = new Worker('laser-werk.js');
-        laufen.add(w);
-        ergebnisse[i] = await new Promise((ok, fehl) => {
-          abbruch.signal.addEventListener('abort', () => fehl(new Error(ABGEBROCHEN)), { once: true });
-          w.onmessage = ev => {
-            const m = ev.data;
-            if (m.art === 'lesen') { gelesen[i] = m.gelesen; melden(); }
-            else if (m.art === 'entpackt') ok(m.e);
-            else if (m.art === 'fehler') fehl(new Error(m.text));
-          };
-          w.onerror = ev => { if (ev.preventDefault) ev.preventDefault(); fehl(new Error(ev.message || 'Hilfs-Worker')); };
-          const daten = LP.HEAPU8.slice(q.zeiger, q.zeiger + q.groesse);
-          w.postMessage({ art: 'teilEntpacken', kachel: q.kachel, kopf: q.kopf }, []);
-          w.postMessage({ art: 'teilDaten', daten }, [daten.buffer]);
-        });
-      } catch (err) {
-        if (abbruch.signal.aborted) return;
-        console.warn(`Kachel ${q.kachel} im Hilfs-Worker:`, err);
-      } finally {
-        if (w) { w.terminate(); laufen.delete(w); }
-      }
-      gelesen[i] = gesamt[i];
-      melden();
+      try { w = new Worker('laser-werk.js'); } catch (err) { console.warn(err); fertig(null); continue; }
+      laufen.set(w, fertig);
+      const ende = e => {
+        if (!laufen.has(w)) return;
+        laufen.delete(w);
+        w.terminate();
+        s.gelesen = s.gesamt;
+        fortschritt();
+        fertig(e);
+        weiter();
+      };
+      w.onmessage = ev => {
+        const m = ev.data;
+        if (m.art === 'lesen') { s.gelesen = m.gelesen; fortschritt(); }
+        else if (m.art === 'entpackt') ende(m.e);
+        else if (m.art === 'fehler') { console.warn(`Kachel ${q.kachel} im Hilfs-Worker:`, m.text); ende(null); }
+      };
+      w.onerror = ev => { if (ev.preventDefault) ev.preventDefault(); console.warn(`Kachel ${q.kachel} im Hilfs-Worker:`, ev.message); ende(null); };
+      // Die Kopie erst jetzt: Das LAZ liegt bis dahin nur einmal im Speicher
+      const daten = lazPerf.HEAPU8.slice(q.zeiger, q.zeiger + q.groesse);
+      w.postMessage({ art: 'teilEntpacken', kachel: q.kachel, kopf: q.kopf });
+      w.postMessage({ art: 'teilDaten', daten }, [daten.buffer]);
     }
   };
-  try {
-    await Promise.all(Array.from({ length: zugleich }, einer));
-  } finally {
-    for (const w of laufen) w.terminate();
-  }
-  if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
-  return ergebnisse;
+  /* Beim Abbrechen jedes Versprechen erfüllen (mit null), auch das der laufenden: Wer darauf
+   * wartet, käme sonst nie weiter — der Worker hinge mit gesetztem abbruch, und jeder neue
+   * Auftrag würde still verworfen (so beim Prüfen am 11.11.2026 aufgefallen). */
+  const stopp = () => {
+    for (const [w, fertig] of laufen) { w.terminate(); fertig(null); }
+    laufen.clear();
+    for (const r of reihe.splice(0)) r.fertig(null);
+  };
+  abbruch.signal.addEventListener('abort', stopp, { once: true });
+  return {
+    start(q) {
+      const s = { gelesen: 0, gesamt: q.kopf.anzahl };
+      stand.push(s);
+      return new Promise(fertig => { reihe.push({ q, s, fertig }); weiter(); });
+    },
+    alleGeladen() { melden = true; zuletzt = 0; fortschritt(); },
+    ende() { abbruch.signal.removeEventListener('abort', stopp); stopp(); }
+  };
 }
 
 /* Im Hilfs-Worker: erst der Auftrag, dann die Bytes (eigene Nachricht, damit der
@@ -565,7 +581,7 @@ function entpacktStueck(D, i0, i1) {
 }
 
 /** Holt die Kacheln, eine nach der anderen: aus dem Vorrat oder neu geladen. */
-async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false) {
+async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false, jeKachel = null) {
   const von = kacheln.length, behalten = new Set(kacheln.map(k => k.kachel));
   const da = [], fehlen = [];
   let megabyte = 0;
@@ -596,6 +612,7 @@ async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false) {
     vorrat.set(kachel, v);
     vorratMelden();
     da.push({ kachel, ...v, kopf });
+    if (jeKachel) jeKachel(da[da.length - 1]);
   }
   if (!da.length && !leerErlaubt) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
   return { da, fehlen, megabyte };
@@ -627,7 +644,7 @@ const inMaske = (M, e, n) => {
   return c >= 0 && r >= 0 && c < M.w && r < M.h && M.m[r * M.w + c] === 1;
 };
 
-async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1 }) {
+async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1, gitterZellen = 0 }) {
   if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
   const LP = lazPerf;
 
@@ -639,6 +656,7 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   const behalten = new Set(kacheln.map(k => k.kachel));
   // Entpackt auf dem Gerät (<kachel>.pts): weder LAZ laden noch entpacken
   const vonDatei = new Map();
+  let pool = null;                // Hilfs-Worker zum Entpacken (entpackPool), im finally beendet
   try {
   for (const k of kacheln) {
     if (!k.geraet || entpackt.has(k.kachel)) continue;
@@ -646,7 +664,20 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
     if (D) vonDatei.set(k.kachel, D);
   }
   const offen = kacheln.filter(k => !entpackt.has(k.kachel) && !vonDatei.has(k.kachel));
-  const { da, fehlen, megabyte } = offen.length ? await kachelnHolen(LP, offen, vorratMax, true) : { da: [], fehlen: [], megabyte: 0 };
+  /* Am PC jede Kachel gleich nach dem Laden in einen Hilfs-Worker zum Entpacken, während die
+   * nächste lädt (entpackPool). Platz im Vorrat für die entpackte Fassung wird dabei reserviert. */
+  pool = entpacktMax && typeof Worker !== 'undefined' ? entpackPool(Math.max(1, parallel)) : null;
+  const frueh = new Map();        // Kachel → Versprechen auf die Felder
+  let reserviert = 0;
+  const reservieren = q => {
+    const bedarf = q.kopf.anzahl * ENTPACKT_BYTE;
+    if (!entpacktPlatz(reserviert + bedarf, behalten, entpacktMax)) return false;
+    reserviert += bedarf;
+    return true;
+  };
+  const { da, fehlen, megabyte } = offen.length
+    ? await kachelnHolen(LP, offen, vorratMax, true, pool ? q => { if (reservieren(q)) frueh.set(q.kachel, pool.start(q)); } : null)
+    : { da: [], fehlen: [], megabyte: 0 };
   zeiten.megabyte = megabyte;
   zeiten.ausDatei = vonDatei.size;       // so viele Kacheln kamen entpackt vom Gerät (laser.js: „Lesen“ statt „Entpacken“)
   zeiten.kacheln = kacheln.length;
@@ -675,21 +706,21 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   if (!quellen.length) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
   // Neu geladene entpacken und merken, soweit der Platz reicht — sonst wie bisher im Durchgang
   if (entpacktMax) {
-    // Erst Platz für alle reservieren, dann entpacken — bei mehreren gleichzeitig (entpackenParallel)
+    // Kacheln aus dem gepackten Vorrat (schon früher geladen) kommen jetzt noch in den Pool
     const auftraege = [];
-    let reserviert = 0;
     for (let t = 0; t < quellen.length; t++) {
-      const q = quellen[t], bedarf = q.kopf.anzahl * ENTPACKT_BYTE;
-      if (q.felder || q.datei || !entpacktPlatz(reserviert + bedarf, behalten, entpacktMax)) continue;
-      reserviert += bedarf;
-      auftraege.push({ q, t });
+      const q = quellen[t];
+      if (q.felder || q.datei) continue;
+      if (frueh.has(q.kachel)) { auftraege.push({ q, t, e: frueh.get(q.kachel) }); continue; }
+      if (!reservieren(q)) continue;
+      auftraege.push({ q, t, e: pool ? pool.start(q) : null });
     }
-    const fertig = parallel > 1 && auftraege.length > 1 && typeof Worker !== 'undefined'
-      ? await entpackenParallel(LP, auftraege.map(a => a.q), parallel) : [];
+    if (pool) pool.alleGeladen();
     for (let i = 0; i < auftraege.length; i++) {
       const { q, t } = auftraege[i];
       // Ohne Ergebnis des Hilfs-Workers (keiner gestartet, Speicher, Fehler): hier wie bisher
-      const e = fertig[i] || await entpacken(LP, q, t, quellen.length);
+      const e = (auftraege[i].e && await auftraege[i].e) || (abbruch.signal.aborted ? null : await entpacken(LP, q, t, quellen.length));
+      if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
       entpackt.set(q.kachel, e);
       entpacktSumme += e.bytes;
       q.felder = e;
@@ -717,8 +748,14 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   const klassen = new Map();
   let n = 0, drin = 0, zMin = Infinity, zMax = -Infinity, iMax = 0;
   /** Ein Punkt im Rechteck: Umriss, Klasse, Ausdünnung prüfen und übernehmen. */
+  const gitter = gitterZellen ? gitterAnlegen(bereich, gitterZellen) : null;
   const nimm = (e, nn, z, kl, s) => {
     if (maske && !inMaske(maske, e, nn)) return;
+    // Das Bodenraster sieht jeden Punkt, auch die, die die Ausdünnung gleich verwirft
+    if (gitter && BODEN.has(kl)) {
+      const cx = Math.floor((e - e0) / gitter.zelle), cy = Math.floor((nn - n0) / gitter.zelle);
+      if (cx >= 0 && cy >= 0 && cx < gitter.nx && cy < gitter.ny) { const c = cy * gitter.nx + cx; gitter.summe[c] += z; gitter.zahl[c]++; }
+    }
     if (nurBoden && !BODEN.has(kl)) return;
     if (drin++ % schritt) return;
     if (n === platz) {
@@ -810,18 +847,124 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   const normalen = normalenRechnen(xyz, n, Math.max(0.8, Math.sqrt(12 / (Math.PI * dichte))));
   zeiten.normalen = (performance.now() - uhr) / 1000;
   if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);     // abgebrochen, während die Normalen liefen
+  const fertigGitter = gitter ? gitterFertig(gitter, bereich, maske, zMin, ce, cn) : null;
   const ergebnis = {
-    art: 'fertig', anzahl: n, schritt, fehlen, zeiten,
+    art: 'fertig', anzahl: n, schritt, fehlen, zeiten, gitter: fertigGitter,
     mitte: [ce, cn], zMin, zMax, iMax,
     // Für den Export (Größe vorab): je Kachel Punkte, Format und Größe des LAZ
     kacheln: quellen.map(k => ({ kachel: k.kachel, anzahl: k.kopf.anzahl, format: k.kopf.format, groesse: k.groesse })),
     xyz: xyz.slice(0, n * 3), klasse: klasse.slice(0, n), staerke: staerke.slice(0, n), normalen,
     klassen: [...klassen].sort((a, b) => a[0] - b[0])
   };
-  self.postMessage(ergebnis, [ergebnis.xyz.buffer, ergebnis.klasse.buffer, ergebnis.staerke.buffer, normalen.buffer]);
+  self.postMessage(ergebnis, [ergebnis.xyz.buffer, ergebnis.klasse.buffer, ergebnis.staerke.buffer, normalen.buffer,
+    ...(fertigGitter ? [fertigGitter.z.buffer, fertigGitter.art.buffer] : [])]);
   } finally {
+    if (pool) pool.ende();
     for (const D of vonDatei.values()) { try { D.h.close(); } catch (err) { /* schon zu */ } }
   }
+}
+
+/* ===================== Bodenraster fürs Geländemodell (11.11.2026) =====================
+ *
+ * Für die Darstellung „Gelände“ in laser.js (ein Mesh statt Punkte, so gewünscht): je Zelle der
+ * Mittelwert aller Bodenpunkte (BODEN), gefüllt beim Ausschneiden — also aus allen Punkten, nicht nur
+ * aus den nach der Ausdünnung behaltenen. Die Zelle so fein, dass höchstens gitterZellen Zellen
+ * entstehen (app.js: Handy 1 Mio., PC 4 Mio.), in den Stufen 0,5 / 1 / 2 / 4 … m.
+ * Ergebnis { z (Float32, über zMin, NaN außerhalb des Umrisses), art (0 gemessen, 1 aufgefüllt,
+ * 2 außerhalb), nx, ny, zelle, x0, y0 (Südwestecke relativ zur Mitte) }. */
+function gitterAnlegen({ e0, n0, e1, n1 }, maxZellen) {
+  let zelle = 0.5;
+  while (Math.ceil((e1 - e0) / zelle) * Math.ceil((n1 - n0) / zelle) > maxZellen) zelle *= 2;
+  const nx = Math.ceil((e1 - e0) / zelle), ny = Math.ceil((n1 - n0) / zelle);
+  return { zelle, nx, ny, summe: new Float64Array(nx * ny), zahl: new Uint32Array(nx * ny) };
+}
+
+/** Mittelwerte bilden, Lücken füllen (unter Häusern, dichtem Wald, Brücken). Gefüllt über eine
+ *  Pyramide: jede Stufe halb so fein, gemittelt aus den belegten Zellen darunter; eine leere Zelle
+ *  nimmt den Wert der gröberen Stufe. Danach glätten nur die gefüllten Zellen ihre Kanten. */
+function gitterFertig(g, { e0, n0 }, maske, zMin, ce, cn) {
+  const { nx, ny, zelle } = g, N = nx * ny;
+  const z = new Float32Array(N), art = new Uint8Array(N);
+  let belegt = 0;
+  for (let c = 0; c < N; c++) {
+    const cx = c % nx, cy = (c / nx) | 0;
+    if (maske && !inMaske(maske, e0 + (cx + 0.5) * zelle, n0 + (cy + 0.5) * zelle)) { z[c] = NaN; art[c] = 2; continue; }
+    if (g.zahl[c]) { z[c] = g.summe[c] / g.zahl[c] - zMin; belegt++; } else { z[c] = NaN; art[c] = 1; }
+  }
+  g.summe = g.zahl = null;
+  if (!belegt) return null;
+  // Pyramide nach oben
+  const stufen = [{ w: nx, h: ny, v: z }];
+  while (stufen[stufen.length - 1].w > 1 || stufen[stufen.length - 1].h > 1) {
+    const u = stufen[stufen.length - 1], w = Math.ceil(u.w / 2), h = Math.ceil(u.h / 2), v = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let s = 0, a = 0;
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const xx = 2 * x + dx, yy = 2 * y + dy;
+        if (xx >= u.w || yy >= u.h) continue;
+        const q = u.v[yy * u.w + xx];
+        if (q === q) { s += q; a++; }
+      }
+      v[y * w + x] = a ? s / a : NaN;
+    }
+    stufen.push({ w, h, v });
+  }
+  /* Wo im Umkreis von rund 32 m gar kein Bodenpunkt liegt (außerhalb der Kacheln, Wasser ohne
+   * Echo), bleibt das Raster leer statt eine erfundene Ebene zu zeigen: ist die Zelle der Stufe,
+   * deren Zellen ≥ 32 m messen, leer, gilt die Zelle als außerhalb. */
+  const L = Math.min(stufen.length - 1, Math.max(1, Math.ceil(Math.log2(32 / zelle))));
+  for (let c = 0; c < N; c++) {
+    if (art[c] !== 1) continue;
+    const x = c % nx, y = (c / nx) | 0, o = stufen[L];
+    const q = o.v[(y >> L) * o.w + (x >> L)];
+    if (q !== q) art[c] = 2;
+  }
+  // … und wieder hinunter: Leeres bilinear aus der gröberen Stufe (nur belegte Nachbarn zählen)
+  for (let k = stufen.length - 2; k >= 0; k--) {
+    const u = stufen[k], o = stufen[k + 1];
+    for (let y = 0; y < u.h; y++) for (let x = 0; x < u.w; x++) {
+      const c = y * u.w + x;
+      if (u.v[c] === u.v[c] || (k === 0 && art[c] === 2)) continue;
+      const fx = (x + 0.5) / 2 - 0.5, fy = (y + 0.5) / 2 - 0.5;
+      const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+      let s = 0, gw = 0;
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const xx = Math.min(o.w - 1, Math.max(0, x0 + dx)), yy = Math.min(o.h - 1, Math.max(0, y0 + dy));
+        const q = o.v[yy * o.w + xx];
+        if (q !== q) continue;
+        const w = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) + 1e-6;
+        s += q * w; gw += w;
+      }
+      u.v[c] = gw ? s / gw : o.v[(y >> 1) * o.w + (x >> 1)];
+    }
+  }
+  // Etwas glätten, nur in den gefüllten Zellen
+  const offen = [];
+  for (let c = 0; c < N; c++) if (art[c] === 1) offen.push(c);
+  for (let runde = 0; runde < 6 && offen.length; runde++) {
+    for (const c of offen) {
+      const x = c % nx, y = (c / nx) | 0;
+      let s = 0, a = 0;
+      if (x > 0 && art[c - 1] !== 2) { s += z[c - 1]; a++; }
+      if (x < nx - 1 && art[c + 1] !== 2) { s += z[c + 1]; a++; }
+      if (y > 0 && art[c - nx] !== 2) { s += z[c - nx]; a++; }
+      if (y < ny - 1 && art[c + nx] !== 2) { s += z[c + nx]; a++; }
+      if (a) z[c] = s / a;
+    }
+  }
+  for (let c = 0; c < N; c++) if (art[c] === 2) z[c] = NaN;
+  /* Einzelne leere Zellen zwischen Bodenpunkten sind nur die Punktdichte, keine Lücke: als
+   * „aufgefüllt“ (dunkler gezeichnet) zählt erst, was keinen gemessenen Nachbarn hat. */
+  const nurDichte = offen.filter(c => {
+    const x = c % nx, y = (c / nx) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx >= 0 && yy >= 0 && xx < nx && yy < ny && art[yy * nx + xx] === 0) return true;
+    }
+    return false;
+  });
+  for (const c of nurDichte) art[c] = 0;
+  return { z, art, nx, ny, zelle, x0: e0 - ce, y0: n0 - cn };
 }
 
 /* Normalen je Punkt: Hauptachsen der Nachbarn im Umkreis r (Kovarianz, die
@@ -1326,7 +1469,7 @@ async function exportieren({ kacheln, bereich, umriss, einzeln, nurBoden, getren
 
 self.onmessage = async ev => {
   if (ev.data.art === 'abbrechen') { if (abbruch) abbruch.abort(); return; }
-  if (ev.data.art === 'teilEntpacken') { teilAuftrag = ev.data; return; }       // Hilfs-Worker, siehe entpackenParallel
+  if (ev.data.art === 'teilEntpacken') { teilAuftrag = ev.data; return; }       // Hilfs-Worker, siehe entpackPool
   const istExport = ev.data.art === 'export';
   // Eins nach dem anderen: Laden und Export teilen sich den Speicher von laz-perf
   if (abbruch) { if (istExport) self.postMessage({ art: 'fehler', text: 'Es läuft noch ein Auftrag.', export: true }); return; }

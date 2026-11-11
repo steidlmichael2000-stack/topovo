@@ -53,8 +53,11 @@ const zahl = (v, s = 2) =>v.toLocaleString('de-DE', { minimumFractionDigits: s, 
 const PUNKT_VS = `
   attribute vec3 farbe, normale;
   attribute float klasse;
-  uniform float groesse, skala, masken[32], licht, ortho, orthoSkala, maxPx;
+  uniform float groesse, skala, masken[32], licht, ortho, orthoSkala, maxPx, bodenAus;
   uniform vec3 lichtRichtung;
+  uniform int boxModus;
+  uniform vec3 boxMitte, boxHalb;
+  uniform vec2 boxRot;
   varying vec3 vFarbe;
   varying float vMvZ, vWeltR;
   void main() {
@@ -66,6 +69,16 @@ const PUNKT_VS = `
     vFarbe = min(farbe * mix(1.0, hell, licht), vec3(1.0));
     // Ausgeblendete Klasse: hinter die ferne Ebene, wird nicht gezeichnet
     if (masken[int(klasse) & 31] < 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    // Darstellung „Gelände“: den Boden zeigt die Fläche, seine Punkte fallen weg
+    int kl = int(klasse);
+    if (bodenAus > 0.5 && (kl == 2 || kl == 9 || kl == 23 || kl == 24)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    // Limitbox: 1 nur innen zeigen, 2 nur außen
+    if (boxModus > 0) {
+      vec3 q = position - boxMitte;
+      vec3 b = vec3(boxRot.x * q.x + boxRot.y * q.y, -boxRot.y * q.x + boxRot.x * q.y, q.z);
+      bool drin = all(lessThanEqual(abs(b), boxHalb));
+      if (drin == (boxModus == 2)) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    }
     // Perspektive: kleiner mit der Entfernung; orthografisch: fest je Meter
     // Ganz nah heran nicht zu Scheiben aufblähen: höchstens 24 Bildpunkte (am Handy mal Pixeldichte)
     gl_PointSize = clamp(ortho > 0.5 ? groesse * orthoSkala : groesse * skala / -mv.z, 1.5, maxPx);
@@ -95,6 +108,75 @@ const PUNKT_FS = `
   #endif
     gl_FragColor = vec4(vFarbe, 1.0);
   }`;
+/* Geländemodell (Darstellung „Gelände“, 11.11.2026): das Bodenraster aus laser-werk.js
+ * (gitterFertig) als Fläche. Eine kleine Kachel aus GEL_P × GEL_P Zellen wird je
+ * Stück des Rasters einmal gezeichnet (instanziert), die Höhe holt der Shader aus
+ * einer Textur — so braucht auch ein Raster mit 4 Mio. Zellen kaum Speicher für
+ * Eckpunkte. Normalen aus den Nachbarzellen (glatt, rechnet die Überhöhung mit).
+ * Farbe nach der Färbung der Punkte: grau (aufgefüllt dunkler), Höhe, Luftbild,
+ * Klasse (Bodenfarbe), Neigung. Schreibt Tiefe, damit Kantenschattierung und
+ * Verdeckung wie bei den Punkten gehen. */
+const GEL_P = 64;
+const GEL_VS = `
+  uniform highp sampler2D H;
+  uniform ivec2 n;
+  uniform float zelle, ueber;
+  uniform vec2 ursprung;
+  attribute vec2 stueck;
+  varying vec3 vNormale;
+  varying float vArt, vAus, vZ;
+  varying vec2 vXY;
+  float nachbar(ivec2 q, float z0) {
+    if (q.x < 0 || q.y < 0 || q.x >= n.x || q.y >= n.y) return z0;
+    vec2 h = texelFetch(H, q, 0).rg;
+    return h.g > 1.5 ? z0 : h.r;
+  }
+  void main() {
+    ivec2 c = min(ivec2(stueck * ${GEL_P}.0 + position.xy), n - 1);
+    vec2 h = texelFetch(H, c, 0).rg;
+    vAus = h.g > 1.5 ? 1.0 : 0.0;
+    vArt = h.g > 1.5 ? 0.0 : h.g;
+    float z = h.g > 1.5 ? 0.0 : h.r;
+    float dx = nachbar(c - ivec2(1, 0), z) - nachbar(c + ivec2(1, 0), z);
+    float dy = nachbar(c - ivec2(0, 1), z) - nachbar(c + ivec2(0, 1), z);
+    vNormale = vec3(dx * ueber, dy * ueber, 2.0 * zelle);
+    vZ = z;
+    vXY = ursprung + (vec2(c) + 0.5) * zelle;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(vXY, z, 1.0);
+  }`;
+const GEL_FS = `
+  precision highp float;
+  uniform int modus;
+  uniform vec3 lichtRichtung, grundFarbe, neig0, neig1, neig2;
+  uniform float licht, zLo, zHi, seite;
+  uniform sampler2D rampe, bild;
+  uniform int boxModus;
+  uniform vec3 boxMitte, boxHalb;
+  uniform vec2 boxRot;
+  varying vec3 vNormale;
+  varying float vArt, vAus, vZ;
+  varying vec2 vXY;
+  void main() {
+    if (vAus > 0.01) discard;
+    if (boxModus > 0) {
+      vec3 q = vec3(vXY, vZ) - boxMitte;
+      vec3 b = vec3(boxRot.x * q.x + boxRot.y * q.y, -boxRot.y * q.x + boxRot.x * q.y, q.z);
+      if (all(lessThanEqual(abs(b), boxHalb)) == (boxModus == 2)) discard;
+    }
+    vec3 nn = normalize(vNormale);
+    float hell = 0.25 + 0.95 * max(dot(nn, lichtRichtung), 0.0);
+    vec3 f = grundFarbe;
+    if (modus == 1) f = texture2D(rampe, vec2(clamp((vZ - zLo) / max(zHi - zLo, 0.01), 0.0, 1.0), 0.5)).rgb;
+    else if (modus == 2) f = texture2D(bild, vXY / seite + 0.5).rgb;
+    else if (modus == 4) {
+      float t = clamp(degrees(acos(clamp(nn.z, 0.0, 1.0))) / 45.0, 0.0, 1.0);
+      f = t < 0.5 ? mix(neig0, neig1, t * 2.0) : mix(neig1, neig2, t * 2.0 - 1.0);
+    }
+    // Aufgefüllt (kein Bodenpunkt in der Nähe: unter Häusern, dichtem Wald) etwas dunkler
+    if (modus == 0 || modus == 3) f *= mix(1.0, 0.72, smoothstep(0.3, 0.7, vArt));
+    gl_FragColor = vec4(min(f * mix(1.0, hell, licht), vec3(1.0)), 1.0);
+  }`;
+
 /* Eye-Dome-Lighting nach Boucheny (2009), wie in Potree: je Bildpunkt die
  * logarithmische Tiefe gegen acht Nachbarn — liegt ein Nachbar näher, wird
  * es dunkler. So treten Kanten hervor, ohne dass die Punkte Normalen brauchen.
@@ -176,6 +258,7 @@ const GEB_VS = `
   uniform vec3 lichtRichtung;
   uniform float kante;
   varying float vHell;
+  varying vec3 vLokal;
   #ifdef DACHBILD
   attribute float wand;
   uniform float halbSeite;
@@ -184,6 +267,7 @@ const GEB_VS = `
   #endif
   void main() {
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vLokal = position;
     vHell = kante > 0.5 ? 1.0 : 0.6 + 0.4 * abs(dot(normal, lichtRichtung));
     #ifdef DACHBILD
     vDach = 1.0 - wand;
@@ -195,7 +279,11 @@ const GEB_FS = `
   uniform highp sampler2D tiefe;
   uniform float nah, fern, ortho, deckung;
   uniform vec3 farbe;
+  uniform int boxModus;
+  uniform vec3 boxMitte, boxHalb;
+  uniform vec2 boxRot;
   varying float vHell;
+  varying vec3 vLokal;
   #ifdef DACHBILD
   uniform sampler2D bild;
   varying float vDach;
@@ -203,6 +291,12 @@ const GEB_FS = `
   #endif
   float linear(float d) { return ortho > 0.5 ? nah + d * (fern - nah) : nah * fern / (fern - d * (fern - nah)); }
   void main() {
+    // Limitbox wie bei den Punkten (laser.js, boxZeichnen)
+    if (boxModus > 0) {
+      vec3 q = vLokal - boxMitte;
+      vec3 b = vec3(boxRot.x * q.x + boxRot.y * q.y, -boxRot.y * q.x + boxRot.x * q.y, q.z);
+      if (all(lessThanEqual(abs(b), boxHalb)) == (boxModus == 2)) discard;
+    }
     float t = texelFetch(tiefe, ivec2(gl_FragCoord.xy), 0).r;
     if (t < 1.0 && linear(gl_FragCoord.z) > linear(t) + 0.3) discard;
     #ifdef DACHBILD
@@ -372,6 +466,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     <div class="lz-tafel" hidden>
       <!-- Oben fest die Punktgröße, darunter Abschnitte zum Aufklappen wie im Menü
            der Karte (.sheet-sec) — die Tafel wurde sonst zu lang. -->
+      <!-- Punkte oder Gelände als Fläche (nur mit Bodenraster, d.gitter) -->
+      <div class="seg seg-paar lz-darstellung" role="group" aria-label="Darstellung" hidden>
+        <button type="button" class="seg-btn is-on" data-darstellung="punkte" data-ik="punkte">Punkte</button>
+        <button type="button" class="seg-btn" data-darstellung="gelaende" data-ik="berg">Gelände</button>
+      </div>
       <label class="slider-row lz-oben">Punktgröße
         <input type="range" class="lz-groesse" min="5" max="400" step="5" value="25">
         <span class="slider-val lz-groesse-wert"></span>
@@ -444,6 +543,19 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <button type="button" class="seg-btn" data-grund="schwarz" data-ik="schwarz">Schwarz</button>
           <button type="button" class="seg-btn" data-grund="weiss" data-ik="weiss">Weiß</button>
         </div>
+      </details>
+      <details class="sheet-sec lz-box-teil">
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg><h2>Limitbox</h2></summary>
+        <div class="seg" role="group" aria-label="Limitbox">
+          <button type="button" class="seg-btn is-on" data-box="aus">Aus</button>
+          <button type="button" class="seg-btn" data-box="innen" title="Nur zeigen, was in der Box liegt">Innen</button>
+          <button type="button" class="seg-btn" data-box="aussen" title="Ausblenden, was in der Box liegt">Außen</button>
+        </div>
+        <div class="seg seg-paar lz-box-mehr" role="group" aria-label="Box bearbeiten" hidden>
+          <button type="button" class="seg-btn is-on" data-box-griffe aria-pressed="true" title="Seiten, Höhe, Verschieben (Mitte) und Drehen (blau außen) ziehen">Griffe</button>
+          <button type="button" class="seg-btn" data-box-neu data-ik="neu" title="Box neu um die Bildmitte setzen">Neu setzen</button>
+        </div>
+        <p class="fine lz-box-mass" hidden></p>
       </details>
       <details class="sheet-sec">
         <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.8v5.7"/><circle class="voll" cx="12" cy="7.8" r="1.1"/></svg><h2>Ausschnitt</h2></summary>
@@ -570,7 +682,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const material = new THREE.ShaderMaterial({
     vertexShader: PUNKT_VS, fragmentShader: PUNKT_FS,
     uniforms: { groesse: { value: 0.25 }, skala: { value: 1 }, masken: { value: masken }, licht: { value: 0.5 },
-      ortho: { value: 0 }, orthoSkala: { value: 1 }, maxPx: { value: 24 },
+      ortho: { value: 0 }, orthoSkala: { value: 1 }, maxPx: { value: 24 }, bodenAus: { value: 0 },
+      boxModus: { value: 0 }, boxMitte: { value: new THREE.Vector3() }, boxHalb: { value: new THREE.Vector3(1, 1, 1) }, boxRot: { value: new THREE.Vector2(1, 0) },
       lichtRichtung: { value: new THREE.Vector3(-0.5, 0.5, Math.SQRT1_2) } }
   });
   const wolke = new THREE.Points(geo, material);
@@ -600,7 +713,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   // Gebäude (LoD2), nach den Punkten über das fertige Bild gezeichnet (GEB_FS)
   const gebSzene = new THREE.Scene();
   const gebUniforms = () => ({ tiefe: edl.uniforms.tiefe, nah: edl.uniforms.nah, fern: edl.uniforms.fern,
-    ortho: edl.uniforms.ortho, lichtRichtung: material.uniforms.lichtRichtung });
+    ortho: edl.uniforms.ortho, lichtRichtung: material.uniforms.lichtRichtung,
+    boxModus: material.uniforms.boxModus, boxMitte: material.uniforms.boxMitte, boxHalb: material.uniforms.boxHalb, boxRot: material.uniforms.boxRot });
   const gebFlaecheMat = new THREE.ShaderMaterial({ vertexShader: GEB_VS, fragmentShader: GEB_FS, transparent: true,
     side: THREE.DoubleSide, depthWrite: true,
     uniforms: { ...gebUniforms(), kante: { value: 0 }, deckung: { value: 0.5 }, farbe: { value: new THREE.Color(0.86, 0.88, 0.92) },
@@ -687,6 +801,77 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const NEIG = [new THREE.Color(0.35, 0.68, 0.38), new THREE.Color(0.95, 0.85, 0.3), new THREE.Color(0.86, 0.2, 0.15)];
   const klassenFarben = new Map(d.klassen.map(([k]) => [k, new THREE.Color(klasseFarbe(k))]));
 
+  /* ---------- Geländemodell (Darstellung „Gelände“) ----------
+   * Siehe GEL_VS. Nur, wenn der Worker ein Bodenraster mitgeschickt hat (Topovo, nicht der PW-Viewer). */
+  const G = d.gitter || null;
+  let gelaende = null, darstellung = 'punkte';
+  if (G) {
+    const N = G.nx * G.ny, hd = new Float32Array(N * 2);
+    for (let c = 0; c < N; c++) { hd[2 * c] = G.art[c] === 2 ? 0 : G.z[c]; hd[2 * c + 1] = G.art[c]; }
+    const hTex = new THREE.DataTexture(hd, G.nx, G.ny, THREE.RGFormat, THREE.FloatType);
+    hTex.needsUpdate = true;
+    // Eine Kachel aus GEL_P × GEL_P Zellen, je Stück des Rasters einmal gezeichnet
+    const P = GEL_P, ecken = new Float32Array((P + 1) * (P + 1) * 3), idx = new Uint16Array(P * P * 6);
+    for (let y = 0, k = 0; y <= P; y++) for (let x = 0; x <= P; x++, k += 3) { ecken[k] = x; ecken[k + 1] = y; }
+    for (let y = 0, k = 0; y < P; y++) for (let x = 0; x < P; x++, k += 6) {
+      const a = y * (P + 1) + x;
+      idx.set([a, a + 1, a + P + 2, a, a + P + 2, a + P + 1], k);
+    }
+    const sx = Math.ceil((G.nx - 1) / P), sy = Math.ceil((G.ny - 1) / P), st = new Float32Array(sx * sy * 2);
+    for (let y = 0, k = 0; y < sy; y++) for (let x = 0; x < sx; x++, k += 2) { st[k] = x; st[k + 1] = y; }
+    const gg = new THREE.InstancedBufferGeometry();
+    gg.setAttribute('position', new THREE.BufferAttribute(ecken, 3));
+    gg.setIndex(new THREE.BufferAttribute(idx, 1));
+    gg.setAttribute('stueck', new THREE.InstancedBufferAttribute(st, 2));
+    gg.instanceCount = sx * sy;
+    const rd = new Uint8Array(RAMPE.length * 4);
+    RAMPE.forEach((f, i) => { const c = new THREE.Color(f); rd.set([c.r * 255, c.g * 255, c.b * 255, 255], i * 4); });
+    const rampeTex = new THREE.DataTexture(rd, RAMPE.length, 1);
+    rampeTex.magFilter = rampeTex.minFilter = THREE.LinearFilter;
+    rampeTex.needsUpdate = true;
+    const gm = new THREE.ShaderMaterial({
+      vertexShader: GEL_VS, fragmentShader: GEL_FS,
+      uniforms: { H: { value: hTex }, n: { value: [G.nx, G.ny] }, zelle: { value: G.zelle }, ueber: { value: 1 },
+        ursprung: { value: new THREE.Vector2(G.x0, G.y0) }, modus: { value: 0 }, lichtRichtung: material.uniforms.lichtRichtung,
+        licht: material.uniforms.licht, grundFarbe: { value: new THREE.Color(0.82, 0.82, 0.82) },
+        neig0: { value: NEIG[0] }, neig1: { value: NEIG[1] }, neig2: { value: NEIG[2] },
+        zLo: { value: zLo }, zHi: { value: zHi }, seite: { value: info.seite }, rampe: { value: rampeTex }, bild: { value: null },
+        boxModus: material.uniforms.boxModus, boxMitte: material.uniforms.boxMitte, boxHalb: material.uniforms.boxHalb, boxRot: material.uniforms.boxRot }
+    });
+    gelaende = new THREE.Mesh(gg, gm);
+    gelaende.frustumCulled = false;
+    gelaende.visible = false;
+    szene.add(gelaende);
+  }
+  /** Höhe des Rasters an (x, y), bilinear zwischen den Zellmitten; NaN außerhalb. */
+  function gelaendeHoehe(x, y) {
+    const fx = (x - G.x0) / G.zelle - 0.5, fy = (y - G.y0) / G.zelle - 0.5;
+    if (fx < -0.5 || fy < -0.5 || fx > G.nx - 0.5 || fy > G.ny - 0.5) return NaN;
+    const x0 = Math.max(0, Math.min(G.nx - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(G.ny - 2, Math.floor(fy)));
+    const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0)), c = y0 * G.nx + x0;
+    if (G.art[c] === 2 || G.art[c + 1] === 2 || G.art[c + G.nx] === 2 || G.art[c + G.nx + 1] === 2) return NaN;
+    return (G.z[c] * (1 - tx) + G.z[c + 1] * tx) * (1 - ty) + (G.z[c + G.nx] * (1 - tx) + G.z[c + G.nx + 1] * tx) * ty;
+  }
+  /** Farbe der Fläche nach der Färbung der Punkte. */
+  let gelBildTex = null;
+  function gelFaerben() {
+    if (!gelaende) return;
+    const u = gelaende.material.uniforms;
+    if (faerbung === 'luftbild' && luftbildFlaeche) {
+      if (!gelBildTex || gelBildTex.image !== luftbildFlaeche) {
+        if (gelBildTex) gelBildTex.dispose();
+        gelBildTex = new THREE.CanvasTexture(luftbildFlaeche);
+        gelBildTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      }
+      u.bild.value = gelBildTex;
+      u.modus.value = 2;
+    } else if (faerbung === 'hoehe') u.modus.value = 1;
+    else if (faerbung === 'klasse') { u.modus.value = 3; u.grundFarbe.value.copy(klassenFarben.get(2) || new THREE.Color(klasseFarbe(2))); }
+    else if (faerbung === 'neigung') u.modus.value = 4;
+    else { u.modus.value = 0; u.grundFarbe.value.setRGB(0.82, 0.82, 0.82); }
+    neu = true;
+  }
+
   function faerben() {
     for (let i = 0; i < n; i++) {
       let c;
@@ -720,6 +905,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       farben[3 * i] = c.r; farben[3 * i + 1] = c.g; farben[3 * i + 2] = c.b;
     }
     geo.attributes.farbe.needsUpdate = true;
+    gelFaerben();
     const skala = $('.lz-skala');
     skala.hidden = faerbung !== 'hoehe';
     if (!skala.hidden) {
@@ -778,7 +964,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const kurz = document.createElement('span');
     kurz.className = 'lz-fuss-kurz';
     lizenzTextSetzen(kurz, (mitAchsen ? info.quelleKurz.replace('© BVV', '© BVV, DB InfraGO') : info.quelleKurz) +
-      (osm.length ? ' · © OpenStreetMap (ODbL)' : '') + ' · ⓘ');
+      // Kurz, damit es am Handy in eine Zeile passt (mit „OpenStreetMap“ stand das ⓘ allein in einer zweiten);
+      // die ganze Angabe kommt per Tipp. Das ⓘ hängt fest am letzten Wort.
+      (osm.length ? ' · © OSM (ODbL)' : '') + '\u00a0ⓘ');
     fuss.replaceChildren(kurz, lang, punkte);
     fuss.classList.add('mit-kurz');
   };
@@ -1847,6 +2035,22 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     }, err => console.warn(err));
   }
   $('.lz-heim').addEventListener('click', heim);
+  /* Darstellung Punkte | Gelände: Im Gelände zeigt die Fläche den Boden, seine Punkte fallen
+   * weg (bodenAus); Bäume, Häuser und der Rest bleiben Punkte und folgen den Klassen. */
+  const darstKnoepfe = wurzel.querySelectorAll('[data-darstellung]');
+  if (gelaende) $('.lz-darstellung').hidden = false;
+  function darstellungSetzen(art) {
+    if (!gelaende) return;
+    darstellung = art;
+    darstKnoepfe.forEach(b => b.classList.toggle('is-on', b.dataset.darstellung === art));
+    // Zeigt der Regen gerade sein eigenes Geländemodell, bleibt dieses aus
+    const regenGel = regen && regenAnsicht !== 'punkte';
+    gelaende.visible = art === 'gelaende' && !regenGel;
+    material.uniforms.bodenAus.value = art === 'gelaende' ? 1 : 0;
+    $('.lz-darstellung').title = art === 'gelaende' ? `Gelände aus den Bodenpunkten, Raster ${zahl(G.zelle, G.zelle % 1 ? 1 : 0)} m` : '';
+    neu = true;
+  }
+  darstKnoepfe.forEach(b => b.addEventListener('click', () => darstellungSetzen(b.dataset.darstellung)));
   /* Effekte, frei kombinierbar */
   const effekte = { verdeckung: false, kugeln: false, linien: false };
   wurzel.querySelectorAll('[data-effekt]').forEach(b => b.addEventListener('click', () => {
@@ -1871,14 +2075,54 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * Schirm rechnen und den nächsten im Umkreis von 10 Bildpunkten nehmen —
    * bei gleicher Nähe den vorderen. Rund 20 ms für eine Million Punkte. */
   const mvp = new THREE.Matrix4();
+  /* Auf der Fläche (Darstellung „Gelände“): den Sehstrahl in Schritten einer halben Zelle
+   * entlang, bis er unter das Raster taucht, dann halbieren. Gibt den Punkt (lokal, z ohne
+   * Überhöhung) oder null. */
+  const strahl = new THREE.Raycaster();
+  function gelaendeAn(x, y) {
+    if (!gelaende || !gelaende.visible) return null;
+    strahl.setFromCamera(new THREE.Vector2(x, y), kamera);
+    const { origin: o, direction: r } = strahl.ray;
+    // Nur im Kasten des Rasters suchen
+    const lo = [G.x0, G.y0, -1], hi = [G.x0 + G.nx * G.zelle, G.y0 + G.ny * G.zelle, (hoch + 1) * ueber];
+    let t0 = 0, t1 = Infinity;
+    for (let a = 0; a < 3; a++) {
+      const oa = [o.x, o.y, o.z][a], ra = [r.x, r.y, r.z][a];
+      if (Math.abs(ra) < 1e-12) { if (oa < lo[a] || oa > hi[a]) return null; continue; }
+      let ta = (lo[a] - oa) / ra, tb = (hi[a] - oa) / ra;
+      if (ta > tb) [ta, tb] = [tb, ta];
+      t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+    }
+    if (!(t0 < t1)) return null;
+    const unter = t => {
+      const x = o.x + r.x * t, y = o.y + r.y * t, h = gelaendeHoehe(x, y);
+      return h === h && o.z + r.z * t <= h * ueber && boxZeigt(x, y, h);
+    };
+    const schritt = G.zelle * 0.5;
+    let vor = t0;
+    for (let t = t0; t <= t1; t += schritt) {
+      if (unter(t)) {
+        let a = vor, b = t;
+        for (let k = 0; k < 24; k++) { const m = (a + b) / 2; if (unter(m)) b = m; else a = m; }
+        const px = o.x + r.x * b, py = o.y + r.y * b;
+        return new THREE.Vector3(px, py, gelaendeHoehe(px, py));
+      }
+      vor = t;
+    }
+    return null;
+  }
   function punktAn(cx, cy) {
     const r = flaeche.getBoundingClientRect();
     const x = (cx - r.left) / r.width * 2 - 1, y = -((cy - r.top) / r.height * 2 - 1);
     mvp.multiplyMatrices(kamera.projectionMatrix, kamera.matrixWorldInverse);
     const m = mvp.elements, px = 2 / r.width, py = 2 / r.height, tol = 10;
     let best = -1, bestWert = Infinity;
+    const bodenWeg = gelaende && gelaende.visible;
+    const aufFlaeche = gelaendeAn(x, y);
     for (let i = 0; i < n; i++) {
       if (!masken[d.klasse[i] & 31]) continue;
+      if (bodenWeg && BODEN.has(d.klasse[i])) continue;
+      if (box.an && !boxZeigt(d.xyz[3 * i], d.xyz[3 * i + 1], d.xyz[3 * i + 2])) continue;
       const a = d.xyz[3 * i], b = d.xyz[3 * i + 1], c = d.xyz[3 * i + 2] * ueber;
       const w = m[3] * a + m[7] * b + m[11] * c + m[15];
       if (w <= 0) continue;
@@ -1889,7 +2133,12 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       const wert = q + w * 0.05;     // bei gleicher Nähe der vordere
       if (wert < bestWert) { bestWert = wert; best = i; }
     }
-    return best < 0 ? null : new THREE.Vector3(d.xyz[3 * best], d.xyz[3 * best + 1], d.xyz[3 * best + 2]);
+    const punkt = best < 0 ? null : new THREE.Vector3(d.xyz[3 * best], d.xyz[3 * best + 1], d.xyz[3 * best + 2]);
+    if (!aufFlaeche) return punkt;
+    if (!punkt) return aufFlaeche;
+    // Beides getroffen (Baum über dem Gelände): das vordere
+    const weit = p => kamera.position.distanceTo(new THREE.Vector3(p.x, p.y, p.z * ueber));
+    return weit(punkt) < weit(aufFlaeche) - 0.3 ? punkt : aufFlaeche;
   }
 
   /* ---------- Messen: Distanz, Fläche, Höhe ----------
@@ -2089,6 +2338,233 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     }
     return best;
   }
+  /* ---------- Limitbox (11.11.2026, so gewünscht: Box mit Griffen) ----------
+   * Wie die Clip-Box in Potree: ein Quader, um die Hochachse drehbar. „Innen“ zeigt nur, was
+   * darin liegt, „Außen“ blendet es aus — im Shader für Punkte und Gelände (boxModus), beim
+   * Antippen und Messen über boxZeigt. Griffe: je Seite einer (weiß, zieht die Seite), oben
+   * und unten (Höhe), in der Mitte verschieben (blau), außen an der Ostseite drehen (blau, Ring).
+   * Lage in Ansichtskoordinaten ohne Überhöhung (z über zMin). Wird nicht gemerkt — die Box
+   * gehört zum Ausschnitt. */
+  const box = { an: 0, mitte: new THREE.Vector3(), halb: new THREE.Vector3(), winkel: 0, griffe: true };
+  const boxGruppe = new THREE.Group(), boxGriffe = [];
+  boxGruppe.visible = false;
+  messSzene.add(boxGruppe);
+  const boxLinieMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.85 });
+  const boxLinien = new THREE.LineSegments(new THREE.BufferGeometry(), boxLinieMat);
+  boxLinien.renderOrder = 8;
+  boxGruppe.add(boxLinien);
+  // Flächen ganz leicht getönt, damit der Quader als Körper lesbar ist (Kanten allein flimmern im Punktgewirr)
+  const boxFlaeche = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff,
+    transparent: true, opacity: 0.06, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  boxFlaeche.renderOrder = 7;
+  boxGruppe.add(boxFlaeche);
+  /* Griffe als runde Knöpfe aus Glas über dem Bild (HTML in .lz-marken, gesetzt in bild()), mit
+   * Symbol: Doppelpfeil entlang der Achse, die sie ziehen (dreht sich mit der Ansicht), Kreuz zum
+   * Verschieben, Kreispfeil zum Drehen. Getroffen wird über die Lage im Bild, nicht über das Element. */
+  const GRIFF_IK = {
+    pfeil: '<path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"/>',
+    mitte: '<path d="M12 3.5v17M3.5 12h17M9.5 6 12 3.5 14.5 6M9.5 18l2.5 2.5 2.5-2.5M6 9.5 3.5 12 6 14.5M18 9.5l2.5 2.5-2.5 2.5"/>',
+    drehen: '<path d="M18.5 12a6.5 6.5 0 1 1-1.9-4.6"/><path d="M17.5 3.8v3.9h-3.9"/>'
+  };
+  // art: x/y/z mit Vorzeichen (Seite ziehen), mitte (verschieben), drehen
+  const GRIFFE = [['x', 1], ['x', -1], ['y', 1], ['y', -1], ['z', 1], ['z', -1], ['mitte', 0], ['drehen', 0]];
+  for (const [art, vz] of GRIFFE) {
+    const el = document.createElement('div');
+    el.className = 'lz-griff' + (art === 'mitte' || art === 'drehen' ? ' tun' : '');
+    el.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${GRIFF_IK[art === 'mitte' || art === 'drehen' ? art : 'pfeil']}</svg>`;
+    el.hidden = true;
+    marken.appendChild(el);
+    boxGriffe.push({ userData: { art, vz }, position: new THREE.Vector3(), el });
+  }
+  // Beim Ziehen: Länge der gezogenen Seite bzw. Winkel neben dem Griff
+  const griffWert = document.createElement('div');
+  griffWert.className = 'lz-marke gross lz-griff-wert';
+  griffWert.hidden = true;
+  marken.appendChild(griffWert);
+  const boxAchse = (a, w = box.winkel) => a === 'x' ? new THREE.Vector3(Math.cos(w), Math.sin(w), 0)
+    : a === 'y' ? new THREE.Vector3(-Math.sin(w), Math.cos(w), 0) : new THREE.Vector3(0, 0, 1);
+  /** Lage eines Griffs (lokal). */
+  function griffLage(g) {
+    const { art, vz } = g.userData, m = box.mitte.clone();
+    if (art === 'x' || art === 'y') return m.add(boxAchse(art).multiplyScalar(vz * box.halb[art]));
+    // Höhe an der Südwest-Kante (oben/unten), nicht in der Mitte der Deckfläche: Von schräg oben lagen
+    // sie sonst mit dem Verschiebegriff auf einer Linie
+    if (art === 'z') return m.add(boxAchse('x').multiplyScalar(-box.halb.x)).add(boxAchse('y').multiplyScalar(-box.halb.y))
+      .add(new THREE.Vector3(0, 0, vz * box.halb.z));
+    // Drehen: an der Ostseite; im Bild rückt bild() ihn 40 px weiter hinaus
+    if (art === 'drehen') return m.add(boxAchse('x').multiplyScalar(box.halb.x));
+    return m;
+  }
+  function boxZeichnen() {
+    const ecken = [];
+    for (const sz of [-1, 1]) for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      ecken.push(box.mitte.clone().add(boxAchse('x').multiplyScalar(sx * box.halb.x))
+        .add(boxAchse('y').multiplyScalar(sy * box.halb.y)).add(new THREE.Vector3(0, 0, sz * box.halb.z)));
+    }
+    const kanten = [];
+    for (let i = 0; i < 4; i++) {
+      kanten.push(ecken[i], ecken[(i + 1) % 4], ecken[4 + i], ecken[4 + (i + 1) % 4], ecken[i], ecken[4 + i]);
+    }
+    boxLinien.geometry.dispose();
+    boxLinien.geometry = new THREE.BufferGeometry().setFromPoints(kanten);
+    boxFlaeche.position.copy(box.mitte);
+    boxFlaeche.rotation.set(0, 0, box.winkel);
+    boxFlaeche.scale.set(box.halb.x * 2, box.halb.y * 2, box.halb.z * 2);
+    boxFlaeche.material.opacity = box.an === 2 ? 0.1 : 0.06;
+    for (const g of boxGriffe) g.position.copy(griffLage(g));
+    const u = material.uniforms;
+    u.boxModus.value = box.an;
+    u.boxMitte.value.copy(box.mitte);
+    u.boxHalb.value.copy(box.halb);
+    u.boxRot.value.set(Math.cos(box.winkel), Math.sin(box.winkel));
+    boxEbenenSetzen();
+    boxGruppe.visible = box.an > 0;
+    const mass = $('.lz-box-mass');
+    mass.hidden = !box.an;
+    mass.textContent = `${zahl(box.halb.x * 2, 1)} × ${zahl(box.halb.y * 2, 1)} m, ${zahl(box.halb.z * 2, 1)} m hoch` +
+      (Math.abs(box.winkel) > 0.001 ? ` · gedreht ${zahl(((box.winkel * 180 / Math.PI) % 360 + 360) % 360, 0)}°` : '');
+    neu = true;
+  }
+  /* Auflagen (Streckenachsen, Straßen, KML, gesuchte Stelle) sind einfache three.js-Materialien:
+   * die schneiden sechs Ebenen in Weltkoordinaten (z mal Überhöhung). Innen: Normalen nach innen,
+   * weg ist, was außerhalb einer liegt; außen: nach außen und clipIntersection — weg ist nur, was
+   * innerhalb aller liegt. Gesetzt in bild() vor dem Zeichnen der Auflagen (boxKlippen). */
+  renderer.localClippingEnabled = true;
+  const boxEbenen = Array.from({ length: 6 }, () => new THREE.Plane());
+  function boxEbenenSetzen() {
+    const vz = box.an === 2 ? -1 : 1;     // Normalen: innen nach innen, außen nach außen
+    let i = 0;
+    for (const a of ['x', 'y']) for (const s of [1, -1]) {
+      const n = boxAchse(a).multiplyScalar(-s * vz);
+      const p = box.mitte.clone().add(boxAchse(a).multiplyScalar(s * box.halb[a]));
+      boxEbenen[i++].setFromNormalAndCoplanarPoint(n, new THREE.Vector3(p.x, p.y, 0));
+    }
+    for (const s of [1, -1]) {
+      boxEbenen[i++].setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, -s * vz),
+        new THREE.Vector3(0, 0, (box.mitte.z + s * box.halb.z) * ueber));
+    }
+  }
+  let boxKlipStand = '';
+  function boxKlippen() {
+    const stand = box.an ? `${box.an}` : '';
+    if (!stand && !boxKlipStand) return;
+    boxKlipStand = stand;
+    auflSzene.traverse(o => {
+      if (!o.material || o.material.isShaderMaterial) return;
+      o.material.clippingPlanes = box.an ? boxEbenen : null;
+      o.material.clipIntersection = box.an === 2;
+    });
+  }
+
+  /** Zeigt die Box diesen Punkt (lokal, ohne Überhöhung)? Für Antippen und Messen. */
+  function boxZeigt(x, y, z) {
+    if (!box.an) return true;
+    const qx = x - box.mitte.x, qy = y - box.mitte.y, c = Math.cos(box.winkel), s = Math.sin(box.winkel);
+    const drin = Math.abs(c * qx + s * qy) <= box.halb.x && Math.abs(-s * qx + c * qy) <= box.halb.y && Math.abs(z - box.mitte.z) <= box.halb.z;
+    return drin === (box.an === 1);
+  }
+  /** Box neu um die Mitte des Blicks: ein Drittel des Ausschnitts, über die ganze Höhe. */
+  function boxNeu() {
+    const t = steuerung.target, h = Math.max(5, Math.round(info.seite / 6));
+    box.mitte.set(Math.max(-halb, Math.min(halb, t.x)), Math.max(-halb, Math.min(halb, t.y)), (zLo + zHi) / 2);
+    box.halb.set(h, h, Math.max(2, (zHi - zLo) / 2 + 2));
+    box.winkel = 0;
+  }
+  wurzel.querySelectorAll('[data-box]').forEach(b => b.addEventListener('click', () => {
+    const art = b.dataset.box, vorher = box.an;
+    box.an = art === 'innen' ? 1 : art === 'aussen' ? 2 : 0;
+    if (box.an && !vorher && !box.halb.x) boxNeu();
+    wurzel.querySelectorAll('[data-box]').forEach(x => x.classList.toggle('is-on', x === b));
+    $('.lz-box-mehr').hidden = !box.an;
+    boxZeichnen();
+  }));
+  $('[data-box-griffe]').addEventListener('click', ev => {
+    box.griffe = !box.griffe;
+    ev.currentTarget.classList.toggle('is-on', box.griffe);
+    ev.currentTarget.setAttribute('aria-pressed', String(box.griffe));
+    boxZeichnen();
+  });
+  $('[data-box-neu]').addEventListener('click', () => { boxNeu(); boxZeichnen(); });
+
+  /* Griffe ziehen (Einfangphase an der Wurzel, vor Messpunkten und OrbitControls).
+   * Seiten: entlang ihrer Achse — der Punkt auf der Achse, der dem Sehstrahl am nächsten
+   * liegt; die Gegenseite bleibt stehen. Mitte: waagerecht in der Ebene des Griffs.
+   * Drehen: Winkel um die Mitte in derselben Ebene. Gerechnet in Weltkoordinaten (z mal
+   * Überhöhung), gespeichert ohne. */
+  const boxStrahl = new THREE.Raycaster(), boxV = new THREE.Vector3();
+  let boxZug = null;
+  const strahlBei = (cx, cy) => {
+    const r = flaeche.getBoundingClientRect();
+    boxStrahl.setFromCamera(new THREE.Vector2((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height * 2 - 1)), kamera);
+    return boxStrahl.ray;
+  };
+  const welt = p => new THREE.Vector3(p.x, p.y, p.z * ueber);
+  const ebeneTreffer = (ray, zw) => {
+    if (Math.abs(ray.direction.z) < 1e-9) return null;
+    const t = (zw - ray.origin.z) / ray.direction.z;
+    return t > 0 ? ray.origin.clone().addScaledVector(ray.direction, t) : null;
+  };
+  wurzel.addEventListener('pointerdown', ev => {
+    if (!box.an || !box.griffe || ev.target !== flaeche || ev.button > 0) return;
+    const r = flaeche.getBoundingClientRect(), tol = ev.pointerType === 'touch' ? 26 : 16;
+    let best = null, bestA = tol;
+    for (const g of boxGriffe) {
+      if (g.el.hidden || g.sx == null) continue;
+      const a = Math.hypot(g.sx + r.left - ev.clientX, g.sy + r.top - ev.clientY);
+      if (a < bestA) { bestA = a; best = g; }
+    }
+    if (!best) return;
+    ev.stopImmediatePropagation();
+    ev.preventDefault();
+    // Drehen und Verschieben in der waagerechten Ebene durch die Mitte der Box
+    const hw = welt(best.userData.art === 'drehen' ? box.mitte : best.position), ray = strahlBei(ev.clientX, ev.clientY);
+    boxZug = { g: best, id: ev.pointerId, mitte: box.mitte.clone(), halb: box.halb.clone(), winkel: box.winkel, hw,
+      start: ebeneTreffer(ray, hw.z) };
+    steuerung.enabled = false;
+    flaeche.setPointerCapture(ev.pointerId);
+    flaeche.classList.add('zieht');
+    best.el.classList.add('aktiv');
+  }, true);
+  flaeche.addEventListener('pointermove', ev => {
+    if (!boxZug || ev.pointerId !== boxZug.id) return;
+    const { g, hw } = boxZug, { art, vz } = g.userData, ray = strahlBei(ev.clientX, ev.clientY);
+    if (art === 'mitte' || art === 'drehen') {
+      const p = ebeneTreffer(ray, hw.z);
+      if (!p || !boxZug.start) return;
+      if (art === 'mitte') {
+        box.mitte.x = boxZug.mitte.x + p.x - boxZug.start.x;
+        box.mitte.y = boxZug.mitte.y + p.y - boxZug.start.y;
+      } else {
+        const m = boxZug.mitte;
+        box.winkel = boxZug.winkel + Math.atan2(p.y - m.y, p.x - m.x) - Math.atan2(boxZug.start.y - m.y, boxZug.start.x - m.x);
+      }
+    } else {
+      // Nächster Punkt der Achse (durch den Griff) zum Sehstrahl
+      const A = boxAchse(art, boxZug.winkel), w = hw.clone().sub(ray.origin);
+      const b = A.dot(ray.direction), d = A.dot(w), e = ray.direction.dot(w), nenner = 1 - b * b;
+      if (nenner < 1e-6) return;
+      let t = (b * e - d) / nenner;
+      if (art === 'z') t /= ueber;
+      // Gegenseite fest: neue Ausdehnung, Mitte rückt um die Hälfte
+      const alt = boxZug.halb[art] * 2, neuL = Math.max(0.5, alt + vz * t), dl = (neuL - alt) / 2;
+      box.halb[art] = neuL / 2;
+      box.mitte.copy(boxZug.mitte).addScaledVector(boxAchse(art, boxZug.winkel), vz * dl);
+    }
+    boxZeichnen();
+  });
+  const boxZugEnde = ev => {
+    if (!boxZug || ev.pointerId !== boxZug.id) return;
+    boxZug.g.el.classList.remove('aktiv');
+    griffWert.hidden = true;
+    boxZug = null;
+    neu = true;
+    steuerung.enabled = true;
+    flaeche.classList.remove('zieht');
+    runter = null;           // kein Tipp hinterher
+  };
+  flaeche.addEventListener('pointerup', boxZugEnde, true);
+  flaeche.addEventListener('pointercancel', boxZugEnde, true);
+
   let gezogen = null, zugZiel = null, zugBild = 0;
   wurzel.addEventListener('pointerdown', ev => {
     if (ev.target !== flaeche || ev.button > 0) return;
@@ -2478,6 +2954,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       regen.luftbildSetzen(regenAnsicht === 'luftbild' ? luftbildFlaeche : null);
     }
     wolke.visible = !gel;
+    if (gelaende) gelaende.visible = !gel && darstellung === 'gelaende';
     // Die Legende (gemessen/aufgefüllt/Gebäude) gilt nur für das graue Modell
     $('.lz-regen-legende').hidden = !gel || regenAnsicht === 'luftbild';
     $('.lz-legende-geb').hidden = !regenMitGeb;
@@ -2554,6 +3031,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     steuerung.target.z *= k / ueber;
     ueber = k;
     for (const s of [szene, gebSzene, linienSzene, auflSzene, messSzene]) s.scale.z = k;
+    if (gelaende) gelaende.material.uniforms.ueber.value = k;
+    if (box.an) boxEbenenSetzen();
     if (regen) regen.szene.scale.z = k;
     if (typeof regenKnoepfeZeigen === 'function') regenKnoepfeZeigen();
     neu = true;
@@ -2648,19 +3127,52 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (regen) renderer.render(regen.szene, kamera);
     if (geb && geb.gruppe.visible) renderer.render(gebSzene, kamera);
     if (effekte.linien) renderer.render(linienSzene, kamera);
+    boxKlippen();
     renderer.render(auflSzene, kamera);
     renderer.render(messSzene, kamera);
     renderer.autoClear = true;
     // Beschriftungen der Messungen an ihre Stelle im Bild
     const r = flaeche.getBoundingClientRect();
+    // Griffe der Limitbox: an ihre Stelle, die Doppelpfeile in die Richtung ihrer Achse im Bild
+    const griffeDa = box.an > 0 && box.griffe;
+    const imBild = p => { v.set(p.x, p.y, p.z * ueber).project(kamera); return { x: (v.x + 1) / 2 * r.width, y: (1 - v.y) / 2 * r.height, sicht: v.z < 1 }; };
+    for (const g of boxGriffe) {
+      const a = griffeDa ? imBild(g.position) : null;
+      g.el.hidden = !a || !a.sicht;
+      if (g.el.hidden) continue;
+      let dreh = '';
+      const { art } = g.userData;
+      if (art !== 'mitte') {
+        const achse = art === 'drehen' ? 'x' : art;
+        const b = imBild(g.position.clone().add(boxAchse(achse).multiplyScalar(Math.max(1, box.halb[achse] * 0.2))));
+        const w = Math.atan2(b.y - a.y, b.x - a.x);
+        if (art === 'drehen') { a.x += Math.cos(w) * 40; a.y += Math.sin(w) * 40; }
+        else dreh = ` rotate(${w}rad)`;
+      }
+      g.sx = a.x; g.sy = a.y;
+      g.el.style.transform = `translate(${a.x}px, ${a.y}px)${dreh}`;
+    }
+    if (boxZug) {
+      const { art } = boxZug.g.userData, a = { x: boxZug.g.sx, y: boxZug.g.sy, sicht: !boxZug.g.el.hidden };
+      const text = art === 'drehen' ? `${zahl(((box.winkel * 180 / Math.PI) % 360 + 360) % 360, 0)}°`
+        : art === 'mitte' ? '' : `${zahl(box.halb[art] * 2, 1)} m`;
+      griffWert.hidden = !text || !a.sicht;
+      if (!griffWert.hidden) {
+        griffWert.textContent = text;
+        griffWert.style.transform = `translate(${a.x + 24}px, ${a.y}px) translate(0, -50%)`;
+      }
+    }
     const mitOrt = ortSchild && ortGruppe.visible ? [{ schilder: [ortSchild] }] : [];
     const aufl = [achsen, strassen, kmlAufl, gipfelAufl, zielAufl].filter(a => a && a.gruppe.visible);
+    const auflSet = new Set(aufl);
     for (const m of [...aufl, regenAufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
+      // Schilder der Auflagen schneidet die Limitbox mit, Messungen nicht
+      const geschnitten = box.an && auflSet.has(m);
       for (const sch of m.schilder) {
         v.copy(sch.p);
         v.z *= ueber;
         v.project(kamera);
-        const sicht = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2;
+        const sicht = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2 && (!geschnitten || boxZeigt(sch.p.x, sch.p.y, sch.p.z));
         sch.el.hidden = !sicht;
         if (sicht) sch.el.style.transform = `translate(${(v.x + 1) / 2 * r.width}px, ${(1 - v.y) / 2 * r.height}px) ${sch.lage}`;
       }
@@ -2727,6 +3239,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       kml: kmlAufl && kmlAufl.anzahl ? kmlAufl.gruppe.visible : gemerkt.kml,
       gipfel: gipfelAufl ? gipfelAufl.gruppe.visible : gemerkt.gipfel,
       kamera: kamera === orthoKamera ? 'ortho' : 'perspektive',
+      darstellung: gelaende ? darstellung : gemerkt.darstellung,
       grund: wurzel.dataset.grund,
       offen: [...tafel.querySelectorAll('details')].map(x => x.open)
     };
@@ -2745,6 +3258,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     for (const [art, an] of Object.entries(g.effekte || {})) if (an && !effekte[art]) klick(`[data-effekt="${art}"]`);
     for (const k of g.klassenAus || []) { const b = $(`[data-klasse="${k}"]`); if (b && b.classList.contains('is-on')) b.click(); }
     if (g.geb && info.gebaeude) gebKnopf.click();
+    if (g.darstellung === 'gelaende') darstellungSetzen('gelaende');
     if (g.dach === 'luftbild' && info.gebaeude && info.luftbild) dachSetzen('luftbild');
     if (g.strassen && strKnopf && info.strassen) strKnopf.click();
     if (g.kamera === 'ortho') klick('[data-kamera="ortho"]');

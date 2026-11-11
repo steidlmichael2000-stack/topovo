@@ -7556,6 +7556,9 @@ const LASER_VORRAT = (matchMedia('(pointer: coarse)').matches ? 400 : 800) * 1e6
 const LASER_ENTPACKT = matchMedia('(pointer: coarse)').matches ? 0 : 2e9;
 /* Am PC mehrere Kacheln zugleich entpacken (laser-werk.js, entpackenParallel): höchstens 4,
  * ein Kern bleibt frei. Am Handy nicht — jeder Hilfs-Worker hält eine Kopie des LAZ im Speicher. */
+/* Bodenraster fürs Geländemodell (laser-werk.js, gitterAnlegen): höchstens so viele Zellen —
+ * am Handy 1 Mio. (2 m bei vier Kacheln), am PC 4 Mio. (1 m bei vier Kacheln, 0,5 m bei einer). */
+const LASER_GITTER = LASER_ENTPACKT ? 4e6 : 1e6;
 const LASER_PARALLEL = LASER_ENTPACKT ? Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)) : 1;
 const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
 /* CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen: in der
@@ -8330,7 +8333,7 @@ async function laserLaden() {
     }
     laserLeiste();
   };
-  laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL });
+  laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL, gitterZellen: LASER_GITTER });
 }
 
 /* Export aus der 3D-Ansicht: läuft im selben Worker, damit die Kacheln aus
