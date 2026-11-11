@@ -527,8 +527,18 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   kommen weder Größe noch Bereiche an (der BVV-Server gzippt, sobald Cloudflare gzip anbietet;
   `Accept-Encoding: identity` im Worker half nicht). `ohneLaenge` in `laser-werk.js` ist deshalb
   der Normalfall, nicht der Rückfall.
-- **Kacheln nur im Arbeitsspeicher** (`vorrat` im Worker, `LASER_VORRAT`), weg mit `laserEnde`. Nicht in
+- **Kacheln im Arbeitsspeicher** (`vorrat` im Worker, `LASER_VORRAT`), weg mit `laserEnde`. Nicht in
   IndexedDB oder Cache Storage legen; `sw.js` lässt `.laz` durch, der Worker schickt `no-store`.
+- **Offline speichern** (11.11.2026, v120, so gewünscht): nur auf Knopfdruck, ins **Origin Private File System**,
+  Ordner `laser`, je Kachel das LAZ unverändert (`speichern` in `laser-werk.js`, eigener Worker
+  `laserSpeicherWerk`, schreibt per `createSyncAccessHandle` Stück für Stück erst in `<kachel>.teil`, geprüft mit
+  `dateiVollstaendig`, dann `move`). Lesen: Kacheln mit `geraet: true` im Auftrag holt `kachelnHolen` per
+  `vomGeraet` vor dem Netz — das Flag setzt nur app.js, der PW-Viewer (`wolke-werk.js`) bleibt unberührt.
+  Liste, Löschen, Speicherstand (`navigator.storage.estimate/persist`) in app.js (`laserGeraet…`), Abschnitt
+  „Auf dem Gerät“ in der Leiste; Raster: orange in `--warn` gefüllt und umrandet, „gespeichert“; gewählt dazu Rand in der Signalfarbe. Zum Speichern bis
+  `LASER_SPEICHERN_MAX` Kacheln wählbar, „In 3D ansehen“ bleibt bei `LASER_KACHELN_MAX` (4). `laserEnde` beendet
+  ein laufendes Speichern; liegengebliebene `.teil` räumt `laserGeraetLesen` weg. `mitWiederholung` nimmt seit
+  v120 eine Funktion `holen` statt der Ladeparameter. Steht im Datenschutz (`impressum.html`, Speicher auf dem Gerät).
 - **Abbrechen** über `{ art: 'abbrechen' }`: die Entpackschleife gibt alle 2^20 Punkte den Faden frei
   (`setTimeout`), sonst käme die Nachricht nicht an.
 - **CSP:** `script-src` trägt `'wasm-unsafe-eval'` — nur dafür (laz-perf). Nicht auf `unsafe-eval`

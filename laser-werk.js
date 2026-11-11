@@ -28,6 +28,10 @@
  *   { art: 'abgebrochen' }
  *   { art: 'warten', nr, von, versuch, sekunden, abgeschnitten }  Verbindung weg oder Kachel unvollständig, neuer Versuch folgt
  *
+ * Kacheln mit geraet: true kommen aus dem Speicher des Geräts (vomGeraet), wenn sie
+ * dort liegen; dann meldet 'laden' geraet: true. Dorthin speichert der Auftrag
+ * { art: 'speichern' } (unten, „Auf dem Gerät speichern“).
+ *
  * { art: 'abbrechen' } bricht den laufenden Auftrag ab: das Herunterladen über
  * den AbortController, das Entpacken an der nächsten Pause (alle 2^20 Punkte
  * gibt die Schleife den Faden kurz frei, sonst käme die Nachricht gar nicht an).
@@ -131,10 +135,11 @@ function warten(ms) {
   });
 }
 
-async function mitWiederholung(LP, url, melden, behalten, vorratMax, wartenMelden) {
+/** holen() lädt einmal von vorn (in den Speicher oder, beim Speichern, in eine Datei). */
+async function mitWiederholung(holen, wartenMelden) {
   for (let versuch = 1; ; versuch++) {
     try {
-      return await herunterladen(LP, url, melden, behalten, vorratMax);
+      return await holen();
     } catch (err) {
       /* Nur Netzfehler (TypeError) wiederholen; HTTP-Fehler und Abbrechen nicht. Ein
        * TypeError gleich beim Abruf bei bestehender Verbindung ist meist kein Funkloch,
@@ -252,6 +257,147 @@ function kopfLesen(b) {
   };
 }
 
+/* ======================= Auf dem Gerät speichern =======================
+ *
+ * 11.11.2026, so gewünscht: ausgewählte Kacheln dauerhaft auf dem Gerät, um sie
+ * öfter oder offline anzusehen (etwa die Allgäuer Alpen, mehrere GB). Gespeichert
+ * wird das LAZ der BVV unverändert im Origin Private File System, Ordner „laser“,
+ * je Kachel <kachel>.laz. Nicht IndexedDB oder Cache Storage: Dateien bis 1,9 GB
+ * gehen dort nur am Stück durch den Speicher, und der Service Worker räumt die
+ * Caches bei jedem Deploy. Geschrieben wird hier im Worker über
+ * createSyncAccessHandle (nur in Workern, dafür Stück für Stück direkt aus dem
+ * Netz, ohne die Kachel im Speicher zu halten), erst in <kachel>.teil — fertig
+ * und geprüft wird daraus <kachel>.laz. Was mit .teil liegen bleibt (App
+ * geschlossen), räumt app.js beim Auflisten weg.
+ *
+ * Auftrag { art: 'speichern', kacheln: [{ kachel, url }] } — läuft in einem
+ * eigenen Worker (app.js, laserSpeicherWerk), damit Ansehen und Speichern
+ * nebeneinander gehen. Meldungen:
+ *   { art: 'laden', nr, von, kachel, geladen, gesamt }   (gesamt 0 = unbekannt)
+ *   { art: 'warten', nr, von, versuch, sekunden, abgeschnitten }
+ *   { art: 'gespeichert', kachel, groesse }   { art: 'fehlt', kachel }  (gibt es nicht)
+ *   { art: 'fertig' }, { art: 'fehler', text }, { art: 'abgebrochen' } */
+const GERAET_ORDNER = 'laser';
+async function geraetOrdner() {
+  if (!navigator.storage || !navigator.storage.getDirectory) throw new Error('Dieser Browser kann keine Dateien auf dem Gerät ablegen.');
+  return (await navigator.storage.getDirectory()).getDirectoryHandle(GERAET_ORDNER, { create: true });
+}
+
+/** Eine gespeicherte Kachel in den Speicher von laz-perf; null, wenn sie nicht (mehr) da ist. */
+async function vomGeraet(LP, kachel, behalten, vorratMax) {
+  let h;
+  try {
+    const datei = await (await geraetOrdner()).getFileHandle(`${kachel}.laz`);
+    h = await datei.createSyncAccessHandle();
+  } catch (err) { return null; }               // dann wie bisher aus dem Netz
+  try {
+    const groesse = h.getSize();
+    if (groesse < 375) return null;
+    platzMachen(LP, groesse, behalten, vorratMax);
+    const zeiger = LP._malloc(groesse);
+    if (!zeiger) throw new Error('Zu wenig Speicher — einen kleineren Ausschnitt oder weniger Kacheln wählen.');
+    // Gleich in den Speicher von laz-perf; HEAPU8 erst nach malloc holen (er kann wachsen)
+    const n = h.read(LP.HEAPU8.subarray(zeiger, zeiger + groesse), { at: 0 });
+    if (n !== groesse || !vollstaendig(LP.HEAPU8, zeiger, groesse)) { LP._free(zeiger); return null; }
+    return { zeiger, groesse };
+  } finally {
+    h.close();
+  }
+}
+
+/** Reicht die Datei im Griff h bis zu ihrer Chunk-Tabelle? Wie vollstaendig, nur ohne die Datei zu lesen. */
+function dateiVollstaendig(h, groesse) {
+  if (groesse < 375) return false;
+  const lies = (at, n) => { const b = new Uint8Array(n); h.read(b, { at }); return new DataView(b.buffer); };
+  const kopf = lies(0, 104);
+  if (String.fromCharCode(kopf.getUint8(0), kopf.getUint8(1), kopf.getUint8(2), kopf.getUint8(3)) !== 'LASF') return false;
+  const daten = kopf.getUint32(96, true);
+  if (daten + 8 > groesse) return false;
+  let tabelle = Number(lies(daten, 8).getBigInt64(0, true));
+  if (tabelle === -1) tabelle = Number(lies(groesse - 8, 8).getBigInt64(0, true));
+  return !(tabelle > daten) || tabelle + 8 <= groesse;
+}
+
+/** Lädt url Stück für Stück in die Datei hinter h (von vorn); Größe oder null bei 404. */
+async function inDatei(url, h, melden) {
+  const r = await fetch(url, { cache: 'no-store', signal: abbruch.signal });
+  if (r.status === 404) return null;
+  if (r.status === 429) throw new Error('Gerade wurden sehr viele Laserkacheln geladen — die Weiterleitung lässt erst in einer Weile wieder welche durch.');
+  if (!r.ok) throw new Error(`Laserkachel: HTTP ${r.status}`);
+  if (!r.body) throw new Error('Laserkachel: keine Daten');
+  const gesamt = r.headers.get('Content-Encoding') ? 0 : Number(r.headers.get('Content-Length')) || 0;
+  const leser = r.body.getReader();
+  h.truncate(0);
+  let o = 0, gemeldet = 0;
+  for (;;) {
+    let stueck;
+    try { stueck = await leser.read(); } catch (err) { err.mittendrin = true; throw err; }
+    const { done, value } = stueck;
+    if (done) break;
+    try { h.write(value, { at: o }); } catch (err) {
+      leser.cancel();
+      if (err && err.name === 'QuotaExceededError') throw new Error('Der Speicher auf dem Gerät ist voll.');
+      throw err;
+    }
+    o += value.byteLength;
+    if (o - gemeldet > 1 << 20) { gemeldet = o; melden(o, gesamt); }
+  }
+  h.flush();
+  // Wie beim Laden: über Cloudflare kommen große Kacheln manchmal still abgeschnitten an
+  if ((gesamt && o !== gesamt) || !dateiVollstaendig(h, o)) {
+    const err = new TypeError('Laserkachel kam unvollständig an.');
+    err.mittendrin = err.abgeschnitten = true;
+    throw err;
+  }
+  melden(o, o);
+  return o;
+}
+
+async function speichern({ kacheln }) {
+  const ordner = await geraetOrdner();
+  const von = kacheln.length;
+  for (let i = 0; i < von; i++) {
+    const { kachel, url } = kacheln[i];
+    const teil = await ordner.getFileHandle(`${kachel}.teil`, { create: true });
+    const h = await teil.createSyncAccessHandle();
+    let groesse;
+    try {
+      groesse = await mitWiederholung(() => inDatei(url, h, (geladen, gesamt) =>
+        self.postMessage({ art: 'laden', nr: i, von, kachel, geladen, gesamt })),
+        (versuch, sekunden, abgeschnitten) => self.postMessage({ art: 'warten', nr: i, von, versuch, sekunden, abgeschnitten }));
+    } catch (err) {
+      h.close();
+      await ordner.removeEntry(`${kachel}.teil`).catch(() => {});
+      throw err;
+    }
+    h.close();
+    if (groesse == null) {
+      await ordner.removeEntry(`${kachel}.teil`).catch(() => {});
+      self.postMessage({ art: 'fehlt', kachel });
+      continue;
+    }
+    // Erst jetzt unter dem richtigen Namen — eine halbe Kachel gilt so nie als gespeichert
+    await ordner.removeEntry(`${kachel}.laz`).catch(() => {});
+    if (teil.move) await teil.move(`${kachel}.laz`);
+    else {
+      // Ohne move() (ältere Browser): umkopieren in Stücken zu 16 MB
+      const ziel = await (await ordner.getFileHandle(`${kachel}.laz`, { create: true })).createSyncAccessHandle();
+      const quelle = await teil.createSyncAccessHandle();
+      try {
+        const b = new Uint8Array(1 << 24);
+        for (let o = 0; o < groesse; o += b.length) {
+          const n = quelle.read(b, { at: o });
+          ziel.write(b.subarray(0, n), { at: o });
+        }
+        ziel.flush();
+      } finally { ziel.close(); quelle.close(); }
+      await ordner.removeEntry(`${kachel}.teil`);
+    }
+    self.postMessage({ art: 'gespeichert', kachel, groesse });
+  }
+  self.postMessage({ art: 'fertig' });
+}
+
 /** Holt die Kacheln, eine nach der anderen: aus dem Vorrat oder neu geladen. */
 async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false) {
   const von = kacheln.length, behalten = new Set(kacheln.map(k => k.kachel));
@@ -261,9 +407,12 @@ async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false) {
     const { kachel, url } = kacheln[i];
     let v = vorrat.get(kachel);
     if (v) vorrat.delete(kachel);               // nach hinten: zuletzt benutzt
-    else {
-      v = await mitWiederholung(LP, url, (geladen, gesamt) =>
-        senden({ art: 'laden', nr: i, von, geladen, gesamt }), behalten, vorratMax,
+    // Auf dem Gerät gespeichert (app.js setzt geraet): von dort statt aus dem Netz
+    else if (kacheln[i].geraet && (v = await vomGeraet(LP, kachel, behalten, vorratMax))) {
+      senden({ art: 'laden', nr: i, von, geladen: v.groesse, gesamt: v.groesse, geraet: true });
+    } else {
+      v = await mitWiederholung(() => herunterladen(LP, url, (geladen, gesamt) =>
+        senden({ art: 'laden', nr: i, von, geladen, gesamt }), behalten, vorratMax),
         (versuch, sekunden, abgeschnitten) => senden({ art: 'warten', nr: i, von, versuch, sekunden, abgeschnitten }));
       if (!v) { fehlen.push(kachel); continue; }
       megabyte += v.groesse / 1e6;
@@ -966,7 +1115,8 @@ self.onmessage = async ev => {
   abbruch = new AbortController();
   exportLaeuft = istExport;
   try {
-    if (istExport) await exportieren(ev.data);
+    if (ev.data.art === 'speichern') await speichern(ev.data);
+    else if (istExport) await exportieren(ev.data);
     else await ausschneiden(ev.data);
   } catch (err) {
     if (abbruch.signal.aborted) senden({ art: 'abgebrochen' });

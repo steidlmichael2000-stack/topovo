@@ -2121,6 +2121,30 @@ body { font-variant-numeric: tabular-nums; }
 }
 .laser-rahmen { cursor: move; touch-action: none; }
 #laserLadenBtn:disabled { background: var(--panel-2); color: var(--muted-2); }
+/* Offline speichern (11.11.2026): Fortschritt unter den Knöpfen, darunter der
+   Abschnitt „Auf dem Gerät“ mit je Kachel Name (Tipp zeigt sie), Größe, × */
+.laser-speichern { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.laser-speichern-kopf { margin: 0; font-size: .68rem; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); }
+.laser-speichern .laser-lade { margin-top: 7px; }
+.laser-geraet { margin-top: 12px; padding-bottom: 0; border-top: 1px solid var(--line); }
+.laser-geraet-summe { margin-left: auto; font-size: .76rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.laser-geraet > summary::after { margin-left: 8px; }
+.laser-geraet .bb-note:first-of-type { margin-top: 0; }
+.laser-geraet-liste { list-style: none; margin: 8px 0 0; padding: 0; max-height: 220px; overflow-y: auto; }
+.laser-geraet-liste li { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
+.laser-geraet-liste li:first-child { border-top: 0; }
+.laser-geraet-name {
+  flex: 1 1 auto; min-width: 0; padding: 7px 0; text-align: left;
+  background: none; border: 0; color: var(--text); font: inherit; font-size: .84rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.laser-geraet-gr { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.laser-geraet-weg {
+  flex: none; width: 30px; height: 30px; display: grid; place-items: center;
+  background: none; border: 0; border-radius: var(--r-klein); color: var(--muted); cursor: pointer;
+}
+.laser-geraet-weg:hover { color: var(--text); background: var(--panel-2); }
+.laser-geraet-weg svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 
 .laser-ansicht {
   /* Topovo-Glas und -Knöpfe; der Grund ein dunkler Verlauf mit einem Schimmer

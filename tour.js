@@ -480,6 +480,13 @@ const HILFE = {
       ziel: () => tourSichtbar('#laserLadenBtn')
     },
     {
+      titel: 'Offline speichern',
+      text: 'Legt die gewählten Kacheln dauerhaft auf dem Gerät ab — dann öffnen sie sich ohne Netz und ohne ' +
+        'Warten. Hier gehen auch mehr als vier Kacheln, etwa ein ganzes Tal. Auf der Karte steht dann ' +
+        '„gespeichert“; unter „Auf dem Gerät“ stehen Größe und Löschen.',
+      ziel: () => tourSichtbar('#laserSpeichernBtn')
+    },
+    {
       titel: 'Abbrechen',
       text: 'Hält das Laden an. Bricht das Netz ab, versucht es die App selbst noch einmal.',
       ziel: () => tourSichtbar('#laserAbbrechenBtn')

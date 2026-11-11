@@ -7550,6 +7550,11 @@ let laserEntwurf = [];        // angetippte Ecken, solange Rechteck oder Polygon
 let laserEntwurfLayer = null;
 const laserUmrissArt = () => laserArt === 'rechteck' || laserArt === 'polygon';
 const LASER_KACHELN_MAX = 4;
+/* Zum Speichern auf dem Gerät gilt die Grenze nicht (11.11.2026): dort geht eine
+ * Kachel nach der anderen in eine Datei. Mehr als ein paar hundert wären am Handy
+ * ohnehin zu viel (je Kachel 40–250 MB, im Gebirge bis 1,9 GB). */
+const LASER_SPEICHERN_MAX = 400;
+const laserWahlMax = () => LASER_SPEICHERN_MAX;
 const laserGroessen = new Map();   // Kachel → Bytes; 0 = gibt es nicht, −1 = unbekannt, null = wird geprüft
 const laserAdressen = new Map();   // Kachel → Adresse
 let laserImSpeicher = new Set();
@@ -7559,6 +7564,15 @@ let laserLayer = null, laserRasterLayer = null, laserRahmen = null;
 let laserFehler = '';
 let laserGezogen = 0;        // Zeit des letzten Ziehens — der Tipp danach setzt nicht neu
 let laserSchliessen = null;  // solange die 3D-Ansicht offen ist: schließt sie (Zurück-Geste)
+/* Auf dem Gerät gespeicherte Kacheln (laser-werk.js, „Auf dem Gerät speichern“):
+ * gelesen aus dem Origin Private File System, Ordner „laser“. */
+const laserGeraet = new Map();     // Kachel → Bytes
+let laserGeraetFehler = '';        // kann der Browser es nicht (privates Fenster), steht es hier
+let laserGeraetStand = null;       // { belegt, frei, dauerhaft } aus navigator.storage
+let laserGeraetOffen = false;      // Abschnitt „Auf dem Gerät“ aufgeklappt
+let laserSpeicherWerk = null;      // eigener Worker fürs Speichern, neben dem Ansehen
+let laserSpeichert = null;         // { nr, von, kachel, wert, gesamt, warten … } während des Speicherns
+let laserSpeicherMeldung = '';     // Ergebnis oder Fehler des letzten Speicherns
 
 function laserStart() {
   if (routeAn) routeEnde(false);
@@ -7583,6 +7597,7 @@ function laserStart() {
   map.attributionControl.addAttribution(LASER_ATTR);
   laserRasterZeichnen();
   laserLeiste();
+  laserGeraetLesen();
   closeSheet();
   syncButtons();
 }
@@ -7594,6 +7609,11 @@ function laserEnde(zeigen = true) {
   laserLaedt = null;
   // Mit dem Worker geht auch der Speicher der Kacheln
   if (laserWerk) { laserWerk.terminate(); laserWerk = null; }
+  /* Ein laufendes Speichern endet mit: Fertige Kacheln bleiben auf dem Gerät, die
+   * halbe (<kachel>.teil) räumt laserGeraetLesen beim nächsten Mal weg. */
+  if (laserSpeicherWerk) { laserSpeicherWerk.terminate(); laserSpeicherWerk = null; }
+  laserSpeichert = null;
+  laserSpeicherMeldung = '';
   laserImSpeicher = new Set();
   laserWahl.clear();
   laserUmriss = null;
@@ -7943,7 +7963,8 @@ const laserEcken = (e0, n0, e1, n1) => [[e0, n0], [e1, n0], [e1, n1], [e0, n1]].
 const laserFarbe = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1761a3';
 
 /** Das Kachelraster im Ausschnitt: dünn gestrichelt, geladene Kacheln blau
- *  hinterlegt, die des Rahmens kräftig umrandet, ab Zoomstufe 14 mit Namen. */
+ *  hinterlegt, die des Rahmens kräftig umrandet, ab Zoomstufe 14 mit Namen.
+ *  Auf dem Gerät gespeicherte: orange (--warn) gefüllt, „gespeichert“. */
 function laserRasterZeichnen() {
   if (!laserAn || !laserRasterLayer) return;
   laserRasterLayer.clearLayers();
@@ -7955,19 +7976,27 @@ function laserRasterZeichnen() {
   const kn0 = Math.floor(Math.min(...ecken.map(c => c[1])) / 1000), kn1 = Math.floor(Math.max(...ecken.map(c => c[1])) / 1000);
   if ((ke1 - ke0 + 1) * (kn1 - kn0 + 1) > 400) return;
   const farbe = laserFarbe(), gewaehlt = new Set(laserKacheln()), namen = map.getZoom() >= 14;
+  const orange = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim() || '#ff9f0a';
   const kachelArt = laserArt === 'kacheln';
   for (let ke = ke0; ke <= ke1; ke++) {
     for (let kn = kn0; kn <= kn1; kn++) {
-      const k = `${ke}_${kn}`, da = laserImSpeicher.has(k), wahl = gewaehlt.has(k);
-      L.polygon(laserEcken(ke * 1000, kn * 1000, ke * 1000 + 1000, kn * 1000 + 1000), {
-        color: wahl ? farbe : '#ffffff', weight: wahl ? 1.5 : 1, opacity: wahl ? 0.9 : 0.55, dashArray: wahl ? null : '4 4',
+      const k = `${ke}_${kn}`, da = laserImSpeicher.has(k), wahl = gewaehlt.has(k), geraet = laserGeraet.has(k);
+      const ecken = laserEcken(ke * 1000, kn * 1000, ke * 1000 + 1000, kn * 1000 + 1000);
+      /* Gespeichert (11.11.2026 so gewünscht: „orange in der Auswahl“): orange gefüllt in --warn
+       * wie beim Messen, durchgezogen orange umrandet. Ist sie zugleich gewählt, bleibt die
+       * Füllung orange und der Rand in der Signalfarbe — so sind beide zu sehen. */
+      const fuellung = geraet ? orange : farbe;
+      L.polygon(ecken, {
+        color: wahl ? farbe : geraet ? orange : '#ffffff', weight: wahl || geraet ? (wahl && geraet ? 2.5 : 1.5) : 1,
+        opacity: wahl || geraet ? 0.9 : 0.55, dashArray: wahl || geraet ? null : '4 4',
         // Bei „Kacheln“ ist die Wahl selbst die Fläche — kräftiger als „im Speicher“
-        fillColor: farbe, fillOpacity: kachelArt && wahl ? 0.3 : da ? 0.16 : 0, interactive: false
+        fillColor: fuellung, fillOpacity: geraet ? (kachelArt && wahl ? 0.4 : 0.28) : kachelArt && wahl ? 0.3 : da ? 0.16 : 0, interactive: false
       }).addTo(laserRasterLayer);
       if (namen) {
         const mitte = utm32Zurueck(ke * 1000 + 500, kn * 1000 + 500);
+        const stand = [geraet ? 'gespeichert' : '', da ? 'im Speicher' : ''].filter(Boolean).join(' · ');
         L.marker(mitte, { interactive: false, keyboard: false,
-          icon: L.divIcon({ className: 'laser-kachel-name', html: `${k}${da ? '<br>im Speicher' : ''}`, iconSize: null }) })
+          icon: L.divIcon({ className: 'laser-kachel-name', html: `${k}${stand ? '<br>' + stand : ''}`, iconSize: null }) })
           .addTo(laserRasterLayer);
       }
     }
@@ -8035,7 +8064,7 @@ async function laserAdresse(kachel) {
 /** Größe der Kacheln im Rahmen nachsehen (HEAD), soweit noch unbekannt. */
 function laserGroessenHolen() {
   for (const k of laserKacheln()) {
-    if (laserGroessen.has(k)) continue;
+    if (laserGroessen.has(k) || laserGeraet.has(k)) continue;
     laserGroessen.set(k, null);
     laserAdresse(k)
       .then(url => fetch(url, { method: 'HEAD' }))
@@ -8048,6 +8077,7 @@ function laserGroessenHolen() {
 /** Nach Tippen, Ziehen oder neuer Größe: Rahmen, Raster, Größen, Leiste. */
 function laserNeuGewaehlt() {
   laserFehler = '';
+  if (!laserSpeichert) laserSpeicherMeldung = '';
   laserRahmenZeichnen();
   laserRasterZeichnen();
   laserGroessenHolen();
@@ -8067,8 +8097,8 @@ function laserTipp(latlng) {
   if (laserArt === 'kacheln') {
     const k = `${Math.floor(e / 1000)}_${Math.floor(n / 1000)}`;
     if (laserWahl.has(k)) laserWahl.delete(k);
-    else if (laserWahl.size >= LASER_KACHELN_MAX) {
-      laserFehler = `Höchstens ${LASER_KACHELN_MAX} Kacheln auf einmal — mehr fasst der Speicher beim Entpacken nicht.`;
+    else if (laserWahl.size >= laserWahlMax()) {
+      laserFehler = `Höchstens ${laserWahlMax()} Kacheln auf einmal.`;
       laserLeiste();
       return;
     } else laserWahl.add(k);
@@ -8133,8 +8163,8 @@ function laserUmrissSetzen(pts) {
   laserEntwurfZeichnen();
   if (laserUmrissFlaeche(pts) < 100) { laserFehler = 'Die Fläche ist zu klein.'; laserLeiste(); return; }
   const n = laserUmrissKacheln(pts).length;
-  if (n > LASER_KACHELN_MAX) {
-    laserFehler = `Die Fläche berührt ${n} Kacheln — höchstens ${LASER_KACHELN_MAX} gehen auf einmal.`;
+  if (n > laserWahlMax()) {
+    laserFehler = `Die Fläche berührt ${n} Kacheln — höchstens ${laserWahlMax()} gehen auf einmal.`;
     laserLeiste();
     return;
   }
@@ -8171,9 +8201,9 @@ function laserEntwurfZeichnen(ev) {
 
 async function laserLaden() {
   if (!laserHatWahl() || laserLaedt) return;
-  const namen = laserKacheln().filter(k => laserGroessen.get(k) !== 0);
-  if (!namen.length) return;
-  const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel) })));
+  const namen = laserKacheln().filter(k => laserGroessen.get(k) !== 0 || laserGeraet.has(k));
+  if (!namen.length || namen.length > LASER_KACHELN_MAX) return;
+  const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel), geraet: laserGeraet.has(kachel) })));
   if (!laserAn || !laserHatWahl() || laserLaedt) return;     // inzwischen beendet oder schon gestartet
   const bereich = laserBereich(), seite = bereich.e1 - bereich.e0, nurBoden = laserNurBoden;
   const umriss = laserUmrissArt() ? laserUmriss.map(p => p.slice()) : null;
@@ -8196,7 +8226,7 @@ async function laserLaden() {
     // Export aus der 3D-Ansicht (laser.js): dorthin weiterreichen
     if (m.export) { if (laserExportMelden) laserExportMelden(m); return; }
     const stufeVorher = laserLaedt && laserLaedt.art;
-    if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt };
+    if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt, geraet: !!m.geraet };
     else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
     else if (m.art === 'normalen') laserLaedt = { art: 'normalen', wert: m.fertig, gesamt: m.gesamt };
     else if (m.art === 'warten') laserLaedt = { art: 'warten', nr: m.nr, von: m.von, wert: 0, gesamt: 0, sekunden: m.sekunden, abgeschnitten: m.abgeschnitten, versuch: m.versuch };
@@ -8257,7 +8287,8 @@ const laserMB = b => `${(b / 1e6).toLocaleString('de-DE', { maximumFractionDigit
 function laserStand(L_) {
   const anteil = L_.gesamt ? ((L_.nr || 0) + L_.wert / L_.gesamt) / (L_.von || 1) : null;
   const kachelNr = L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : '';
-  const text = L_.art === 'laden' ? `Laden${kachelNr} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
+  const text = L_.art === 'laden' && L_.geraet ? `Vom Gerät lesen${kachelNr} …`
+    : L_.art === 'laden' ? `Laden${kachelNr} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
     : L_.art === 'lesen' ? `Entpacken${kachelNr} …`
     : L_.art === 'warten' && L_.abgeschnitten ? `Die Kachel kam unvollständig an (Versuch ${L_.versuch} von 3) — neuer Versuch in ${L_.sekunden} s, sie lädt dann von vorn.`
     : L_.art === 'warten' ? `Verbindung unterbrochen — neuer Versuch in ${L_.sekunden} s oder sobald wieder Netz da ist. Die Kachel lädt dann von vorn.`
@@ -8279,20 +8310,215 @@ function laserFortschritt() {
 /** „2 Kacheln · 230 MB zu laden" — was der Rahmen kostet. */
 function laserKosten() {
   const ks = laserKacheln();
-  const fehlt = ks.filter(k => laserGroessen.get(k) === 0).length;
-  const offen = ks.filter(k => laserGroessen.get(k) !== 0 && !laserImSpeicher.has(k));
+  const fehlt = ks.filter(k => laserGroessen.get(k) === 0 && !laserGeraet.has(k)).length;
+  const geraet = ks.filter(k => laserGeraet.has(k) && !laserImSpeicher.has(k)).length;
+  const offen = ks.filter(k => laserGroessen.get(k) !== 0 && !laserImSpeicher.has(k) && !laserGeraet.has(k));
   const teile = [`${ks.length - fehlt} ${ks.length - fehlt === 1 ? 'Kachel' : 'Kacheln'}`];
   if (laserUmrissArt() && laserUmriss) teile.unshift(flaecheText(laserUmrissFlaeche(laserUmriss)));
   if (ks.length === fehlt) return 'Für diese Stelle gibt es keine Laserkachel.';
-  if (!offen.length) teile.push('alle im Speicher');
+  if (!offen.length) teile.push(geraet === ks.length - fehlt ? 'alle auf dem Gerät' : geraet ? 'alle im Speicher oder auf dem Gerät' : 'alle im Speicher');
   else if (offen.some(k => laserGroessen.get(k) == null)) teile.push('Größe wird geprüft …');
   else {
     const summe = offen.reduce((s, k) => s + Math.max(0, laserGroessen.get(k)), 0);
     const unbekannt = offen.some(k => laserGroessen.get(k) < 0);
     teile.push(unbekannt && !summe ? 'Größe unbekannt, meist 40–250 MB je Kachel' : `${unbekannt ? 'über ' : ''}${laserMB(summe)} zu laden`);
-    if (offen.length < ks.length - fehlt) teile.push(`${ks.length - fehlt - offen.length} im Speicher`);
+    if (geraet) teile.push(`${geraet} auf dem Gerät`);
+    if (offen.length + geraet < ks.length - fehlt) teile.push(`${ks.length - fehlt - offen.length - geraet} im Speicher`);
   }
   return teile.join(' · ');
+}
+
+/* ======================= Kacheln auf dem Gerät =======================
+ *
+ * 11.11.2026, so gewünscht: ausgewählte Kacheln dauerhaft speichern, um sie
+ * öfter oder ohne Netz anzusehen (Ziel etwa die Allgäuer Alpen, mehrere GB).
+ * Geschrieben wird im Worker (laser-werk.js, speichern) ins Origin Private File
+ * System, Ordner „laser“, je Kachel das LAZ der BVV unverändert. Beim Ansehen
+ * haben gespeicherte Kacheln Vorrang vor dem Netz (geraet im Auftrag). Hier nur
+ * Auflisten, Löschen und die Anzeige — das geht auch ohne Worker.
+ * Damit der Browser den Ordner bei Platzmangel nicht räumt, fragt das erste
+ * Speichern navigator.storage.persist(). Auf dem iPhone hält Safari Daten von
+ * Seiten, die man sieben Tage nicht öffnet, nicht fest — nur die installierte
+ * App ist davon ausgenommen (Hinweis im Abschnitt). */
+const LASER_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const laserInstalliert = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const laserGB = b => b >= 1e9 ? `${(b / 1e9).toLocaleString('de-DE', { maximumFractionDigits: 1 })} GB` : laserMB(b);
+
+async function laserGeraetOrdner() {
+  if (!navigator.storage || !navigator.storage.getDirectory) throw new Error('kein OPFS');
+  return (await navigator.storage.getDirectory()).getDirectoryHandle('laser', { create: true });
+}
+
+/** Liste und Speicherstand neu lesen, dann Raster und Leiste. */
+async function laserGeraetLesen() {
+  try {
+    const ordner = await laserGeraetOrdner();
+    const neu = new Map();
+    for await (const [name, h] of ordner.entries()) {
+      if (h.kind !== 'file') continue;
+      const m = /^(\d+_\d+)\.(laz|teil)$/.exec(name);
+      if (!m) continue;
+      // Liegengebliebene halbe Kachel (App beim Speichern geschlossen) — nicht die gerade laufende
+      if (m[2] === 'teil') { if (!laserSpeichert) ordner.removeEntry(name).catch(() => {}); continue; }
+      neu.set(m[1], (await h.getFile()).size);
+    }
+    laserGeraet.clear();
+    [...neu].sort((a, b) => a[0].localeCompare(b[0])).forEach(([k, v]) => laserGeraet.set(k, v));
+    laserGeraetFehler = '';
+  } catch (err) {
+    console.warn(err);
+    laserGeraetFehler = 'Dieser Browser kann hier nichts dauerhaft speichern (privates Fenster?).';
+  }
+  try {
+    const { usage, quota } = await navigator.storage.estimate();
+    const dauerhaft = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+    laserGeraetStand = { belegt: usage, frei: Math.max(0, quota - usage), dauerhaft };
+  } catch (err) { laserGeraetStand = null; }
+  if (!laserAn) return;
+  laserRasterZeichnen();
+  if (!laserLaedt) laserLeiste();
+  else { const kosten = $('#laserKosten'); if (kosten) kosten.textContent = laserKosten(); }
+}
+
+/** Die Wahl auf dem Gerät speichern, Kachel für Kachel im eigenen Worker. */
+async function laserSpeichern() {
+  if (laserSpeichert || !laserHatWahl()) return;
+  const namen = laserKacheln().filter(k => !laserGeraet.has(k) && laserGroessen.get(k) !== 0);
+  if (!namen.length) return;
+  // Bekannte Größen gegen den freien Platz — durch den Worker ist sie meist unbekannt
+  const bekannt = namen.reduce((s, k) => s + Math.max(0, laserGroessen.get(k) || 0), 0);
+  if (laserGeraetStand && bekannt > laserGeraetStand.frei) {
+    laserSpeicherMeldung = `Zu wenig Platz: ${laserGB(bekannt)} zu speichern, frei ${laserGB(laserGeraetStand.frei)}.`;
+    laserLeiste();
+    return;
+  }
+  // Beim ersten Speichern: der Browser soll den Ordner nicht von selbst räumen
+  if (navigator.storage && navigator.storage.persist) {
+    try { await navigator.storage.persist(); } catch (err) { /* dann eben nicht dauerhaft */ }
+  }
+  const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel) })));
+  if (!laserAn || laserSpeichert) return;
+  laserSpeichert = { art: 'laden', nr: 0, von: kacheln.length, kachel: namen[0], wert: 0, gesamt: 0, fertig: 0, fehlen: 0 };
+  laserSpeicherMeldung = '';
+  laserSpeicherWerk = new Worker('laser-werk.js');
+  laserSpeicherWerk.onmessage = ev => {
+    const m = ev.data, S = laserSpeichert;
+    if (!S) return;
+    if (m.art === 'laden' || m.art === 'warten') {
+      const neueKachel = m.nr !== S.nr || m.art !== S.art;
+      Object.assign(S, { art: m.art, nr: m.nr, kachel: m.kachel || S.kachel, wert: m.geladen || 0, gesamt: m.gesamt || 0,
+        sekunden: m.sekunden, abgeschnitten: m.abgeschnitten, versuch: m.versuch });
+      if (m.art === 'laden' && m.nr !== undefined) S.kachel = namen[m.nr];
+      // Nur Balken und Text nachführen, sonst ginge ein Tipp auf „Abbrechen“ verloren
+      if (!neueKachel && laserSpeicherFortschritt()) return;
+      if (laserSpeicherFortschritt()) return;
+      laserLeiste();
+      return;
+    }
+    if (m.art === 'gespeichert') {
+      S.fertig++;
+      laserGeraet.set(m.kachel, m.groesse);
+      laserGroessen.set(m.kachel, m.groesse);
+      laserRasterZeichnen();
+      laserSpeicherFortschritt();
+      return;
+    }
+    if (m.art === 'fehlt') { S.fehlen++; laserGroessen.set(m.kachel, 0); return; }
+    // fertig, fehler, abgebrochen
+    laserSpeicherWerk.terminate();
+    laserSpeicherWerk = null;
+    laserSpeichert = null;
+    const gespeichert = `${S.fertig} ${S.fertig === 1 ? 'Kachel' : 'Kacheln'} gespeichert`;
+    const fehlen = S.fehlen ? ` · ${S.fehlen} gibt es nicht` : '';
+    laserSpeicherMeldung = m.art === 'fertig' ? gespeichert + fehlen
+      : m.art === 'abgebrochen' ? `Abgebrochen — ${gespeichert}.`
+      : `${m.text} ${S.fertig ? `(${gespeichert}.)` : ''}`.trim();
+    laserGeraetLesen();
+  };
+  laserSpeicherWerk.postMessage({ art: 'speichern', kacheln });
+  laserLeiste();
+}
+
+function laserSpeicherStand(S) {
+  const anteil = S.gesamt ? (S.nr + S.wert / S.gesamt) / S.von : S.nr / S.von;
+  const vorn = `Kachel ${S.nr + 1} von ${S.von}${S.kachel ? ` (${S.kachel})` : ''}`;
+  const text = S.art === 'warten' && S.abgeschnitten ? `${vorn}: kam unvollständig an — neuer Versuch in ${S.sekunden} s.`
+    : S.art === 'warten' ? `${vorn}: Verbindung unterbrochen — neuer Versuch in ${S.sekunden} s oder sobald wieder Netz da ist.`
+    : `${vorn} … ${laserMB(S.wert)}${S.gesamt ? ` von ${laserMB(S.gesamt)}` : ''}`;
+  return { anteil, text };
+}
+
+function laserSpeicherFortschritt() {
+  const balken = $('#laserSpeicherBalken'), text = $('#laserSpeicherText');
+  if (!balken || !text || !laserSpeichert) return false;
+  const { anteil, text: t } = laserSpeicherStand(laserSpeichert);
+  balken.style.width = Math.round(anteil * 100) + '%';
+  text.textContent = t;
+  return true;
+}
+
+/** Fortschritt des Speicherns oder dessen Ergebnis, unter den Knöpfen. */
+function laserSpeicherTeil() {
+  if (laserSpeichert) {
+    const { anteil, text } = laserSpeicherStand(laserSpeichert);
+    return `<div class="laser-speichern">
+      <p class="laser-speichern-kopf">Offline speichern</p>
+      <div class="laser-lade"><div class="laser-lade-balken" id="laserSpeicherBalken" style="width:${Math.round(anteil * 100)}%"></div></div>
+      <p class="bb-note plain" id="laserSpeicherText">${esc(text)}</p>
+      <div class="bb-actions"><button type="button" id="laserSpeichernStopp">Speichern abbrechen</button></div>
+    </div>`;
+  }
+  return laserSpeicherMeldung ? `<p class="bb-note plain">${esc(laserSpeicherMeldung)}</p>` : '';
+}
+
+/** Abschnitt „Auf dem Gerät“: Speicherstand, je Kachel Größe und Löschen. */
+function laserGeraetTeil() {
+  if (laserGeraetFehler) return `<p class="bb-note plain">${esc(laserGeraetFehler)}</p>`;
+  const summe = [...laserGeraet.values()].reduce((s, v) => s + v, 0);
+  const st = laserGeraetStand;
+  const kopf = laserGeraet.size ? `${laserGeraet.size} ${laserGeraet.size === 1 ? 'Kachel' : 'Kacheln'} · ${laserGB(summe)}` : 'keine';
+  const zeilen = [...laserGeraet].map(([k, v]) => `<li>
+      <button type="button" class="laser-geraet-name" data-laser-zeigen="${k}" title="Auf der Karte zeigen">${k}</button>
+      <span class="laser-geraet-gr">${laserGB(v)}</span>
+      <button type="button" class="laser-geraet-weg" data-laser-weg="${k}" aria-label="${k} löschen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>`).join('');
+  return `<details class="sheet-sec laser-geraet"${laserGeraetOffen ? ' open' : ''}>
+    <summary><h2>Auf dem Gerät</h2><span class="laser-geraet-summe">${kopf}</span></summary>
+    ${st ? `<p class="bb-note plain">Belegt ${laserGB(st.belegt)} · frei ${laserGB(st.frei)} · ${st.dauerhaft
+      ? 'dauerhaft' : 'der Browser darf es bei Platzmangel räumen'}</p>` : ''}
+    ${LASER_IOS && !laserInstalliert() ? '<p class="bb-note">Auf dem iPhone bleiben die Kacheln nur in der installierten App sicher erhalten (Teilen → Zum Home-Bildschirm).</p>' : ''}
+    ${laserGeraet.size ? `<ul class="laser-geraet-liste">${zeilen}</ul>
+      <div class="bb-actions"><button type="button" id="laserGeraetAlleWeg"${laserSpeichert ? ' disabled' : ''}>Alle löschen</button></div>`
+      : '<p class="bb-note plain">Kacheln wählen und „Offline speichern“ — sie öffnen sich dann ohne Netz und ohne Warten.</p>'}
+  </details>`;
+}
+
+function laserGeraetBinden(b) {
+  const stopp = $('#laserSpeichernStopp');
+  if (stopp) stopp.addEventListener('click', () => { if (laserSpeicherWerk) laserSpeicherWerk.postMessage({ art: 'abbrechen' }); });
+  const det = b.querySelector('.laser-geraet');
+  if (det) det.addEventListener('toggle', () => { laserGeraetOffen = det.open; updateBH(); });
+  // Tipp auf den Namen zeigt die Kachel auf der Karte
+  b.querySelectorAll('[data-laser-zeigen]').forEach(k => k.addEventListener('click', () => {
+    const [e, n] = k.dataset.laserZeigen.split('_').map(Number);
+    kartePassen(L.latLngBounds(laserEcken(e * 1000, n * 1000, e * 1000 + 1000, n * 1000 + 1000)), { padding: [30, 30], maxZoom: 15 });
+  }));
+  b.querySelectorAll('[data-laser-weg]').forEach(k => k.addEventListener('click', () => laserGeraetLoeschen([k.dataset.laserWeg])));
+  const alle = $('#laserGeraetAlleWeg');
+  if (alle) alle.addEventListener('click', () => {
+    const summe = [...laserGeraet.values()].reduce((s, v) => s + v, 0);
+    if (!confirm(`Alle ${laserGeraet.size} gespeicherten Laserkacheln (${laserGB(summe)}) vom Gerät löschen?`)) return;
+    laserGeraetLoeschen([...laserGeraet.keys()]);
+  });
+}
+
+async function laserGeraetLoeschen(namen) {
+  try {
+    const ordner = await laserGeraetOrdner();
+    for (const k of namen) await ordner.removeEntry(`${k}.laz`).catch(err => console.warn(err));
+  } catch (err) { console.warn(err); }
+  laserSpeicherMeldung = '';
+  await laserGeraetLesen();
 }
 
 const LASER_ARTEN = [['rahmen', 'Rahmen'], ['rechteck', 'Rechteck'], ['polygon', 'Polygon'], ['kacheln', 'Kacheln']];
@@ -8301,8 +8527,8 @@ const LASER_ARTEN = [['rahmen', 'Rahmen'], ['rechteck', 'Rechteck'], ['polygon',
 function laserHinweis() {
   const maus = MAUS.matches;
   if (laserArt === 'kacheln') return laserWahl.size
-    ? `Tipp auf eine Kachel nimmt sie dazu oder wieder heraus — bis zu ${LASER_KACHELN_MAX}.`
-    : `Tippe die Kacheln an, die du sehen willst — bis zu ${LASER_KACHELN_MAX}. Das Raster zeigt sie zu 1 × 1 km.`;
+    ? `Tipp auf eine Kachel nimmt sie dazu oder wieder heraus. Ansehen: bis zu ${LASER_KACHELN_MAX}, speichern: mehr.`
+    : `Tippe die Kacheln an — ansehen bis zu ${LASER_KACHELN_MAX}, offline speichern auch mehr. Das Raster zeigt sie zu 1 × 1 km.`;
   if (laserArt === 'rechteck') return laserEntwurf.length ? 'Jetzt die gegenüberliegende Ecke antippen.'
     : laserUmriss ? 'Rechteck am Rand ziehen zum Verschieben. Tipp in die Karte beginnt ein neues.'
     : 'Tippe zwei gegenüberliegende Ecken an.';
@@ -8322,7 +8548,11 @@ function laserLeiste() {
   b.hidden = false;
   const L_ = laserLaedt, wahl = laserHatWahl();
   const { anteil, text: stufe } = L_ ? laserStand(L_) : { anteil: 0, text: '' };
-  const keine = !wahl || laserKacheln().every(k => laserGroessen.get(k) === 0);
+  const ks = wahl ? laserKacheln() : [];
+  const keine = !wahl || ks.every(k => laserGroessen.get(k) === 0 && !laserGeraet.has(k));
+  const zuViele = ks.length > LASER_KACHELN_MAX;
+  // Speichern: was noch nicht auf dem Gerät liegt und es geben kann
+  const zuSpeichern = ks.filter(k => !laserGeraet.has(k) && laserGroessen.get(k) !== 0);
   const aus = L_ ? ' disabled' : '';
   const inhalt = `
     <div class="seg seg-drei" role="group" aria-label="Auswahl">${LASER_ARTEN.map(([art, name]) =>
@@ -8340,8 +8570,13 @@ function laserLeiste() {
       <p class="bb-note plain" id="laserLadeText">${esc(stufe)}</p>` : ''}
     ${laserFehler ? `<p class="bb-note">${esc(laserFehler)}</p>` : ''}
     ${!L_ && !laserFehler ? `<p class="bb-note plain">${esc(laserHinweis())}</p>` : ''}
+    ${!L_ && zuViele ? `<p class="bb-note plain">Ansehen geht mit höchstens ${LASER_KACHELN_MAX} Kacheln — speichern auch mit mehr.</p>` : ''}
     <div class="bb-actions">${L_ ? '<button type="button" id="laserAbbrechenBtn">Abbrechen</button>'
-      : `<button type="button" id="laserLadenBtn" class="maps"${keine ? ' disabled' : ''}>In 3D ansehen</button>`}</div>`;
+      : `<button type="button" id="laserLadenBtn" class="maps"${keine || zuViele ? ' disabled' : ''}>In 3D ansehen</button>
+        <button type="button" id="laserSpeichernBtn"${!wahl || keine || !zuSpeichern.length || laserSpeichert || laserGeraetFehler ? ' disabled' : ''}>${
+          wahl && !keine && !zuSpeichern.length ? 'Gespeichert' : 'Offline speichern'}</button>`}</div>
+    ${laserSpeicherTeil()}
+    ${laserGeraetTeil()}`;
   b.innerHTML = `
     <button type="button" id="laserZu" class="bb-close" aria-label="Laserpunkte beenden">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -8355,7 +8590,7 @@ function laserLeiste() {
     if (art === laserArt) return;
     // Zu „Kacheln“: was Rahmen oder Umriss gerade berühren, ist schon gewählt
     if (art === 'kacheln' && !laserWahl.size && laserHatWahl()) {
-      laserKacheln().slice(0, LASER_KACHELN_MAX).forEach(x => laserWahl.add(x));
+      laserKacheln().slice(0, laserWahlMax()).forEach(x => laserWahl.add(x));
     }
     laserEntwurf = [];
     laserEntwurfZeichnen();
@@ -8381,6 +8616,9 @@ function laserLeiste() {
   }));
   const laden = $('#laserLadenBtn');
   if (laden) laden.addEventListener('click', laserLaden);
+  const speichernBtn = $('#laserSpeichernBtn');
+  if (speichernBtn) speichernBtn.addEventListener('click', laserSpeichern);
+  laserGeraetBinden(b);
   const abbrechen = $('#laserAbbrechenBtn');
   if (abbrechen) abbrechen.addEventListener('click', () => { if (laserWerk) laserWerk.postMessage({ art: 'abbrechen' }); });
   updateBH();
