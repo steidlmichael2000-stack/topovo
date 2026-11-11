@@ -373,7 +373,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       <!-- Oben fest die Punktgröße, darunter Abschnitte zum Aufklappen wie im Menü
            der Karte (.sheet-sec) — die Tafel wurde sonst zu lang. -->
       <label class="slider-row lz-oben">Punktgröße
-        <input type="range" class="lz-groesse" min="5" max="150" step="5" value="25">
+        <input type="range" class="lz-groesse" min="5" max="400" step="5" value="25">
         <span class="slider-val lz-groesse-wert"></span>
       </label>
       <details class="sheet-sec" open>
@@ -425,6 +425,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
             <input type="range" class="lz-str-breite-regler" min="0" max="10" step="0.5" value="0">
             <span class="slider-val lz-str-breite-wert">Linie</span>
           </label>
+          <button type="button" class="seg-btn lz-klasse lz-gipfel" aria-pressed="false" hidden>
+            <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">Gipfel</span><small></small></button>
           <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden>
             <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">KML</span><small></small></button>
         </div>
@@ -506,7 +508,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   if (!info.gebaeude || !info.luftbild) weg('.lz-geb-dach');
   if (!info.achsen) weg('.lz-achsen');
   if (!info.strassen) weg('.lz-strassen');
-  if (!info.gebaeude && !info.achsen && !info.kml && !info.strassen) weg('.lz-aufl-titel');
+  if (!info.gebaeude && !info.achsen && !info.kml && !info.strassen && !info.gipfel) weg('.lz-aufl-titel');
   if (!info.exportieren) weg('[data-lz="export"], [data-bereich="export"]');
   if (!info.utm) weg('.lz-ort');
   if (!info.kostra) weg('.lz-regen-kostra-teil');
@@ -761,17 +763,23 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const quellenNeu = () => {
     const was = [info.datenName || 'Laserdaten', luftbild && 'Luftbild', geb && 'Gebäude LoD2'].filter(Boolean);
     const mitAchsen = achsen && achsen.anzahl, mitStr = strassen && strassen.gruppe.visible;
+    const mitGipfel = (gipfelAufl && gipfelAufl.gruppe.visible) || zielIstGipfel;
+    const osm = [mitStr && 'Straßen', mitGipfel && 'Gipfel'].filter(Boolean);
+    // Wie viele Punkte zu sehen sind, immer unter der Quellenangabe (11.11.2026, so gewünscht)
+    const punkte = document.createElement('span');
+    punkte.className = 'lz-fuss-punkte';
+    punkte.textContent = `${d.anzahl.toLocaleString('de-DE')} Punkte${d.schritt > 1 ? ` · jeder ${d.schritt}.` : ''}`;
     const lang = document.createElement('span');
     lang.className = 'lz-fuss-lang';
     lizenzTextSetzen(lang, `${was.join(', ').replace(/, ([^,]*)$/, ' und $1')}: ${info.quelle}` +
       (mitAchsen ? ' · Streckenachsen: DB InfraGO (CC BY 4.0), bearbeitet' : '') +
-      (mitStr ? ' · Straßen: OpenFreeMap, © OpenStreetMap (ODbL)' : ''));
-    if (!info.quelleKurz) { fuss.replaceChildren(lang); return; }
+      (osm.length ? ` · ${osm.join(', ')}: OpenFreeMap, © OpenStreetMap (ODbL)` : ''));
+    if (!info.quelleKurz) { fuss.replaceChildren(lang, punkte); return; }
     const kurz = document.createElement('span');
     kurz.className = 'lz-fuss-kurz';
     lizenzTextSetzen(kurz, (mitAchsen ? info.quelleKurz.replace('© BVV', '© BVV, DB InfraGO') : info.quelleKurz) +
-      (mitStr ? ' · © OpenStreetMap (ODbL)' : '') + ' · ⓘ');
-    fuss.replaceChildren(kurz, lang);
+      (osm.length ? ' · © OpenStreetMap (ODbL)' : '') + ' · ⓘ');
+    fuss.replaceChildren(kurz, lang, punkte);
     fuss.classList.add('mit-kurz');
   };
   fuss.addEventListener('click', ev => { if (!ev.target.closest('a')) fuss.classList.toggle('offen'); });
@@ -1482,6 +1490,26 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const liste = info.kml ? info.kml(d.mitte[0] - halb, d.mitte[1] - halb, d.mitte[0] + halb, d.mitte[1] + halb) : [];
     const gruppe = new THREE.Group(), schilder = [];
     let punkte = 0;
+    /* Höhen mit DB_REF-Aufschlag (dbrefEllAufschlag in app.js, Kempten 53,7 m zu hoch): je Datei der Median
+     * von Höhe − Aufschlag − Laserboden. Liegt er innerhalb ±3 m, ist es dieser Fehler — dann je Punkt abziehen.
+     * Über den Median, weil Punkte auf Bahnsteigkanten, Mauern oder Schienen etwas über dem Boden stehen. */
+    const reste = new Map(), berichtigt = new Map();
+    for (const o of liste) {
+      if (o.art !== 'p' || !Number.isFinite(o.hoehe) || o.aufschlag == null) continue;
+      const x = o.pts[0][0] - d.mitte[0], y = o.pts[0][1] - d.mitte[1];
+      const b = Math.abs(x) <= halb && Math.abs(y) <= halb ? bodenHoehe(x, y) : null;
+      if (!b) continue;
+      if (!reste.has(o.datei)) reste.set(o.datei, []);
+      reste.get(o.datei).push(o.hoehe - o.aufschlag - (b.z + d.zMin));
+    }
+    for (const [datei, r] of reste) {
+      r.sort((a, b) => a - b);
+      if (Math.abs(r[r.length >> 1]) <= 3) berichtigt.set(datei, liste.find(o => o.datei === datei && o.aufschlag != null).aufschlag);
+    }
+    for (const o of liste) if (berichtigt.has(o.datei) && o.aufschlag != null) o.hoehe -= o.aufschlag;
+    if (berichtigt.size) {
+      hinweis(`KML-Höhen um ${zahl([...berichtigt.values()][0], 1)} m gesenkt: im Export als Ellipsoidhöhe auf Bessel (DB_REF) behandelt.`);
+    }
     for (const o of liste) {
       if (o.art === 'p') {
         const x = o.pts[0][0] - d.mitte[0], y = o.pts[0][1] - d.mitte[1];
@@ -1535,8 +1563,55 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     gruppe.add(k, auflLinie([fuss, kopf], zielLinieMat));
     auflSzene.add(gruppe);
     const text = `<b>${esc(z.text || 'Gesuchte Stelle')}</b>${b ? `<br>Boden ${nhn(fuss.z - ANHEBEN)} m` : ''}`;
-    zielAufl = { gruppe, schilder: [schild(kopf, text, 'gross ziel')] };
+    zielAufl = { gruppe, schilder: [schild(kopf, text, 'gross ziel')], x, y };
   }
+
+  /* Gipfel (11.11.2026, so gewünscht): aus OpenStreetMap (laserGipfel in app.js).
+   * Der Schalter erscheint nur, wenn im Ausschnitt welche liegen. Je Gipfel ein
+   * kleines Dreieck auf dem Laserboden, darüber Name und Höhe (aus OSM, sonst der
+   * Boden hier) — ohne „Boden“. Ist die gesuchte Stelle ein Gipfel (≤ 40 m), zeigt
+   * sie sich genauso, nur rot, und Stab und Kugel treten zurück. */
+  const gipfelKnopf = $('.lz-gipfel');
+  let gipfelAufl = null, zielIstGipfel = false;
+  const gipfelHtml = (name, h) => `<span class="lz-gipfel-text"><b>${esc(name)}</b>${h != null ? `<br>${zahl(h, 0)} m` : ''}</span>`
+    + '<svg viewBox="0 0 14 12" aria-hidden="true"><path d="M7 1.5 12.5 10.5h-11z"/></svg>';
+  async function gipfelLaden() {
+    if (!info.gipfel) return;
+    let liste = [];
+    try { liste = await info.gipfel(d.mitte[0] - halb, d.mitte[1] - halb, d.mitte[0] + halb, d.mitte[1] + halb); }
+    catch (err) { console.warn(err); return; }
+    if (!laeuft || !liste.length) return;
+    const schilder = [];
+    for (const g of liste) {
+      const x = g.e - d.mitte[0], y = g.n - d.mitte[1];
+      if (Math.abs(x) > halb || Math.abs(y) > halb) continue;
+      const b = bodenHoehe(x, y);
+      if (!b && g.ele == null) continue;
+      const p = new THREE.Vector3(x, y, b ? b.z : g.ele - d.zMin);
+      const hoehe = g.ele != null ? g.ele : b.z + d.zMin;
+      if (zielAufl && Math.hypot(zielAufl.x - x, zielAufl.y - y) <= 40) {
+        // Die gesuchte Stelle ist dieser Gipfel: rot im Stil der Gipfel, ohne Stab und Kugel
+        for (const sch of zielAufl.schilder) sch.el.remove();
+        zielAufl.gruppe.traverse(o => { if (o.isMesh || o.isLine) o.visible = false; });
+        zielAufl.schilder = [schild(p, gipfelHtml(g.name, hoehe), 'gipfel ziel', 'gipfel')];
+        zielIstGipfel = true;
+        continue;
+      }
+      schilder.push(schild(p, gipfelHtml(g.name, hoehe), 'gipfel', 'gipfel'));
+    }
+    if (zielIstGipfel) quellenNeu();
+    if (!schilder.length) return;
+    gipfelAufl = { gruppe: new THREE.Group(), schilder };
+    gipfelKnopf.hidden = false;
+    breitSetzen();
+    auflZeigen(gipfelAufl, gipfelKnopf, gemerkt.gipfel !== false, String(schilder.length));
+    quellenNeu();
+  }
+  gipfelKnopf.addEventListener('click', () => {
+    if (!gipfelAufl) return;
+    auflZeigen(gipfelAufl, gipfelKnopf, !gipfelAufl.gruppe.visible, String(gipfelAufl.schilder.length));
+    quellenNeu();
+  });
 
   /* ---------- Export (nur am Desktop, Spalte „Export“) ----------
    * Gerechnet wird in laser-werk.js aus den Kacheln im Vorrat, mit voller
@@ -1740,7 +1815,12 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * Scanreihen berühren — Lücken dazwischen zeichnete die Kantenschattierung
    * sonst ebenfalls als feine Linien. */
   const abstandPunkte = 1 / Math.sqrt(Math.max(0.01, n / (info.seite * info.seite)));
-  groesse.value = String(Math.min(150, Math.max(15, Math.round(abstandPunkte * 1.25 * 20) * 5)));
+  /* Bis 4 m (vorher 1,5): Bei vier Kacheln ist nur jeder 80. Punkt da, rund 1,4 m
+   * Abstand. Gemerkt wird die Größe im Verhältnis zum Punktabstand (groesseRel),
+   * nicht in Metern — sonst bliebe eine bei einer Kachel gewählte Größe bei vier
+   * Kacheln zu klein und umgekehrt. */
+  const groesseAus = rel => String(Math.min(400, Math.max(5, Math.round(abstandPunkte * rel * 20) * 5)));
+  groesse.value = groesseAus(1.25);
   const reglerZeigen = () => {
     material.uniforms.licht.value = lichtRegler.value / 100;
     $('.lz-licht-wert').textContent = `${lichtRegler.value} %`;
@@ -1857,7 +1937,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     return l;
   }
   // lage: wohin das Schild vom Punkt aus rückt — darüber, darunter oder rechts daneben
-  const LAGE = { oben: 'translate(-50%, -125%)', unten: 'translate(-50%, 35%)', rechts: 'translate(12px, -50%)' };
+  const LAGE = { gipfel: 'translate(-50%, -100%)', oben: 'translate(-50%, -125%)', unten: 'translate(-50%, 35%)', rechts: 'translate(12px, -50%)' };
   function schild(p, html, art = '', lage = 'oben') {
     const el = document.createElement('div');
     el.className = 'lz-marke' + (art ? ' ' + art : '');
@@ -2574,7 +2654,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     // Beschriftungen der Messungen an ihre Stelle im Bild
     const r = flaeche.getBoundingClientRect();
     const mitOrt = ortSchild && ortGruppe.visible ? [{ schilder: [ortSchild] }] : [];
-    const aufl = [achsen, strassen, kmlAufl, zielAufl].filter(a => a && a.gruppe.visible);
+    const aufl = [achsen, strassen, kmlAufl, gipfelAufl, zielAufl].filter(a => a && a.gruppe.visible);
     for (const m of [...aufl, regenAufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
       for (const sch of m.schilder) {
         v.copy(sch.p);
@@ -2610,8 +2690,10 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   $('.lz-info').innerHTML = [
     info.kachel ? `Kachel ${info.kachel}` : '',
     `${d.anzahl.toLocaleString('de-DE')} Punkte${d.schritt > 1 ? `, jeder ${d.schritt}.` : ''} · ${info.unterzeile || `${info.seite} × ${info.seite} m`}`,
-    d.zeiten ? [d.zeiten.megabyte ? `Laden ${zahl(d.zeiten.laden, 0)} s (${zahl(d.zeiten.megabyte, 0)} MB)` : 'Kacheln aus dem Speicher',
-      `Entpacken ${zahl(d.zeiten.lesen, 0)} s`, d.normalen ? `Normalen ${zahl(d.zeiten.normalen, 0)} s` : 'Normalen im Hintergrund'].join(' · ') : '',
+    // ausDatei: so viele Kacheln kamen schon entpackt vom Gerät (<kachel>.pts) — gelesen, nicht entpackt
+    d.zeiten ? [d.zeiten.megabyte ? `Laden ${zahl(d.zeiten.laden, 0)} s (${zahl(d.zeiten.megabyte, 0)} MB)`
+      : d.zeiten.ausDatei && d.zeiten.ausDatei === d.zeiten.kacheln ? 'Entpackt vom Gerät' : 'Kacheln aus dem Speicher',
+      `${d.zeiten.ausDatei === d.zeiten.kacheln ? 'Lesen' : d.zeiten.ausDatei ? 'Lesen und Entpacken' : 'Entpacken'} ${zahl(d.zeiten.lesen, 0)} s`, d.normalen ? `Normalen ${zahl(d.zeiten.normalen, 0)} s` : 'Normalen im Hintergrund'].join(' · ') : '',
     bedienung
   ].filter(Boolean).map(z => `<p class="fine">${z}</p>`).join('');
   const tipp = $('.lz-tipp');
@@ -2621,6 +2703,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   faerben();
   zielBauen();
   kmlBauen();
+  gipfelLaden();
   achsenLaden();
 
   /* ---------- Einstellungen merken ----------
@@ -2633,7 +2716,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const hier = new Set(d.klassen.map(([k]) => k));
     const klassenAus = [...wurzel.querySelectorAll('[data-klasse]')].filter(b => !b.classList.contains('is-on')).map(b => Number(b.dataset.klasse));
     return {
-      faerbung: faerbungWahl, groesse: Number(groesse.value), edl: Number(edlRegler.value),
+      faerbung: faerbungWahl, groesseRel: groesse.value / 100 / abstandPunkte, edl: Number(edlRegler.value),
       licht: lichtRegler.disabled ? gemerkt.licht : Number(lichtRegler.value),
       effekte: { ...effekte },
       // Klassen, die es hier nicht gibt, bleiben, wie sie zuletzt waren
@@ -2642,6 +2725,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       achsen: achsen ? achsen.gruppe.visible : gemerkt.achsen,
       strassen: strassen ? strassen.gruppe.visible : strLaedt || false, strBreite: strBreite(),
       kml: kmlAufl && kmlAufl.anzahl ? kmlAufl.gruppe.visible : gemerkt.kml,
+      gipfel: gipfelAufl ? gipfelAufl.gruppe.visible : gemerkt.gipfel,
       kamera: kamera === orthoKamera ? 'ortho' : 'perspektive',
       grund: wurzel.dataset.grund,
       offen: [...tafel.querySelectorAll('details')].map(x => x.open)
@@ -2655,7 +2739,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     // Erst die Färbung: „Normalen“ und „Intensität“ stellen den Schatten selbst, die Regler danach
     if (g.faerbung && g.faerbung !== faerbung) klick(`[data-faerbung="${g.faerbung}"]`);
     const regler = (el, w) => { if (Number.isFinite(w) && !el.disabled) el.value = String(w); };
-    regler(groesse, g.groesse); regler(edlRegler, g.edl); regler(lichtRegler, g.licht);
+    if (Number.isFinite(g.groesseRel) && g.groesseRel > 0) groesse.value = groesseAus(g.groesseRel);
+    regler(edlRegler, g.edl); regler(lichtRegler, g.licht);
     reglerZeigen();
     for (const [art, an] of Object.entries(g.effekte || {})) if (an && !effekte[art]) klick(`[data-effekt="${art}"]`);
     for (const k of g.klassenAus || []) { const b = $(`[data-klasse="${k}"]`); if (b && b.classList.contains('is-on')) b.click(); }

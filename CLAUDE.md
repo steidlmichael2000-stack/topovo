@@ -556,6 +556,8 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   `ausschneiden` öffnet sie für Kacheln mit `geraet` vor allem anderen (`entpacktOeffnen`): am PC ganz in `entpackt`,
   am Handy (`entpacktMax` 0) in Stücken gelesen. Das LAZ bleibt (Export). Ändert sich das Format, `PTS_FASSUNG`
   hochzählen — alte Dateien gelten dann als nicht da. Löschen einer Kachel nimmt beide Dateien.
+  Beim Lesen der `.pts` meldet der Worker `lesen` mit `datei: true` (Leiste: „Entpackt vom Gerät lesen“), `zeiten.ausDatei`/`kacheln`
+  steuern „Lesen“ statt „Entpacken“ unter Ausschnitt — vorher stand dort „Entpacken“, und der Nutzer hielt es für einen Fehler.
 - **Abbrechen** über `{ art: 'abbrechen' }`: die Entpackschleife gibt alle 2^20 Punkte den Faden frei
   (`setTimeout`), sonst käme die Nachricht nicht an.
 - **CSP:** `script-src` trägt `'wasm-unsafe-eval'` — nur dafür (laz-perf). Nicht auf `unsafe-eval`
@@ -620,6 +622,21 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   `laser.js` legt alles alle 1 m (Ausschnitt > 300 m: 2 m) per `bodenHoehe` auf den Laserboden, ohne
   Tiefentest (sichtbar unter Bäumen); ohne Boden im Umkreis von 32 m setzt die Linie aus. Schalter unter
   „Auflagen“ in der Tafel. Kleine Schilder, die ein großes berühren, treten über alle Gruppen zurück (`bild`).
+- **Gipfel** (11.11.2026, so gewünscht): auf der Karte Auflage `gipfel` (`#gipfelBtn` unter Straßen/Ortsnamen, `glGipfel`,
+  Ebene `mountain_peak` der OpenFreeMap-Kacheln, nur peak/volcano, Dreieck aus `glGipfelBild` über `styleimagemissing`;
+  `glVektorAn()` fasst str/ort/gipfel zusammen). Im Viewer `laserGipfel` (über `ofmImRechteck`, Stufe 14) als `info.gipfel`:
+  Schalter „Gipfel“ unter Auflagen nur, wenn im Ausschnitt welche liegen; Schild Name + Höhe (OSM `ele`, sonst Laserboden)
+  mit Dreieck darunter, kein „Boden“. Ist die gesuchte Stelle ein Gipfel (≤ 40 m), wird ihr Schild zum roten Gipfelschild.
+- **Mehrere Kacheln gleichzeitig entpacken** (11.11.2026, nur PC): `LASER_PARALLEL` (höchstens 4, ein Kern frei; Handy 1)
+  → `entpackenParallel` in laser-werk.js startet je Kachel einen Hilfs-Worker (dieselbe Datei, Aufträge `teilEntpacken` +
+  `teilDaten` mit Kopie des LAZ), Felder kommen übertragen zurück. Scheitert einer, entpackt der Haupt-Worker die Kachel
+  selbst. Gilt nur für Kacheln, die in `entpacktMax` passen (vorher reserviert). Gemessen 613+614_5478: 22,1 → 12,2 s.
+- **KML-Höhen mit DB_REF-Aufschlag** (11.11.2026, Kempten 53,7 m, 5904 50,3 m zu hoch): Das Vermessungsprogramm nimmt die
+  NHN-Höhe als Bessel-Ellipsoidhöhe und rechnet DB_REF → WGS84. `dbrefEllAufschlag` (app.js) gibt den Aufschlag je Punkt,
+  `kmlBauen` zieht ihn je Datei ab, wenn der Median Höhe − Aufschlag − Laserboden innerhalb ±3 m liegt (Hinweis im Viewer).
+  Echte ETRS89-Ellipsoidhöhen (+ Geoid ~48 m) erkennt das nicht.
+- **Punktzahl** („… Punkte · jeder n.“) steht immer unter der Quellenangabe (`.lz-fuss-punkte`). **Punktgröße** bis 4 m;
+  gemerkt als `groesseRel` (Verhältnis zum Punktabstand), nicht in Metern — sonst blieb sie bei vier Kacheln zu klein.
 - Namensnennung CC BY 4.0: `LASER_QUELLE` (unten in der Ansicht, mit „ausgeschnitten und
   ausgedünnt") und `LASER_ATTR` (Kartenattribution, solange Laserpunkte offen ist).
 - **Tafel, Effekte, Straßen, Export getrennt** (06.11.2026): Tafel oben fest „Punktgröße“, darunter

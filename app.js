@@ -2128,8 +2128,11 @@ let glQuellenZuletzt = [];
 function glGebraucht() {
   if (glKaputt) return false;
   const b = prefs.base || 'osm';
-  return b === 'dark' || (!!GL_BILDER[b] && (!!prefs.str || !!prefs.ort)) || hoehenGezeichnet();
+  return b === 'dark' || (!!GL_BILDER[b] && glVektorAn()) || hoehenGezeichnet();
 }
+
+/** Ist eine der Auflagen aus den OpenFreeMap-Kacheln an (Straßen, Ortsnamen, Gipfel)? */
+const glVektorAn = () => !!prefs.str || !!prefs.ort || !!prefs.gipfel;
 
 /* Straßen und Namen über dem Bild: helle Linien mit dunklem Umriss, damit sie
  * auf hellem Acker wie auf dunklem Wald stehen; Fernstraßen gelb, Hauptstraßen
@@ -2207,6 +2210,39 @@ function glOrte(src = 'ofm') {
   ];
 }
 
+/* Gipfel (11.11.2026, so gewünscht): Ebene mountain_peak der OpenFreeMap-Kacheln,
+ * nur class peak/volcano (keine Sättel, Felsen). Kleines Dreieck statt Kreis, Name
+ * und Höhe darunter — die Höhe aus OSM (ele, ganze Meter). Die Kacheln dünnen weit
+ * draußen nach Rang aus; ab Stufe 14 (GL 13) stehen alle. Das Dreieck zeichnet
+ * glGipfelBild beim ersten Bedarf (styleimagemissing). */
+function glGipfel(src = 'ofm') {
+  const hoehe = ['number-format', ['to-number', ['get', 'ele']], { locale: 'de-DE', 'max-fraction-digits': 0 }];
+  return [{
+    id: 'gipfel', type: 'symbol', source: src, 'source-layer': 'mountain_peak', minzoom: 9,
+    filter: ['match', ['get', 'class'], ['peak', 'volcano'], true, false],
+    layout: {
+      'icon-image': 'gipfel-dreieck', 'icon-allow-overlap': false, 'icon-anchor': 'bottom',
+      'text-field': ['case', ['has', 'ele'],
+        ['format', GL_NAME, {}, '\n', {}, hoehe, { 'font-scale': 0.88 }, ' m', { 'font-scale': 0.88 }], GL_NAME],
+      'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10.5, 15, 12.5],
+      'text-anchor': 'top', 'text-offset': [0, 0.25], 'text-max-width': 9, 'text-optional': true,
+      'symbol-sort-key': ['coalesce', ['get', 'rank'], 99]
+    },
+    paint: GL_SCHRIFT_WEISS
+  }];
+}
+/** Das Dreieck für die Gipfel: weiß mit dunklem Rand, 2 × für scharfe Kanten. */
+function glGipfelBild(ev) {
+  if (ev.id !== 'gipfel-dreieck' || !gl || gl.hasImage('gipfel-dreieck')) return;
+  const f = 2, b = 14 * f, h = 12 * f, c = document.createElement('canvas');
+  c.width = b; c.height = h;
+  const x = c.getContext('2d');
+  x.beginPath(); x.moveTo(b / 2, 1.5 * f); x.lineTo(b - 1.5 * f, h - 1.5 * f); x.lineTo(1.5 * f, h - 1.5 * f); x.closePath();
+  x.lineJoin = 'round'; x.lineWidth = 2.4 * f; x.strokeStyle = 'rgba(0, 0, 0, 0.75)'; x.stroke();
+  x.fillStyle = '#ffffff'; x.fill();
+  gl.addImage('gipfel-dreieck', x.getImageData(0, 0, b, h), { pixelRatio: f });
+}
+
 /* Grenzen, mit den Ortsnamen geschaltet: Staaten durchgezogen, Länder
  * gestrichelt, Regierungsbezirke gepunktet. Die Kacheln haben Staaten und
  * Länder in jeder Stufe, Bezirke (admin_level 5) erst ab Stufe 9 (gemessen
@@ -2253,6 +2289,7 @@ function glDunkelErsetzt(ebene) {
   const quelle = ebene['source-layer'];
   if (prefs.str && quelle === 'transportation_name') return true;
   if (prefs.str && quelle === 'transportation' && !ebene.id.startsWith('railway')) return true;
+  if (prefs.gipfel && quelle === 'mountain_peak') return true;
   return !!prefs.ort && (quelle === 'place' || quelle === 'boundary');
 }
 
@@ -2263,7 +2300,7 @@ function glDunkelErsetzt(ebene) {
 function glStil() {
   const b = prefs.base || 'osm';
   if (b === 'dark' || !GL_BILDER[b]) {
-    if (!prefs.str && !prefs.ort) return OFM_DUNKEL;
+    if (!glVektorAn()) return OFM_DUNKEL;
     if (!glDunkelJson) { glDunkelHolen(); return OFM_DUNKEL; }   // bis dahin ohne unsere
     return {
       ...glDunkelJson,
@@ -2271,6 +2308,7 @@ function glStil() {
         ...glDunkelJson.layers.filter(l => !glDunkelErsetzt(l)),
         ...(prefs.ort ? glGrenzen('openmaptiles') : []),
         ...(prefs.str ? glStrassen('openmaptiles') : []),
+        ...(prefs.gipfel ? glGipfel('openmaptiles') : []),
         ...(prefs.ort ? glOrte('openmaptiles') : [])
       ]
     };
@@ -2291,6 +2329,7 @@ function glStil() {
       ...(hoehenGezeichnet() ? glHoehenEbenen() : []),
       ...(prefs.ort ? glGrenzen() : []),
       ...(prefs.str ? glStrassen() : []),
+      ...(prefs.gipfel ? glGipfel() : []),
       ...(prefs.ort ? glOrte() : [])
     ]
   };
@@ -2314,7 +2353,7 @@ function glStilSetzen() {
  * Parzellen und die des DOP20 heben sich also nicht gegenseitig auf. */
 function glQuellenErneuern() {
   const b = prefs.base || 'osm';
-  const ofm = prefs.str || prefs.ort ? OFM_QUELLE : null;
+  const ofm = glVektorAn() ? OFM_QUELLE : null;
   const neu = !glAn ? [] : b === 'dark' ? [OFM_QUELLE]
     : [GL_BILDER[b].quelle, hoehenGezeichnet() ? DGM_QUELLE : null, ofm].filter(Boolean);
   if (neu.join('|') === glQuellenZuletzt.join('|')) return;
@@ -2387,6 +2426,7 @@ async function glLaden() {
         fadeDuration: 0, maxZoom: 21,
         ...glLage()
       });
+      gl.on('styleimagemissing', glGipfelBild);
       gl.on('error', ev => { if (ev.sourceId) { glFehlerQuellen.add(ev.sourceId); kachelnNeuSpaeter(); } });
       glDeckungSetzen();
       return gl;
@@ -3753,9 +3793,9 @@ function hoehenSkalaZeigen() {
 /* Straßen und Ortsnamen zeichnet MapLibre, über Dunkel und den Bildern. In der
  * OSM-Karte stecken sie schon drin: Dort bleiben sie eingeschaltet, werden aber
  * nicht gezeichnet, und beim Wechsel erscheinen sie. */
-const NUR_UEBER_BILD = new Set(['str', 'ort']);
+const NUR_UEBER_BILD = new Set(['str', 'ort', 'gipfel']);
 let fpBayernGesagt = false;     // Hinweis „in Bayern nur HFP und TP“ einmal je Sitzung
-const AUFLAGEN = ['orm', 'parz', 'ifg', 'fp', 'str', 'ort', 'radar'];
+const AUFLAGEN = ['orm', 'parz', 'ifg', 'fp', 'str', 'ort', 'gipfel', 'radar'];
 
 /** Ist die Auflage gewählt? Der Bahn-Layer ist von Haus aus an, die übrigen aus. */
 function auflageGewaehlt(kennung) {
@@ -7514,6 +7554,9 @@ const LASER_VORRAT = (matchMedia('(pointer: coarse)').matches ? 400 : 800) * 1e6
  * ein verschobener Ausschnitt nicht neu entpackt werden (11.11.2026 so gewünscht).
  * Eine Kachel mit 25 Mio. Punkten braucht entpackt rund 375 MB. */
 const LASER_ENTPACKT = matchMedia('(pointer: coarse)').matches ? 0 : 2e9;
+/* Am PC mehrere Kacheln zugleich entpacken (laser-werk.js, entpackenParallel): höchstens 4,
+ * ein Kern bleibt frei. Am Handy nicht — jeder Hilfs-Worker hält eine Kopie des LAZ im Speicher. */
+const LASER_PARALLEL = LASER_ENTPACKT ? Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)) : 1;
 const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
 /* CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen: in der
  * Ansicht unten (LASER_QUELLE), auf der Karte in der Quellenangabe (LASER_ATTR). */
@@ -7874,24 +7917,32 @@ function mvtLesen(daten, ebenen) {
   }
   return raus;
 }
-/** Straßen und Wege im Rechteck (UTM32): { strassen: [{ stufe 0 Haupt | 1 Neben | 2 Weg, pts }],
- *  namen: [{ name, pts }] }. */
-async function laserStrassen(e0, n0, e1, n1) {
+/** Die OpenFreeMap-Kacheln (Stufe 14) über dem Rechteck (UTM32) lesen, nur die genannten
+ *  Ebenen. Gibt je Kachel { ebenen, utm } — utm rechnet [u, v] der Kachel nach UTM32. */
+async function ofmImRechteck(e0, n0, e1, n1, namen, was) {
   const [s, w, n, o] = laserGrad(e0, n0, e1, n1);
   const Z = 14, N = 2 ** Z;
   const kx = lon => Math.floor((lon + 180) / 360 * N);
   const ky = lat => Math.floor((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * N);
   const x0 = kx(w), x1 = kx(o), y0 = ky(n), y1 = ky(s);
-  if ((x1 - x0 + 1) * (y1 - y0 + 1) > 100) throw new Error('Der Ausschnitt ist für das Straßennetz zu groß.');
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > 100) throw new Error(`Der Ausschnitt ist für ${was} zu groß.`);
   const vorlage = await ofmKachelVorlage();
   const kacheln = [];
   for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) kacheln.push([x, y]);
-  const strassen = [], namen = [];
-  await Promise.all(kacheln.map(async ([x, y]) => {
+  return Promise.all(kacheln.map(async ([x, y]) => {
     const r = await fetch(vorlage.replace('{z}', Z).replace('{x}', x).replace('{y}', y));
     if (!r.ok) throw new Error(`OpenFreeMap: HTTP ${r.status}`);
-    const ebenen = mvtLesen(await r.arrayBuffer(), ['transportation', 'transportation_name']);
+    const ebenen = mvtLesen(await r.arrayBuffer(), namen);
     const utm = ([u, v]) => utm32Hin(Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + v) / N))) * 180 / Math.PI, (x + u) / N * 360 - 180);
+    return { ebenen, utm };
+  }));
+}
+
+/** Straßen und Wege im Rechteck (UTM32): { strassen: [{ stufe 0 Haupt | 1 Neben | 2 Weg, pts }],
+ *  namen: [{ name, pts }] }. */
+async function laserStrassen(e0, n0, e1, n1) {
+  const strassen = [], namen = [];
+  for (const { ebenen, utm } of await ofmImRechteck(e0, n0, e1, n1, ['transportation', 'transportation_name'], 'das Straßennetz')) {
     for (const f of ebenen.transportation || []) {
       const stufe = STR_KLASSEN[f.eig.class];
       if (f.typ !== 2 || stufe == null || f.eig.brunnel === 'tunnel') continue;
@@ -7902,8 +7953,27 @@ async function laserStrassen(e0, n0, e1, n1) {
       if (f.typ !== 2 || !name || f.eig.brunnel === 'tunnel') continue;
       for (const l of f.linien) namen.push({ name, pts: l.map(utm) });
     }
-  }));
+  }
   return { strassen, namen };
+}
+
+/** Gipfel im Rechteck (11.11.2026): [{ name, ele (m, OSM) oder null, e, n }]. Aus der Ebene
+ *  mountain_peak, nur peak/volcano; Punkte im Puffer der Nachbarkachel nicht doppelt. */
+async function laserGipfel(e0, n0, e1, n1) {
+  const raus = [];
+  for (const { ebenen, utm } of await ofmImRechteck(e0, n0, e1, n1, ['mountain_peak'], 'die Gipfel')) {
+    for (const f of ebenen.mountain_peak || []) {
+      if (f.typ !== 1 || !['peak', 'volcano'].includes(f.eig.class)) continue;
+      const name = f.eig['name:de'] || f.eig.name;
+      const p = f.linien[0] && f.linien[0][0];
+      if (!name || !p || p[0] < 0 || p[0] >= 1 || p[1] < 0 || p[1] >= 1) continue;
+      const [e, n] = utm(p);
+      if (e < e0 || e > e1 || n < n0 || n > n1) continue;
+      const ele = Number(f.eig.ele);
+      raus.push({ name, ele: Number.isFinite(ele) && ele > 0 ? ele : null, e, n });
+    }
+  }
+  return raus;
 }
 
 /* Sichtbare KML-Dateien im Ausschnitt: Punkte, Linien, Flächen als Umring.
@@ -7913,13 +7983,15 @@ function laserKml(e0, n0, e1, n1) {
   const [s, w, n, o] = laserGrad(e0, n0, e1, n1);
   const drin = ([la, lo]) => la >= s && la <= n && lo >= w && lo <= o;
   const raus = [];
-  for (const a of kmlAkten) {
+  for (const [datei, a] of kmlAkten.entries()) {
     if (!a.sichtbar) continue;
     for (const ob of a.objekte) {
       if (!kmlSichtbarObj(a, ob)) continue;
       const linie = ob.art === 'l' ? ob.koord : ob.art === 'a' ? [...ob.koord[0], ob.koord[0][0]] : null;
       if (ob.art === 'p' ? !drin(ob.koord) : !linie.some(drin)) continue;
-      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe, hoehe: ob.hoehe,
+      const mitHoehe = ob.art === 'p' && Number.isFinite(ob.hoehe);
+      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe, hoehe: ob.hoehe, datei,
+        aufschlag: mitHoehe ? dbrefEllAufschlag(...ob.koord) : null,
         pts: (ob.art === 'p' ? [ob.koord] : linie).map(([la, lo]) => utm32Hin(la, lo)) });
     }
   }
@@ -8223,7 +8295,7 @@ async function laserLaden() {
     if (m.export) { if (laserExportMelden) laserExportMelden(m); return; }
     const stufeVorher = laserLaedt && laserLaedt.art;
     if (m.art === 'laden') laserLaedt = { art: 'laden', nr: m.nr, von: m.von, wert: m.geladen, gesamt: m.gesamt, geraet: !!m.geraet };
-    else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt };
+    else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt, datei: !!m.datei, gleichzeitig: m.gleichzeitig || 0 };
     else if (m.art === 'normalen') laserLaedt = { art: 'normalen', wert: m.fertig, gesamt: m.gesamt };
     else if (m.art === 'warten') laserLaedt = { art: 'warten', nr: m.nr, von: m.von, wert: 0, gesamt: 0, sekunden: m.sekunden, abgeschnitten: m.abgeschnitten, versuch: m.versuch };
     if (laserLaedt && m.art !== 'fertig' && m.art !== 'fehler' && m.art !== 'abgebrochen') {
@@ -8246,7 +8318,7 @@ async function laserLaden() {
         laserSchliessen = laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, quelleKurz: LASER_QUELLE_KURZ, seite, nurBoden,
           ...(unterzeile ? { unterzeile } : {}),
           utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude, kostra: laserKostra,
-          achsen: laserAchsen, strassen: laserStrassen, kml: laserKml, ziel: laserZiel,
+          achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel,
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); wacheLaserZu(); } });
         wacheAuffuellen();
@@ -8258,7 +8330,7 @@ async function laserLaden() {
     }
     laserLeiste();
   };
-  laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT });
+  laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL });
 }
 
 /* Export aus der 3D-Ansicht: läuft im selben Worker, damit die Kacheln aus
@@ -8285,6 +8357,9 @@ function laserStand(L_) {
   const kachelNr = L_.von > 1 ? ` (Kachel ${L_.nr + 1} von ${L_.von})` : '';
   const text = L_.art === 'laden' && L_.geraet ? `Vom Gerät lesen${kachelNr} …`
     : L_.art === 'laden' ? `Laden${kachelNr} … ${laserMB(L_.wert)}${L_.gesamt ? ` von ${laserMB(L_.gesamt)}` : ''}`
+    // datei: die entpackte Fassung vom Gerät (<kachel>.pts) — da wird nur gelesen, nicht entpackt
+    : L_.art === 'lesen' && L_.datei ? `Entpackt vom Gerät lesen${kachelNr} …`
+    : L_.art === 'lesen' && L_.gleichzeitig > 1 ? `Entpacken (${L_.gleichzeitig} Kacheln gleichzeitig) …`
     : L_.art === 'lesen' ? `Entpacken${kachelNr} …`
     : L_.art === 'warten' && L_.abgeschnitten ? `Die Kachel kam unvollständig an (Versuch ${L_.versuch} von 3) — neuer Versuch in ${L_.sekunden} s, sie lädt dann von vorn.`
     : L_.art === 'warten' ? `Verbindung unterbrochen — neuer Versuch in ${L_.sekunden} s oder sobald wieder Netz da ist. Die Kachel lädt dann von vorn.`
@@ -9871,6 +9946,21 @@ function gkZurueck(r, h, par) {
   const ye = par.ty + m * (-rz * x + y + rx * z);
   const ze = par.tz + m * (ry * x - rx * y + z);
   return ellAusXyz([xe, ye, ze], ELL_GRS80);
+}
+
+/* KML aus dem Vermessungsprogramm (Kempten, 5904; 11.11.2026): Die Höhen lagen 53,7 bzw. 50,3 m zu hoch.
+ * Das Programm hat die DB_REF2016-Höhe (= NHN) als Ellipsoidhöhe auf Bessel genommen und mit DB_REF → ETRS89
+ * nach WGS84 umgerechnet — dabei kommt der Abstand der beiden Ellipsoide hinzu (Platzhalter 0 wurde so 50,3).
+ * Das ist dieser Aufschlag: die ETRS89-Ellipsoidhöhe eines Punkts mit Bessel-Höhe 0. Er ändert sich langsam
+ * (Bayern rund 50–54 m); die Lage auf Bessel statt ETRS89 (rund 100 m daneben) macht unter 1 mm aus.
+ * laser.js zieht ihn ab, wenn die Punkte einer Datei damit auf dem Laserboden landen. */
+function dbrefEllAufschlag(lat, lon) {
+  const [x, y, z] = ellXyz(lat, lon, 0, ELL_BESSEL), par = DBREF;
+  const sek = Math.PI / 180 / 3600, rx = par.rx * sek, ry = par.ry * sek, rz = par.rz * sek, m = 1 + par.s * 1e-6;
+  const xe = par.tx + m * (x + rz * y - ry * z), ye = par.ty + m * (-rz * x + y + rx * z), ze = par.tz + m * (ry * x - rx * y + z);
+  const [pe] = ellAusXyz([xe, ye, ze], ELL_GRS80), { a, f } = ELL_GRS80, e2 = f * (2 - f), p = pe * Math.PI / 180;
+  const N = a / Math.sqrt(1 - e2 * Math.sin(p) ** 2);
+  return Math.hypot(xe, ye) / Math.cos(p) - N;
 }
 
 /** ETRS89 (Grad) → DB_REF Gauß-Krüger im Streifen 3 oder 4: [Rechts, Hoch]. */
@@ -14357,6 +14447,7 @@ function bind() {
   fpWahlBauen();
   on('#strBtn', 'click', () => toggleOverlay('str'));
   on('#ortBtn', 'click', () => toggleOverlay('ort'));
+  on('#gipfelBtn', 'click', () => toggleOverlay('gipfel'));
   on('#radarBtn', 'click', () => toggleOverlay('radar'));
   radarBinden();
   document.querySelectorAll('[data-theme]').forEach(b => b.addEventListener('click', () => {

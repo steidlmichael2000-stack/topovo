@@ -101,6 +101,77 @@ async function entpacken(LP, { kachel, zeiger, groesse, kopf: k }, nr, von) {
   }
 }
 
+/* Mehrere Kacheln gleichzeitig entpacken (11.11.2026, so gewünscht, nur am PC — app.js gibt
+ * am Handy parallel 1): laz-perf rechnet auf einem Kern, je Kachel ein Hilfs-Worker (diese
+ * Datei noch einmal, Auftrag teilEntpacken) bekommt eine Kopie des LAZ und schickt die Felder
+ * zurück. Höchstens parallel zugleich. Der Fortschritt kommt als eine Meldung über alle
+ * ('lesen' mit gleichzeitig). Ergebnis je Auftrag die Felder wie entpacken() oder null, wenn
+ * der Hilfs-Worker scheiterte — dann entpackt der Aufrufer diese Kachel selbst. */
+async function entpackenParallel(LP, quellen, parallel) {
+  const gesamt = quellen.map(q => q.kopf.anzahl), gelesen = quellen.map(() => 0);
+  const summe = gesamt.reduce((a, b) => a + b, 0), zugleich = Math.min(parallel, quellen.length);
+  const ergebnisse = quellen.map(() => null), laufen = new Set();
+  let naechste = 0, zuletzt = 0;
+  const melden = () => {
+    const jetzt = performance.now();
+    if (jetzt - zuletzt < 100) return;
+    zuletzt = jetzt;
+    senden({ art: 'lesen', nr: 0, von: 1, gelesen: gelesen.reduce((a, b) => a + b, 0), gesamt: summe, gleichzeitig: zugleich });
+  };
+  const einer = async () => {
+    while (naechste < quellen.length && !abbruch.signal.aborted) {
+      const i = naechste++, q = quellen[i];
+      let w = null;
+      try {
+        w = new Worker('laser-werk.js');
+        laufen.add(w);
+        ergebnisse[i] = await new Promise((ok, fehl) => {
+          abbruch.signal.addEventListener('abort', () => fehl(new Error(ABGEBROCHEN)), { once: true });
+          w.onmessage = ev => {
+            const m = ev.data;
+            if (m.art === 'lesen') { gelesen[i] = m.gelesen; melden(); }
+            else if (m.art === 'entpackt') ok(m.e);
+            else if (m.art === 'fehler') fehl(new Error(m.text));
+          };
+          w.onerror = ev => { if (ev.preventDefault) ev.preventDefault(); fehl(new Error(ev.message || 'Hilfs-Worker')); };
+          const daten = LP.HEAPU8.slice(q.zeiger, q.zeiger + q.groesse);
+          w.postMessage({ art: 'teilEntpacken', kachel: q.kachel, kopf: q.kopf }, []);
+          w.postMessage({ art: 'teilDaten', daten }, [daten.buffer]);
+        });
+      } catch (err) {
+        if (abbruch.signal.aborted) return;
+        console.warn(`Kachel ${q.kachel} im Hilfs-Worker:`, err);
+      } finally {
+        if (w) { w.terminate(); laufen.delete(w); }
+      }
+      gelesen[i] = gesamt[i];
+      melden();
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: zugleich }, einer));
+  } finally {
+    for (const w of laufen) w.terminate();
+  }
+  if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
+  return ergebnisse;
+}
+
+/* Im Hilfs-Worker: erst der Auftrag, dann die Bytes (eigene Nachricht, damit der
+ * Kopf nicht mit dem großen Puffer auf die Reise muss). */
+let teilAuftrag = null;
+async function teilEntpacken({ daten }) {
+  if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
+  const LP = lazPerf, groesse = daten.length, zeiger = LP._malloc(groesse);
+  if (!zeiger) throw new Error('Kein Speicher für die Kachel.');
+  try {
+    LP.HEAPU8.set(daten, zeiger);
+    daten = null;
+    const e = await entpacken(LP, { kachel: teilAuftrag.kachel, zeiger, groesse, kopf: teilAuftrag.kopf }, 0, 1);
+    self.postMessage({ art: 'entpackt', e }, [e.x.buffer, e.y.buffer, e.z.buffer, e.kl.buffer, e.st.buffer]);
+  } finally { LP._free(zeiger); }
+}
+
 /* Meldungen eines Exports tragen export: true — app.js reicht sie an die
  * Ansicht weiter statt an das Laden auf der Karte. */
 let exportLaeuft = false;
@@ -556,7 +627,7 @@ const inMaske = (M, e, n) => {
   return c >= 0 && r >= 0 && c < M.w && r < M.h && M.m[r * M.w + c] === 1;
 };
 
-async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0 }) {
+async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1 }) {
   if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
   const LP = lazPerf;
 
@@ -577,6 +648,8 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   const offen = kacheln.filter(k => !entpackt.has(k.kachel) && !vonDatei.has(k.kachel));
   const { da, fehlen, megabyte } = offen.length ? await kachelnHolen(LP, offen, vorratMax, true) : { da: [], fehlen: [], megabyte: 0 };
   zeiten.megabyte = megabyte;
+  zeiten.ausDatei = vonDatei.size;       // so viele Kacheln kamen entpackt vom Gerät (laser.js: „Lesen“ statt „Entpacken“)
+  zeiten.kacheln = kacheln.length;
   zeiten.laden = (performance.now() - uhr) / 1000;
   uhr = performance.now();
 
@@ -602,10 +675,21 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   if (!quellen.length) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
   // Neu geladene entpacken und merken, soweit der Platz reicht — sonst wie bisher im Durchgang
   if (entpacktMax) {
+    // Erst Platz für alle reservieren, dann entpacken — bei mehreren gleichzeitig (entpackenParallel)
+    const auftraege = [];
+    let reserviert = 0;
     for (let t = 0; t < quellen.length; t++) {
-      const q = quellen[t];
-      if (q.felder || q.datei || !entpacktPlatz(q.kopf.anzahl * ENTPACKT_BYTE, behalten, entpacktMax)) continue;
-      const e = await entpacken(LP, q, t, quellen.length);
+      const q = quellen[t], bedarf = q.kopf.anzahl * ENTPACKT_BYTE;
+      if (q.felder || q.datei || !entpacktPlatz(reserviert + bedarf, behalten, entpacktMax)) continue;
+      reserviert += bedarf;
+      auftraege.push({ q, t });
+    }
+    const fertig = parallel > 1 && auftraege.length > 1 && typeof Worker !== 'undefined'
+      ? await entpackenParallel(LP, auftraege.map(a => a.q), parallel) : [];
+    for (let i = 0; i < auftraege.length; i++) {
+      const { q, t } = auftraege[i];
+      // Ohne Ergebnis des Hilfs-Workers (keiner gestartet, Speicher, Fehler): hier wie bisher
+      const e = fertig[i] || await entpacken(LP, q, t, quellen.length);
       entpackt.set(q.kachel, e);
       entpacktSumme += e.bytes;
       q.felder = e;
@@ -674,7 +758,7 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
       // Entpackt auf dem Gerät, ohne Platz im Arbeitsspeicher: in Stücken zu 2^20 Punkten
       const D = q.datei, X0 = e0 - D.e0, X1 = e1 - D.e0, Y0 = n0 - D.n0, Y1 = n1 - D.n0;
       for (let i0 = 0; i0 < D.n; i0 += 1 << 20) {
-        senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i0, gesamt: D.n });
+        senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i0, gesamt: D.n, datei: true });
         await new Promise(r => setTimeout(r));
         if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
         const { x, y, z, kl, st } = entpacktStueck(D, i0, Math.min(D.n, i0 + (1 << 20)));
@@ -1242,6 +1326,7 @@ async function exportieren({ kacheln, bereich, umriss, einzeln, nurBoden, getren
 
 self.onmessage = async ev => {
   if (ev.data.art === 'abbrechen') { if (abbruch) abbruch.abort(); return; }
+  if (ev.data.art === 'teilEntpacken') { teilAuftrag = ev.data; return; }       // Hilfs-Worker, siehe entpackenParallel
   const istExport = ev.data.art === 'export';
   // Eins nach dem anderen: Laden und Export teilen sich den Speicher von laz-perf
   if (abbruch) { if (istExport) self.postMessage({ art: 'fehler', text: 'Es läuft noch ein Auftrag.', export: true }); return; }
@@ -1250,6 +1335,7 @@ self.onmessage = async ev => {
   try {
     if (ev.data.art === 'speichern') await speichern(ev.data);
     else if (ev.data.art === 'entpacktSpeichern') await entpacktSpeichern(ev.data);
+    else if (ev.data.art === 'teilDaten') await teilEntpacken(ev.data);
     else if (istExport) await exportieren(ev.data);
     else await ausschneiden(ev.data);
   } catch (err) {
