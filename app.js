@@ -8270,16 +8270,34 @@ function laserEntwurfZeichnen(ev) {
     fillColor: farbe, fillOpacity: 1, interactive: false }).addTo(laserEntwurfLayer));
 }
 
-async function laserLaden() {
+/* auswahl (aus der 3D-Ansicht, „Dichter laden“ der Limitbox, 11.11.2026): { umriss (Ecken der Box,
+ * UTM32), zGrenze [von, bis] NHN, kamera } — dann nur dieser Ausschnitt, mit eigener Ausdünnung. Die
+ * Wahl auf der Karte bleibt unverändert; laserLaden() ohne auswahl lädt wieder den ganzen Ausschnitt.
+ * Ist eine Ansicht offen, bleibt sie stehen, bis die neue da ist, und wird dann ersetzt (laserTausch). */
+let laserTausch = false;
+async function laserLaden(auswahl = null) {
   if (!laserHatWahl() || laserLaedt) return;
-  const namen = laserKacheln().filter(k => laserGroessen.get(k) !== 0 || laserGeraet.has(k));
+  const namen = (auswahl ? laserUmrissKacheln(auswahl.umriss).filter(k => laserKacheln().includes(k)) : laserKacheln())
+    .filter(k => laserGroessen.get(k) !== 0 || laserGeraet.has(k));
   if (!namen.length || namen.length > LASER_KACHELN_MAX) return;
   const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel), geraet: laserGeraet.has(kachel) })));
   if (!laserAn || !laserHatWahl() || laserLaedt) return;     // inzwischen beendet oder schon gestartet
-  const bereich = laserBereich(), seite = bereich.e1 - bereich.e0, nurBoden = laserNurBoden;
-  const umriss = laserUmrissArt() ? laserUmriss.map(p => p.slice()) : null;
-  const unterzeile = umriss ? `${laserArt === 'rechteck' ? 'Rechteck' : 'Polygon'} · ${flaecheText(laserUmrissFlaeche(umriss))}`
+  let bereich = laserBereich();
+  if (auswahl) {
+    // Quadrat um die Box (laser.js nimmt eine quadratische Fläche an), auf ganze Meter
+    const es = auswahl.umriss.map(p => p[0]), ns = auswahl.umriss.map(p => p[1]);
+    const ce = (Math.min(...es) + Math.max(...es)) / 2, cn = (Math.min(...ns) + Math.max(...ns)) / 2;
+    const s = Math.ceil(Math.max(Math.max(...es) - Math.min(...es), Math.max(...ns) - Math.min(...ns)));
+    bereich = { e0: ce - s / 2, n0: cn - s / 2, e1: ce + s / 2, n1: cn + s / 2 };
+  }
+  const seite = bereich.e1 - bereich.e0, nurBoden = laserNurBoden;
+  const umriss = auswahl ? auswahl.umriss.map(p => p.slice()) : laserUmrissArt() ? laserUmriss.map(p => p.slice()) : null;
+  const unterzeile = auswahl ? `Limitbox · ${flaecheText(laserUmrissFlaeche(umriss))} · ${
+    Math.round(auswahl.zGrenze[1] - auswahl.zGrenze[0]).toLocaleString('de-DE')} m hoch`
+    : umriss ? `${laserArt === 'rechteck' ? 'Rechteck' : 'Polygon'} · ${flaecheText(laserUmrissFlaeche(umriss))}`
     : laserArt === 'kacheln' ? `${namen.length} ${namen.length === 1 ? 'Kachel' : 'Kacheln'} · ${seite} × ${seite} m` : null;
+  const ansichtOffen = !!laserSchliessen;
+  let stufeGesagt = '';
   laserLaedt = { art: 'laden', nr: 0, von: kacheln.length, wert: 0, gesamt: 0 };
   laserFehler = '';
   laserLeiste();
@@ -8301,6 +8319,11 @@ async function laserLaden() {
     else if (m.art === 'lesen') laserLaedt = { art: 'lesen', nr: m.nr, von: m.von, wert: m.gelesen, gesamt: m.gesamt, datei: !!m.datei, gleichzeitig: m.gleichzeitig || 0 };
     else if (m.art === 'normalen') laserLaedt = { art: 'normalen', wert: m.fertig, gesamt: m.gesamt };
     else if (m.art === 'warten') laserLaedt = { art: 'warten', nr: m.nr, von: m.von, wert: 0, gesamt: 0, sekunden: m.sekunden, abgeschnitten: m.abgeschnitten, versuch: m.versuch };
+    // Läuft es aus der offenen Ansicht heraus, steht der Stand dort als Hinweis (die Leiste ist verdeckt)
+    if (ansichtOffen && laserSchliessen && laserLaedt && m.art !== 'fertig') {
+      const st = laserStand(laserLaedt).text.replace(/ … .*/, ' …');
+      if (st !== stufeGesagt) { stufeGesagt = st; laserSchliessen.hinweis(st); }
+    }
     if (laserLaedt && m.art !== 'fertig' && m.art !== 'fehler' && m.art !== 'abgebrochen') {
       /* Nur Balken und Text nachführen, die Leiste nicht neu bauen: Bei dutzenden
        * Meldungen je Sekunde ginge ein Tipp auf „Abbrechen“ sonst zwischen Drücken
@@ -8310,6 +8333,7 @@ async function laserLaden() {
       return;
     }
     laserLaedt = null;
+    if (m.art === 'fehler' && ansichtOffen && laserSchliessen) laserSchliessen.hinweis(m.text);
     if (m.art === 'fehler') laserFehler = m.text;
     else if (m.art === 'abgebrochen') laserFehler = '';
     else {
@@ -8318,12 +8342,15 @@ async function laserLaden() {
         if (!laserAn) return;                // beim ersten Mal lädt three.js — inzwischen beendet?
         const da = namen.filter(k => !m.fehlen.includes(k));
         laserGeladenUmriss = umriss;
+        // Die alte Ansicht ersetzen, ohne den Eintrag der Zurück-Wache zurückzunehmen (die neue braucht ihn)
+        if (laserSchliessen) { laserTausch = true; try { laserSchliessen(); } finally { laserTausch = false; } }
         laserSchliessen = laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, quelleKurz: LASER_QUELLE_KURZ, seite, nurBoden,
           ...(unterzeile ? { unterzeile } : {}),
+          dichter: a => laserLaden(a), ...(auswahl ? { ausBox: true, ganz: () => laserLaden(), kamera: auswahl.kamera } : {}),
           utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude, kostra: laserKostra,
           achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel,
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
-          { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); wacheLaserZu(); } });
+          { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); if (!laserTausch) wacheLaserZu(); } });
         wacheAuffuellen();
       } catch (err) {
         console.warn(err);
@@ -8333,7 +8360,8 @@ async function laserLaden() {
     }
     laserLeiste();
   };
-  laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL, gitterZellen: LASER_GITTER });
+  laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL,
+    gitterZellen: LASER_GITTER, zGrenze: auswahl ? auswahl.zGrenze : null });
 }
 
 /* Export aus der 3D-Ansicht: läuft im selben Worker, damit die Kacheln aus

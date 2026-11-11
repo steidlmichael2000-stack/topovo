@@ -637,6 +637,12 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   Beim Abbrechen erfüllt `stopp` **auch die laufenden** Versprechen mit null — sonst hing der Worker nach einem Abbruch im
   Entpacken für immer (abbruch blieb gesetzt, jeder neue Auftrag wurde still verworfen). Geprüft: Abbruch beim Laden, beim
   Entpacken, danach Neuladen.
+  **Handy überlappend** (11.11.2026): ohne entpackten Vorrat schneidet `ausschneiden` jede Kachel gleich nach ihrem Download
+  (`einreihen` → `kette`, über `jeKachel`), im selben Worker abwechselnd, ohne zweite LAZ-Kopie. Ausdünnung dann **je Kachel**
+  (`schrittFuer`: Budget nach Flächenanteil am Ausschnitt, Punktzahl aus dem eigenen Kopf) — bei verschiedener Dichte zweier
+  Kacheln ein Dichtesprung an der Grenze. Während des Ladens schweigt das Schneiden (`stillLesen`) und gibt den Faden öfter frei
+  (`LESEN_TAKT`). Endet das Laden mit Fehler/Abbruch, beendet `vorbei` die laufenden Schnitte, bevor der Fehler hinausgeht.
+  Nicht mit Höhengrenze (dort passt sich der Schritt beim Lesen an). Die Schneideschleife ist dafür `schneiden(q, t, von)`.
   Paralleler **Download** bringt nichts (gemessen: 1 Verbindung 10,5 MB/s, 2: 8,9, 3: 11,3 — die Leitung ist voll).
 - **Darstellung „Gelände“** (11.11.2026, so gewünscht): Bodenraster aus **allen** Bodenpunkten, gefüllt in `nimm` vor der
   Ausdünnung (`gitterAnlegen`/`gitterFertig` in laser-werk.js; `LASER_GITTER` Handy 1 Mio., PC 4 Mio. Zellen → 0,5/1/2 m).
@@ -652,6 +658,12 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   nicht gemerkt. Auflagen: einfache Materialien über sechs Schnittebenen (`boxEbenen`, Weltkoordinaten mit Überhöhung,
   `renderer.localClippingEnabled`, gesetzt in `boxKlippen` vor dem Zeichnen; außen = Normalen nach außen + `clipIntersection`),
   LoD2 und Höhenlinien über dieselben Uniforms in `GEB_FS`, Schilder der Auflagen über `boxZeigt`. Den Export schneidet sie nicht.
+  **Dichter laden** (11.11.2026, bei „Innen“): laser.js schickt Box-Ecken (UTM32), Höhengrenze (NHN) und Kamera über
+  `info.dichter` an `laserLaden(auswahl)` — Kacheln aus `laserUmrissKacheln`, Bereich = Quadrat um die Box, Umriss wie beim
+  Polygon. Der Worker nimmt `zGrenze` und dünnt dann **beim Lesen** aus (`verdichten`: über max jeden zweiten weg, Schritt × 2),
+  weil die Flächenschätzung die Säule über/unter der Box mitzählt. Die alte Ansicht bleibt bis zur neuen und wird ohne
+  Zurücknehmen der Wache ersetzt (`laserTausch`); „Ganzer Ausschnitt“ (`info.ganz`) lädt ohne auswahl. Probekachel 613_5478:
+  jeder 7. → alle 1,49 Mio. in der Box, 3,6 s.
 - **KML-Höhen mit DB_REF-Aufschlag** (11.11.2026, Kempten 53,7 m, 5904 50,3 m zu hoch): Das Vermessungsprogramm nimmt die
   NHN-Höhe als Bessel-Ellipsoidhöhe und rechnet DB_REF → WGS84. `dbrefEllAufschlag` (app.js) gibt den Aufschlag je Punkt,
   `kmlBauen` zieht ihn je Datei ab, wenn der Median Höhe − Aufschlag − Laserboden innerhalb ±3 m liegt (Hinweis im Viewer).

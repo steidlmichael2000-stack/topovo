@@ -556,6 +556,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <button type="button" class="seg-btn" data-box-neu data-ik="neu" title="Box neu um die Bildmitte setzen">Neu setzen</button>
         </div>
         <p class="fine lz-box-mass" hidden></p>
+        <!-- Die Box als eigenen Ausschnitt laden: dichter, weil die Ausdünnung nur noch für sie gilt -->
+        <div class="bb-actions lz-box-laden" hidden>
+          <button type="button" data-box-dichter data-ik="laden" title="Nur die Box laden — mit eigener Ausdünnung, also dichter">Dichter laden</button>
+          <button type="button" data-box-ganz data-ik="rahmen" hidden title="Wieder den ganzen Ausschnitt laden">Ganzer Ausschnitt</button>
+        </div>
       </details>
       <details class="sheet-sec">
         <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.8v5.7"/><circle class="voll" cx="12" cy="7.8" r="1.1"/></svg><h2>Ausschnitt</h2></summary>
@@ -778,6 +783,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     steuerung.update();
   }
   heim();
+  // Aus „Dichter laden“: dieselbe Kamera wie in der vorigen Ansicht (in UTM32/NHN übergeben)
+  if (info.kamera) {
+    const { pos, ziel: z } = info.kamera;
+    kamera.position.set(pos[0] - d.mitte[0], pos[1] - d.mitte[1], pos[2] - d.zMin);
+    steuerung.target.set(z[0] - d.mitte[0], z[1] - d.mitte[1], z[2] - d.zMin);
+    steuerung.update();
+  }
 
   /* ---------- Färbung ---------- */
   let faerbung = d.rgb ? 'rgb' : 'klasse';
@@ -2476,8 +2488,41 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (box.an && !vorher && !box.halb.x) boxNeu();
     wurzel.querySelectorAll('[data-box]').forEach(x => x.classList.toggle('is-on', x === b));
     $('.lz-box-mehr').hidden = !box.an;
+    boxLadenZeigen();
     boxZeichnen();
   }));
+  /* „Dichter laden“ (nur bei „Innen“): die Box als Umriss (vier Ecken, UTM32) und Höhengrenze (NHN)
+   * an app.js (info.dichter → laserLaden). Die Ansicht bleibt, bis die neue da ist; die Kamera
+   * kommt mit. „Ganzer Ausschnitt“ steht da, wenn diese Ansicht selbst aus einer Box stammt. */
+  const dichterKnopf = $('[data-box-dichter]'), ganzKnopf = $('[data-box-ganz]');
+  function boxLadenZeigen() {
+    dichterKnopf.hidden = !(info.dichter && box.an === 1);
+    ganzKnopf.hidden = !info.ganz;
+    $('.lz-box-laden').hidden = dichterKnopf.hidden && ganzKnopf.hidden;
+  }
+  const kameraUtm = () => {
+    const p = kamera.position, t = steuerung.target;
+    return { pos: [p.x + d.mitte[0], p.y + d.mitte[1], p.z / ueber + d.zMin], ziel: [t.x + d.mitte[0], t.y + d.mitte[1], t.z / ueber + d.zMin] };
+  };
+  dichterKnopf.addEventListener('click', () => {
+    const ecken = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => {
+      const p = box.mitte.clone().add(boxAchse('x').multiplyScalar(sx * box.halb.x)).add(boxAchse('y').multiplyScalar(sy * box.halb.y));
+      return [p.x + d.mitte[0], p.y + d.mitte[1]];
+    });
+    const zGrenze = [box.mitte.z - box.halb.z + d.zMin, box.mitte.z + box.halb.z + d.zMin];
+    dichterKnopf.disabled = true;
+    hinweis('Lade die Box …');
+    info.dichter({ umriss: ecken, zGrenze, kamera: kameraUtm() });
+    // Kommt keine neue Ansicht (Fehler, Abbruch), nach einer Weile wieder freigeben
+    setTimeout(() => { if (laeuft) dichterKnopf.disabled = false; }, 4000);
+  });
+  ganzKnopf.addEventListener('click', () => {
+    ganzKnopf.disabled = true;
+    hinweis('Lade den ganzen Ausschnitt …');
+    info.ganz();
+    setTimeout(() => { if (laeuft) ganzKnopf.disabled = false; }, 4000);
+  });
+  boxLadenZeigen();
   $('[data-box-griffe]').addEventListener('click', ev => {
     box.griffe = !box.griffe;
     ev.currentTarget.classList.toggle('is-on', box.griffe);

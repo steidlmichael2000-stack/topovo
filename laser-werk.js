@@ -644,7 +644,7 @@ const inMaske = (M, e, n) => {
   return c >= 0 && r >= 0 && c < M.w && r < M.h && M.m[r * M.w + c] === 1;
 };
 
-async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1, gitterZellen = 0 }) {
+async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1, gitterZellen = 0, zGrenze = null }) {
   if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
   const LP = lazPerf;
 
@@ -675,14 +675,180 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
     reserviert += bedarf;
     return true;
   };
-  const { da, fehlen, megabyte } = offen.length
-    ? await kachelnHolen(LP, offen, vorratMax, true, pool ? q => { if (reservieren(q)) frueh.set(q.kachel, pool.start(q)); } : null)
-    : { da: [], fehlen: [], megabyte: 0 };
+  /* ---------- Ausschneiden vorbereiten (vor dem Laden, damit es am Handy überlappen kann) ---------- */
+  const { e0, n0, e1, n1 } = bereich;
+  const maske = umriss && umriss.length > 2 ? umrissMaske(umriss, bereich) : null;
+  const anteil = maske ? maske.flaeche / Math.max(1, (e1 - e0) * (n1 - n0)) : 1;
+  const ce = (e0 + e1) / 2, cn = (n0 + n1) / 2;
+  // Fläche einer Kachel (1 × 1 km, aus dem Namen) im Ausschnitt
+  const kachelFlaeche = name => {
+    const [ke, kn] = name.split('_').map(Number);
+    return Math.max(0, Math.min(e1, ke * 1000 + 1000) - Math.max(e0, ke * 1000)) * Math.max(0, Math.min(n1, kn * 1000 + 1000) - Math.max(n0, kn * 1000));
+  };
+  /** Erwartete Punkte einer Kachel im Ausschnitt, nach ihrem Kopf. */
+  const erwartetVon = k => {
+    const flaeche = Math.max(1, (k.max[0] - k.min[0]) * (k.max[1] - k.min[1]));
+    const ueber = Math.max(0, Math.min(e1, k.max[0]) - Math.max(e0, k.min[0])) * Math.max(0, Math.min(n1, k.max[1]) - Math.max(n0, k.min[1]));
+    return k.anzahl * Math.min(1, ueber / flaeche) * (nurBoden ? 0.5 : 1) * anteil;
+  };
+  /* Am Handy (ohne entpackten Vorrat) überlappend: Jede Kachel wird gleich nach ihrem Download
+   * ausgeschnitten, während die nächste lädt — im selben Worker abwechselnd, ohne zweite Kopie des
+   * LAZ (11.11.2026). Die Ausdünnung kann dann nicht auf alle Kacheln zusammen warten: Jede bekommt
+   * ihr Budget nach ihrem Flächenanteil am Ausschnitt (der steht vorher fest) und ihre Punktzahl aus
+   * dem eigenen Kopf. Bei gleicher Dichte ergibt das denselben Schritt wie zusammen gerechnet; bei
+   * sehr verschiedener Dichte zweier Kacheln sieht man an der Grenze einen Dichtesprung.
+   * Mit Höhengrenze (Dichter laden) nicht: Dort passt sich der Schritt beim Lesen an. */
+  const ueberlappen = !entpacktMax && !zGrenze && kacheln.length > 1 && offen.length > 0;
+  const flaecheGesamt = kacheln.reduce((a, k) => a + kachelFlaeche(k.kachel), 0) || 1;
+  const schrittFuer = q => Math.max(1, Math.ceil(erwartetVon(q.kopf) / Math.max(1, max * kachelFlaeche(q.kachel) / flaecheGesamt)));
+
+  let schritt = 1;
+  let platz = max + 1024;          // wächst bei Bedarf (verdoppelt)
+  let xyz = new Float32Array(platz * 3), klasse = new Uint8Array(platz), staerke = new Uint16Array(platz);
+  const klassen = new Map();
+  let n = 0, drin = 0, zMin = Infinity, zMax = -Infinity, iMax = 0;
+  /** Ein Punkt im Rechteck: Umriss, Klasse, Ausdünnung prüfen und übernehmen. */
+  const gitter = gitterZellen ? gitterAnlegen(bereich, gitterZellen) : null;
+  const [zVon, zBis] = zGrenze || [-Infinity, Infinity];
+  let verdichtet = false;
+  const verdichten = () => {
+    let j = 0;
+    for (let i = 0; i < n; i += 2, j++) {
+      xyz[3 * j] = xyz[3 * i]; xyz[3 * j + 1] = xyz[3 * i + 1]; xyz[3 * j + 2] = xyz[3 * i + 2];
+      klasse[j] = klasse[i]; staerke[j] = staerke[i];
+    }
+    n = j;
+    schritt *= 2;
+    verdichtet = true;
+  };
+  const nimm = (e, nn, z, kl, s) => {
+    if (maske && !inMaske(maske, e, nn)) return;
+    if (z < zVon || z > zBis) return;
+    // Das Bodenraster sieht jeden Punkt, auch die, die die Ausdünnung gleich verwirft
+    if (gitter && BODEN.has(kl)) {
+      const cx = Math.floor((e - e0) / gitter.zelle), cy = Math.floor((nn - n0) / gitter.zelle);
+      if (cx >= 0 && cy >= 0 && cx < gitter.nx && cy < gitter.ny) { const c = cy * gitter.nx + cx; gitter.summe[c] += z; gitter.zahl[c]++; }
+    }
+    if (nurBoden && !BODEN.has(kl)) return;
+    if (drin++ % schritt) return;
+    if (zGrenze && n >= max) { verdichten(); if ((drin - 1) % schritt) return; }
+    if (n === platz) {
+      platz *= 2;
+      const a = new Float32Array(platz * 3); a.set(xyz); xyz = a;
+      const b = new Uint8Array(platz); b.set(klasse); klasse = b;
+      const c = new Uint16Array(platz); c.set(staerke); staerke = c;
+    }
+    xyz[3 * n] = e - ce; xyz[3 * n + 1] = nn - cn; xyz[3 * n + 2] = z;
+    klasse[n] = kl;
+    staerke[n] = s;
+    klassen.set(kl, (klassen.get(kl) || 0) + 1);
+    if (z < zMin) zMin = z;
+    if (z > zMax) zMax = z;
+    if (s > iMax) iMax = s;
+    n++;
+  };
+  /* Während noch geladen wird, schweigt das Ausschneiden (die Leiste zeigt das Laden) und gibt den
+   * Faden öfter frei, damit der Download weiterläuft. vorbei: der Auftrag ist anders zu Ende gegangen. */
+  let stillLesen = false, vorbei = false;
+  const LESEN_TAKT = () => stillLesen ? 0x1ffff : 0xfffff;
+  const lesenMelden = m => { if (!stillLesen) senden(m); };
+  const pruefen = () => { if (abbruch.signal.aborted || vorbei) throw new Error(ABGEBROCHEN); };
+  async function schneiden(q, t, von) {
+    if (q.felder) {
+      // Aus den entpackten Feldern: nur noch durchsehen
+      const { x, y, z, kl, st, n: anzahl, e0: ke, n0: kn } = q.felder;
+      const X0 = e0 - ke, X1 = e1 - ke, Y0 = n0 - kn, Y1 = n1 - kn;
+      for (let i = 0; i < anzahl; i++) {
+        if ((i & 0x3fffff) === 0) {
+          lesenMelden({ art: 'lesen', nr: t, von, gelesen: i, gesamt: anzahl });
+          await new Promise(r => setTimeout(r));
+          pruefen();
+        }
+        const xi = x[i], yi = y[i];
+        if (xi < X0 || xi > X1 || yi < Y0 || yi > Y1) continue;
+        nimm(xi + ke, yi + kn, z[i], kl[i], st[i]);
+      }
+      return;
+    }
+    if (q.datei) {
+      // Entpackt auf dem Gerät, ohne Platz im Arbeitsspeicher: in Stücken zu 2^20 Punkten
+      const D = q.datei, X0 = e0 - D.e0, X1 = e1 - D.e0, Y0 = n0 - D.n0, Y1 = n1 - D.n0;
+      for (let i0 = 0; i0 < D.n; i0 += 1 << 20) {
+        lesenMelden({ art: 'lesen', nr: t, von, gelesen: i0, gesamt: D.n, datei: true });
+        await new Promise(r => setTimeout(r));
+        pruefen();
+        const { x, y, z, kl, st } = entpacktStueck(D, i0, Math.min(D.n, i0 + (1 << 20)));
+        for (let i = 0; i < x.length; i++) {
+          const xi = x[i], yi = y[i];
+          if (xi < X0 || xi > X1 || yi < Y0 || yi > Y1) continue;
+          nimm(xi + D.e0, yi + D.n0, z[i], kl[i], st[i]);
+        }
+      }
+      return;
+    }
+    const { zeiger, groesse, kopf: k } = q;
+    const laszip = new LP.LASZip(), punkt = LP._malloc(64);
+    try {
+      laszip.open(zeiger, groesse);
+      // LAS 1.4 (alle neueren Befliegungen) lässt das alte 32-Bit-Feld leer, laz-perf meldet dann 0
+      const anzahl = laszip.getCount() || k.anzahl;
+      const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
+      // Ganzzahlige Grenzen: der Vergleich je Punkt ohne Umrechnung
+      const X0 = (e0 - ox) / sx, X1 = (e1 - ox) / sx, Y0 = (n0 - oy) / sy, Y1 = (n1 - oy) / sy;
+      let puffer = null, d = null;
+      for (let i = 0; i < anzahl; i++) {
+        laszip.getPoint(punkt);
+        if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
+        if ((i & LESEN_TAKT()) === 0) {
+          lesenMelden({ art: 'lesen', nr: t, von, gelesen: i, gesamt: anzahl });
+          await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) und den Download durchlassen
+          pruefen();
+        }
+        const X = d.getInt32(0, true), Y = d.getInt32(4, true);
+        if (X < X0 || X > X1 || Y < Y0 || Y > Y1) continue;
+        // Formate 0–5: Klasse in den unteren 5 Bit von Byte 15; ab 6 ein ganzes Byte 16
+        nimm(X * sx + ox, Y * sy + oy, d.getInt32(8, true) * sz + oz,
+          k.format >= 6 ? d.getUint8(16) : d.getUint8(15) & 31, d.getUint16(12, true));
+      }
+    } finally {
+      laszip.delete();
+      LP._free(punkt);
+    }
+  }
+
+  /* Überlappend: die Schnitte laufen nacheinander in einer Kette, gestartet je Kachel gleich
+   * nach ihrem Download (kachelnHolen ruft jeKachel); entpackt auf dem Gerät liegende zuerst. */
+  let kette = Promise.resolve(), schrittAnzeige = 1;   // überlappend: der gröbste Schritt einer Kachel (für die Anzeige)
+  const geschnitten = new Set();
+  const einreihen = (q, t) => {
+    geschnitten.add(q.kachel);
+    kette = kette.then(() => { schritt = schrittFuer(q); schrittAnzeige = Math.max(schrittAnzeige, schritt); drin = 0; return schneiden(q, t, kacheln.length); });
+    kette.catch(() => {});        // ausgewertet wird beim Warten auf die Kette
+  };
+  const nrVon = name => kacheln.findIndex(k => k.kachel === name);
+  if (ueberlappen) {
+    stillLesen = true;
+    for (const [kachel, D] of vonDatei) einreihen({ kachel, kopf: D.kopf, groesse: D.groesse, datei: D }, nrVon(kachel));
+  }
+  let geladen;
+  try {
+    geladen = offen.length
+      ? await kachelnHolen(LP, offen, vorratMax, true,
+        pool ? q => { if (reservieren(q)) frueh.set(q.kachel, pool.start(q)); }
+          : ueberlappen ? q => einreihen(q, nrVon(q.kachel)) : null)
+      : { da: [], fehlen: [], megabyte: 0 };
+  } catch (err) {
+    vorbei = true;                  // die laufenden Schnitte beenden, bevor der Fehler hinausgeht
+    await kette.catch(() => {});
+    throw err;
+  }
+  const { da, fehlen, megabyte } = geladen;
   zeiten.megabyte = megabyte;
   zeiten.ausDatei = vonDatei.size;       // so viele Kacheln kamen entpackt vom Gerät (laser.js: „Lesen“ statt „Entpacken“)
   zeiten.kacheln = kacheln.length;
   zeiten.laden = (performance.now() - uhr) / 1000;
   uhr = performance.now();
+  stillLesen = false;
 
   // In der Reihenfolge des Auftrags: je Kachel die entpackten Felder oder das LAZ
   const quellen = [];
@@ -730,113 +896,31 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
 
   /* Wie viele Punkte liegen etwa im Ausschnitt? Danach die Ausdünnung, damit
    * es höchstens rund max werden — gleichmäßig, jeder schritt-te Punkt. Beim
-   * Boden allein grob die Hälfte (gezählt wird beim Lesen nur, was passt). */
-  const { e0, n0, e1, n1 } = bereich;
-  const maske = umriss && umriss.length > 2 ? umrissMaske(umriss, bereich) : null;
-  const anteil = maske ? maske.flaeche / Math.max(1, (e1 - e0) * (n1 - n0)) : 1;
-  let erwartet = 0;
-  for (const { kopf: k } of quellen) {
-    const flaeche = Math.max(1, (k.max[0] - k.min[0]) * (k.max[1] - k.min[1]));
-    const ueber = Math.max(0, Math.min(e1, k.max[0]) - Math.max(e0, k.min[0])) * Math.max(0, Math.min(n1, k.max[1]) - Math.max(n0, k.min[1]));
-    erwartet += k.anzahl * Math.min(1, ueber / flaeche) * (nurBoden ? 0.5 : 1) * anteil;
-  }
-  const schritt = Math.max(1, Math.ceil(erwartet / max));
-  const ce = (e0 + e1) / 2, cn = (n0 + n1) / 2;
-
-  let platz = Math.ceil(erwartet / schritt * 1.3) + 1024;
-  let xyz = new Float32Array(platz * 3), klasse = new Uint8Array(platz), staerke = new Uint16Array(platz);
-  const klassen = new Map();
-  let n = 0, drin = 0, zMin = Infinity, zMax = -Infinity, iMax = 0;
-  /** Ein Punkt im Rechteck: Umriss, Klasse, Ausdünnung prüfen und übernehmen. */
-  const gitter = gitterZellen ? gitterAnlegen(bereich, gitterZellen) : null;
-  const nimm = (e, nn, z, kl, s) => {
-    if (maske && !inMaske(maske, e, nn)) return;
-    // Das Bodenraster sieht jeden Punkt, auch die, die die Ausdünnung gleich verwirft
-    if (gitter && BODEN.has(kl)) {
-      const cx = Math.floor((e - e0) / gitter.zelle), cy = Math.floor((nn - n0) / gitter.zelle);
-      if (cx >= 0 && cy >= 0 && cx < gitter.nx && cy < gitter.ny) { const c = cy * gitter.nx + cx; gitter.summe[c] += z; gitter.zahl[c]++; }
+   * Boden allein grob die Hälfte (gezählt wird beim Lesen nur, was passt).
+   * Mit Höhengrenze (Limitbox „Dichter laden“) taugt die Schätzung nach Fläche nicht — eine flache
+   * Box um ein Dach enthält einen Bruchteil der Säule. Dann von 1 an und beim Lesen anpassen:
+   * Sind es mehr als max, fällt jeder zweite behaltene Punkt weg und der Schritt verdoppelt sich
+   * (verdichten). Überlappend hat jede Kachel ihren eigenen Schritt (schrittFuer). */
+  if (ueberlappen) {
+    await kette;                    // was noch nicht geschnitten ist
+    pruefen();
+    for (let t = 0; t < quellen.length; t++) {
+      const q = quellen[t];
+      if (geschnitten.has(q.kachel)) continue;
+      schritt = schrittFuer(q); schrittAnzeige = Math.max(schrittAnzeige, schritt); drin = 0;
+      await schneiden(q, t, quellen.length);
     }
-    if (nurBoden && !BODEN.has(kl)) return;
-    if (drin++ % schritt) return;
-    if (n === platz) {
-      platz *= 2;
-      const a = new Float32Array(platz * 3); a.set(xyz); xyz = a;
-      const b = new Uint8Array(platz); b.set(klasse); klasse = b;
-      const c = new Uint16Array(platz); c.set(staerke); staerke = c;
-    }
-    xyz[3 * n] = e - ce; xyz[3 * n + 1] = nn - cn; xyz[3 * n + 2] = z;
-    klasse[n] = kl;
-    staerke[n] = s;
-    klassen.set(kl, (klassen.get(kl) || 0) + 1);
-    if (z < zMin) zMin = z;
-    if (z > zMax) zMax = z;
-    if (s > iMax) iMax = s;
-    n++;
-  };
-  for (let t = 0; t < quellen.length; t++) {
-    const q = quellen[t];
-    if (q.felder) {
-      // Aus den entpackten Feldern: nur noch durchsehen
-      const { x, y, z, kl, st, n: anzahl, e0: ke, n0: kn } = q.felder;
-      const X0 = e0 - ke, X1 = e1 - ke, Y0 = n0 - kn, Y1 = n1 - kn;
-      for (let i = 0; i < anzahl; i++) {
-        if ((i & 0x3fffff) === 0) {
-          senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i, gesamt: anzahl });
-          await new Promise(r => setTimeout(r));
-          if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
-        }
-        const xi = x[i], yi = y[i];
-        if (xi < X0 || xi > X1 || yi < Y0 || yi > Y1) continue;
-        nimm(xi + ke, yi + kn, z[i], kl[i], st[i]);
-      }
-      continue;
-    }
-    if (q.datei) {
-      // Entpackt auf dem Gerät, ohne Platz im Arbeitsspeicher: in Stücken zu 2^20 Punkten
-      const D = q.datei, X0 = e0 - D.e0, X1 = e1 - D.e0, Y0 = n0 - D.n0, Y1 = n1 - D.n0;
-      for (let i0 = 0; i0 < D.n; i0 += 1 << 20) {
-        senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i0, gesamt: D.n, datei: true });
-        await new Promise(r => setTimeout(r));
-        if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
-        const { x, y, z, kl, st } = entpacktStueck(D, i0, Math.min(D.n, i0 + (1 << 20)));
-        for (let i = 0; i < x.length; i++) {
-          const xi = x[i], yi = y[i];
-          if (xi < X0 || xi > X1 || yi < Y0 || yi > Y1) continue;
-          nimm(xi + D.e0, yi + D.n0, z[i], kl[i], st[i]);
-        }
-      }
-      continue;
-    }
-    const { zeiger, groesse, kopf: k } = q;
-    const laszip = new LP.LASZip(), punkt = LP._malloc(64);
-    try {
-      laszip.open(zeiger, groesse);
-      // LAS 1.4 (alle neueren Befliegungen) lässt das alte 32-Bit-Feld leer, laz-perf meldet dann 0
-      const anzahl = laszip.getCount() || k.anzahl;
-      const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
-      // Ganzzahlige Grenzen: der Vergleich je Punkt ohne Umrechnung
-      const X0 = (e0 - ox) / sx, X1 = (e1 - ox) / sx, Y0 = (n0 - oy) / sy, Y1 = (n1 - oy) / sy;
-      let puffer = null, d = null;
-      for (let i = 0; i < anzahl; i++) {
-        laszip.getPoint(punkt);
-        if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
-        if ((i & 0xfffff) === 0) {
-          senden({ art: 'lesen', nr: t, von: quellen.length, gelesen: i, gesamt: anzahl });
-          await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) durchlassen
-          if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
-        }
-        const X = d.getInt32(0, true), Y = d.getInt32(4, true);
-        if (X < X0 || X > X1 || Y < Y0 || Y > Y1) continue;
-        // Formate 0–5: Klasse in den unteren 5 Bit von Byte 15; ab 6 ein ganzes Byte 16
-        nimm(X * sx + ox, Y * sy + oy, d.getInt32(8, true) * sz + oz,
-          k.format >= 6 ? d.getUint8(16) : d.getUint8(15) & 31, d.getUint16(12, true));
-      }
-    } finally {
-      laszip.delete();
-      LP._free(punkt);
-    }
+  } else {
+    const erwartet = quellen.reduce((a, q) => a + erwartetVon(q.kopf), 0);
+    schritt = zGrenze ? 1 : Math.max(1, Math.ceil(erwartet / max));
+    for (let t = 0; t < quellen.length; t++) await schneiden(quellen[t], t, quellen.length);
   }
   if (!n) throw new Error('Im Ausschnitt liegen keine Laserpunkte.');
+  if (verdichtet) {
+    // Die Zählung je Klasse stammt noch von vor dem Verdichten
+    klassen.clear();
+    for (let j = 0; j < n; j++) klassen.set(klasse[j], (klassen.get(klasse[j]) || 0) + 1);
+  }
   // Höhen relativ zum tiefsten Punkt — Float32 reicht dann auf den Millimeter
   for (let j = 0; j < n; j++) xyz[3 * j + 2] -= zMin;
   /* Umkreis für die Normalen nach der Dichte: rund ein Dutzend Nachbarn, bei
@@ -849,7 +933,7 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);     // abgebrochen, während die Normalen liefen
   const fertigGitter = gitter ? gitterFertig(gitter, bereich, maske, zMin, ce, cn) : null;
   const ergebnis = {
-    art: 'fertig', anzahl: n, schritt, fehlen, zeiten, gitter: fertigGitter,
+    art: 'fertig', anzahl: n, schritt: ueberlappen ? schrittAnzeige : schritt, fehlen, zeiten, gitter: fertigGitter,
     mitte: [ce, cn], zMin, zMax, iMax,
     // Für den Export (Größe vorab): je Kachel Punkte, Format und Größe des LAZ
     kacheln: quellen.map(k => ({ kachel: k.kachel, anzahl: k.kopf.anzahl, format: k.kopf.format, groesse: k.groesse })),
