@@ -217,7 +217,7 @@ const TOUR_SCHRITTE = [
   {
     titel: 'Ansicht und eigener WMS',
     get text() {
-      return 'Unter „Ansicht“: hell, dunkel oder wie das Gerät, und die Signalfarbe für Punkt und Knöpfe. ' +
+      return 'Unter „Ansicht“: hell, dunkel oder wie das Gerät. ' +
         'Unter „' + (SEITENLEISTE.matches ? 'WMS' : 'Eigener WMS-Layer') + '“ lässt sich ein beliebiger ' +
         'WMS-Dienst über die Karte legen, mit Deckkraft und Anmeldung für geschützte Dienste.';
     },
@@ -359,7 +359,7 @@ const HILFE = {
     },
     {
       titel: 'Kilometer dazulegen',
-      text: '„+ Aktuelles Ergebnis" hängt Strecke und Kilometer der letzten Suche an — an die letzte Zeile, ' +
+      text: '„Aktuelles Ergebnis" (Plus) hängt Strecke und Kilometer der letzten Suche an — an die letzte Zeile, ' +
         'wenn es dieselbe Strecke ist. Aus dem Querprofil am Gleis geht das über das Teilen-Zeichen und ' +
         '„+ In die Profilmappe".',
       ziel: () => tourSichtbar('#mappeAktuell')
@@ -454,6 +454,13 @@ const HILFE = {
       ziel: () => !laserStelle && tourSichtbar('#bottom .bb-note')
     },
     {
+      titel: 'Rahmen, Rechteck, Polygon, Kacheln',
+      text: 'Wie der Ausschnitt entsteht: ein Quadrat um die getippte Stelle, zwei Ecken, beliebig viele ' +
+        'Ecken oder ganze Kacheln zu 1 × 1 km — dort nimmt ein Tipp die Kachel dazu oder wieder heraus. ' +
+        `In 3D gehen höchstens ${LASER_KACHELN_MAX} Kacheln, offline speichern geht auch mit mehr.`,
+      ziel: () => { const k = tourSichtbar('#bottom [data-laser-art]'); return k && k.parentElement; }
+    },
+    {
       titel: 'Größe',
       text: 'Die Kantenlänge des Ausschnitts, 50 m bis 1 km. Der Rahmen auf der Karte lässt sich ziehen; ein ' +
         'Tipp daneben setzt ihn neu. Gezeigt werden nur die Punkte im Rahmen, geladen aber die ganzen Kacheln, ' +
@@ -468,12 +475,6 @@ const HILFE = {
       ziel: () => tourSichtbar('#laserKosten')
     },
     {
-      titel: 'Alle Punkte oder nur Boden',
-      text: '„Nur Boden“ lässt Bewuchs, Gebäude und alles andere über dem Gelände weg — gut für Böschungen ' +
-        'und Gräben unter Bäumen.',
-      ziel: () => { const k = tourSichtbar('#bottom [data-laser-boden]'); return k && k.parentElement; }
-    },
-    {
       titel: 'In 3D ansehen',
       text: 'Lädt, entpackt und öffnet die 3D-Ansicht. Dort links die Darstellung (Färbung nach Klasse, Höhe, ' +
         'Intensität oder Normalen, Klassen ein und aus) und Messen: Distanz, Fläche, Höhe.',
@@ -485,6 +486,13 @@ const HILFE = {
         'Warten. Hier gehen auch mehr als vier Kacheln, etwa ein ganzes Tal. Auf der Karte steht dann ' +
         '„gespeichert“; unter „Auf dem Gerät“ stehen Größe und Löschen.',
       ziel: () => tourSichtbar('#laserSpeichernBtn')
+    },
+    {
+      titel: 'Auf dem Gerät',
+      text: 'Was gespeichert ist, mit Größe; ein Tipp auf den Namen zeigt die Kachel auf der Karte, das × ' +
+        'löscht sie. Darüber steht, wie viel belegt und frei ist. Steht dort nicht „dauerhaft“, darf der ' +
+        'Browser die Kacheln bei Platzmangel räumen.',
+      ziel: () => tourSichtbar('#bottom .laser-geraet')
     },
     {
       titel: 'Abbrechen',

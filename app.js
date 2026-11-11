@@ -1908,16 +1908,8 @@ const view = {
  * wie hell die Fläche ist. */
 const PALETTEN = {
   lapis:   { name: 'Lapis',   dark: { accent: '#55a5e7', ink: '#06070b' }, light: { accent: '#1761a3', ink: '#ffffff' } },
-  grau:    { name: 'Grau',    dark: { accent: '#7d7d7d', ink: '#06070b' }, light: { accent: '#5f5f5f', ink: '#ffffff' } },
-  violett: { name: 'Violett', dark: { accent: '#a78bfa', ink: '#06070b' }, light: { accent: '#6d4fd6', ink: '#ffffff' } },
-  orange:  { name: 'Orange',  dark: { accent: '#f5a524', ink: '#06070b' }, light: { accent: '#96590a', ink: '#ffffff' } },
-  gruen:   { name: 'Grün',    dark: { accent: '#34d399', ink: '#06070b' }, light: { accent: '#0f8a62', ink: '#ffffff' } },
-  // Seit 11.10.2026; jeder Ton gegen Grund und Fläche nachgerechnet, mindestens 4,8:1
-  tuerkis: { name: 'Türkis',  dark: { accent: '#22d3ee', ink: '#06070b' }, light: { accent: '#0e7490', ink: '#ffffff' } },
-  rot:     { name: 'Rot',     dark: { accent: '#ff3b30', ink: '#06070b' }, light: { accent: '#d50000', ink: '#ffffff' } },
-  pink:    { name: 'Pink',    dark: { accent: '#f472b6', ink: '#06070b' }, light: { accent: '#be185d', ink: '#ffffff' } },
-  gelb:    { name: 'Gelb',    dark: { accent: '#facc15', ink: '#06070b' }, light: { accent: '#8a6500', ink: '#ffffff' } },
-  oliv:    { name: 'Oliv',    dark: { accent: '#a3c95a', ink: '#06070b' }, light: { accent: '#53701a', ink: '#ffffff' } },
+  // Weitere Farben gab es bis 11.11.2026 zur Wahl; seitdem bleibt es beim Blau des Logos (so gewünscht).
+  // Ein gespeichertes prefs.palette fällt über „|| PALETTEN.lapis“ auf Lapis zurück.
 };
 
 let prefs = {
@@ -5565,10 +5557,10 @@ function kmlPopup(o, akte) {
    * keine Sprechblase, und daran ändert der Knopf nichts. */
   if (!zeilen.length) return '';
   if (o.art === 'p') zeilen.push(mapsKnopf(o.koord[0], o.koord[1]));
-  zeilen.push(`<button type="button" class="kml-km" data-kmlkm>Kilometer bestimmen` +
+  zeilen.push(`<button type="button" class="kml-km" data-kmlkm data-ik="stein">Kilometer bestimmen` +
     `<small>rechnet die Stelle auf die Strecke — braucht Netz</small></button>`);
   if (o.art === 'p') {
-    zeilen.push(`<button type="button" class="kml-km" data-kmlab>Abstecken` +
+    zeilen.push(`<button type="button" class="kml-km" data-kmlab data-ik="fahne">Abstecken` +
       `<small>Entfernung und Richtung vom Standort hierher</small></button>`);
     zeilen.push(routeKnopf(o.koord[0], o.koord[1], o.name || ''));
   }
@@ -6616,7 +6608,7 @@ function fpTipp(ev, pt) {
     ? `<small>Bayerische Vermessungsverwaltung, CC BY 4.0 — keine amtliche Auskunft</small>`
     : `<small>LGL-BW, OGC API (Beta) — keine amtliche Auskunft</small>`);
   zeilen.push(mapsKnopf(pt.lat, pt.lon));
-  zeilen.push(`<button type="button" class="kml-km" data-fpkm>Kilometer bestimmen` +
+  zeilen.push(`<button type="button" class="kml-km" data-fpkm data-ik="stein">Kilometer bestimmen` +
     `<small>rechnet den Punkt auf die Strecke — braucht Netz</small></button>`);
   zeilen.push(routeKnopf(pt.lat, pt.lon, 'Festpunkt'));
   const blase = L.popup({
@@ -6804,7 +6796,7 @@ function merkPunkt(lat, lon) {
     `<span>${utmText(lat, lon)}</span>` +
     hoeheZeile(lat, lon) +
     mapsKnopf(lat, lon) +
-    `<button type="button" class="kml-km" data-merkkm>Kilometer bestimmen` +
+    `<button type="button" class="kml-km" data-merkkm data-ik="stein">Kilometer bestimmen` +
     `<small>rechnet die Stelle auf die Strecke</small></button>` +
     routeKnopf(lat, lon, 'Gesetzter Punkt')
   ).openOn(map);
@@ -7533,7 +7525,9 @@ let laserAn = false;
 let laserStelle = null;      // { e, n } — Mitte des Rahmens in UTM32
 let laserZiel = null;        // { e, n, text } — gesuchte Stelle, im Viewer hervorgehoben
 let laserSeite = 200;
-let laserNurBoden = false;
+// Fest auf alle Punkte: die Wahl „Nur Boden“ ist am 11.11.2026 raus (man will immer alles);
+// Klassen blendet die 3D-Ansicht selbst aus. Der Werker kann es weiter, falls es zurückkommt.
+const laserNurBoden = false;
 /* Wie der Ausschnitt gewählt wird (11.11.2026 gewünscht): „Rahmen“ (Quadrat um die
  * angetippte Stelle, wie bisher), „Rechteck“ (zwei Ecken antippen), „Polygon“ (Ecken
  * antippen, Tipp auf den ersten Punkt schließt) oder „Kacheln“ (ganze Kacheln
@@ -8316,6 +8310,8 @@ function laserKosten() {
   const teile = [`${ks.length - fehlt} ${ks.length - fehlt === 1 ? 'Kachel' : 'Kacheln'}`];
   if (laserUmrissArt() && laserUmriss) teile.unshift(flaecheText(laserUmrissFlaeche(laserUmriss)));
   if (ks.length === fehlt) return 'Für diese Stelle gibt es keine Laserkachel.';
+  // Die Grenze fürs Ansehen steht nur da, wo sie greift — statt einer eigenen Hinweiszeile
+  if (ks.length - fehlt > LASER_KACHELN_MAX) teile.push(`3D höchstens ${LASER_KACHELN_MAX}`);
   if (!offen.length) teile.push(geraet === ks.length - fehlt ? 'alle auf dem Gerät' : geraet ? 'alle im Speicher oder auf dem Gerät' : 'alle im Speicher');
   else if (offen.some(k => laserGroessen.get(k) == null)) teile.push('Größe wird geprüft …');
   else {
@@ -8484,12 +8480,11 @@ function laserGeraetTeil() {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>`).join('');
   return `<details class="sheet-sec laser-geraet"${laserGeraetOffen ? ' open' : ''}>
     <summary><h2>Auf dem Gerät</h2><span class="laser-geraet-summe">${kopf}</span></summary>
-    ${st ? `<p class="bb-note plain">Belegt ${laserGB(st.belegt)} · frei ${laserGB(st.frei)} · ${st.dauerhaft
-      ? 'dauerhaft' : 'der Browser darf es bei Platzmangel räumen'}</p>` : ''}
+    ${st ? `<p class="bb-note plain">${laserGB(st.belegt)} belegt · ${laserGB(st.frei)} frei${st.dauerhaft ? ' · dauerhaft' : ''}</p>` : ''}
     ${LASER_IOS && !laserInstalliert() ? '<p class="bb-note">Auf dem iPhone bleiben die Kacheln nur in der installierten App sicher erhalten (Teilen → Zum Home-Bildschirm).</p>' : ''}
     ${laserGeraet.size ? `<ul class="laser-geraet-liste">${zeilen}</ul>
       <div class="bb-actions"><button type="button" id="laserGeraetAlleWeg"${laserSpeichert ? ' disabled' : ''}>Alle löschen</button></div>`
-      : '<p class="bb-note plain">Kacheln wählen und „Offline speichern“ — sie öffnen sich dann ohne Netz und ohne Warten.</p>'}
+      : '<p class="bb-note plain">Noch nichts gespeichert.</p>'}
   </details>`;
 }
 
@@ -8527,8 +8522,8 @@ const LASER_ARTEN = [['rahmen', 'Rahmen'], ['rechteck', 'Rechteck'], ['polygon',
 function laserHinweis() {
   const maus = MAUS.matches;
   if (laserArt === 'kacheln') return laserWahl.size
-    ? `Tipp auf eine Kachel nimmt sie dazu oder wieder heraus. Ansehen: bis zu ${LASER_KACHELN_MAX}, speichern: mehr.`
-    : `Tippe die Kacheln an — ansehen bis zu ${LASER_KACHELN_MAX}, offline speichern auch mehr. Das Raster zeigt sie zu 1 × 1 km.`;
+    ? 'Tipp auf eine Kachel nimmt sie dazu oder heraus.'
+    : 'Kacheln antippen.';
   if (laserArt === 'rechteck') return laserEntwurf.length ? 'Jetzt die gegenüberliegende Ecke antippen.'
     : laserUmriss ? 'Rechteck am Rand ziehen zum Verschieben. Tipp in die Karte beginnt ein neues.'
     : 'Tippe zwei gegenüberliegende Ecken an.';
@@ -8536,7 +8531,7 @@ function laserHinweis() {
     : laserEntwurf.length ? 'Weitere Ecken antippen.'
     : laserUmriss ? 'Polygon am Rand ziehen zum Verschieben. Tipp in die Karte beginnt ein neues.'
     : 'Tippe die Ecken der Fläche nacheinander an.';
-  if (!laserStelle) return 'Tippe auf die Stelle, die du dir ansehen willst. Das Raster zeigt die Kacheln zu 1 × 1 km.';
+  if (!laserStelle) return 'Auf die Karte tippen.';
   return laserGanzeKachel() ? 'Ganze Kachel 1 × 1 km. Tipp in eine andere Kachel oder Rahmen ziehen wechselt sie.'
     : 'Rahmen ziehen zum Verschieben, Tipp daneben setzt ihn neu. Ganz rechts am Regler: ganze Kachel.';
 }
@@ -8555,25 +8550,20 @@ function laserLeiste() {
   const zuSpeichern = ks.filter(k => !laserGeraet.has(k) && laserGroessen.get(k) !== 0);
   const aus = L_ ? ' disabled' : '';
   const inhalt = `
-    <div class="seg seg-drei" role="group" aria-label="Auswahl">${LASER_ARTEN.map(([art, name]) =>
-      `<button type="button" class="seg-btn${laserArt === art ? ' is-on' : ''}" data-laser-art="${art}" aria-pressed="${laserArt === art}"${aus}>${name}</button>`).join('')}</div>
+    <div class="seg seg-drei seg-ik-oben" role="group" aria-label="Auswahl">${LASER_ARTEN.map(([art, name]) =>
+      `<button type="button" class="seg-btn${laserArt === art ? ' is-on' : ''}" data-laser-art="${art}" data-ik="${art}" aria-pressed="${laserArt === art}"${aus}>${name}</button>`).join('')}</div>
     ${wahl ? `<p class="bb-sub" id="laserKosten" style="margin-top:9px">${esc(laserKosten())}</p>` : ''}
     ${laserArt === 'rahmen' ? `<label class="slider-row" for="laserSeite" style="margin-top:6px">Größe
       <input id="laserSeite" type="range" min="${LASER_SEITE.min}" max="${LASER_SEITE.max}" step="${LASER_SEITE.schritt}" value="${laserSeite}"${aus}>
       <span id="laserSeiteWert" class="slider-val">${laserSeiteText()}</span>
     </label>` : ''}
-    <div class="seg seg-paar" role="group" aria-label="Welche Punkte" style="margin-top:9px">
-      <button type="button" class="seg-btn${laserNurBoden ? '' : ' is-on'}" data-laser-boden="0"${aus}>Alle Punkte</button>
-      <button type="button" class="seg-btn${laserNurBoden ? ' is-on' : ''}" data-laser-boden="1"${aus}>Nur Boden</button>
-    </div>
     ${L_ ? `<div class="laser-lade${anteil == null ? ' unbestimmt' : ''}"><div class="laser-lade-balken" id="laserLadeBalken"${anteil == null ? '' : ` style="width:${Math.round(anteil * 100)}%"`}></div></div>
       <p class="bb-note plain" id="laserLadeText">${esc(stufe)}</p>` : ''}
     ${laserFehler ? `<p class="bb-note">${esc(laserFehler)}</p>` : ''}
     ${!L_ && !laserFehler ? `<p class="bb-note plain">${esc(laserHinweis())}</p>` : ''}
-    ${!L_ && zuViele ? `<p class="bb-note plain">Ansehen geht mit höchstens ${LASER_KACHELN_MAX} Kacheln — speichern auch mit mehr.</p>` : ''}
     <div class="bb-actions">${L_ ? '<button type="button" id="laserAbbrechenBtn">Abbrechen</button>'
-      : `<button type="button" id="laserLadenBtn" class="maps"${keine || zuViele ? ' disabled' : ''}>In 3D ansehen</button>
-        <button type="button" id="laserSpeichernBtn"${!wahl || keine || !zuSpeichern.length || laserSpeichert || laserGeraetFehler ? ' disabled' : ''}>${
+      : `<button type="button" id="laserLadenBtn" class="maps" data-ik="wuerfel"${keine || zuViele ? ' disabled' : ''}>In 3D ansehen</button>
+        <button type="button" id="laserSpeichernBtn" data-ik="laden"${!wahl || keine || !zuSpeichern.length || laserSpeichert || laserGeraetFehler ? ' disabled' : ''}>${
           wahl && !keine && !zuSpeichern.length ? 'Gespeichert' : 'Offline speichern'}</button>`}</div>
     ${laserSpeicherTeil()}
     ${laserGeraetTeil()}`;
@@ -8610,10 +8600,6 @@ function laserLeiste() {
     });
     regler.addEventListener('change', laserNeuGewaehlt);
   }
-  b.querySelectorAll('[data-laser-boden]').forEach(k => k.addEventListener('click', () => {
-    laserNurBoden = k.dataset.laserBoden === '1';
-    laserLeiste();
-  }));
   const laden = $('#laserLadenBtn');
   if (laden) laden.addEventListener('click', laserLaden);
   const speichernBtn = $('#laserSpeichernBtn');
@@ -9209,7 +9195,7 @@ function profLeiste() {
     teile.push('<p class="bb-note plain">Gleislage wird bestimmt …</p>');
   } else if (n < 2) {
     teile.push(`<p class="bb-note plain">${n ? 'Punkt B antippen — dann lädt das Profil.'
-      : 'Auf die Karte tippen setzt Punkt A. Kilometersteine und KML-Punkte werden gefangen.'}</p>`);
+      : 'Punkt A antippen.'}</p>`);
   } else if (!profDgm && profLaedt !== 'dgm') {
     const k = profZellen(profLinie(), 1000);
     teile.push('<button type="button" class="refine" id="profFreigeben">Gelände laden' +
@@ -9269,8 +9255,8 @@ function profLeiste() {
     ${teile.join('')}`;
   const unten = (g ? '' : `
     <div class="bb-actions knapp">
-      <button type="button" id="profZurueck"${n ? '' : ' disabled'}>Zurück</button>
-      <button type="button" id="profLeer"${n ? '' : ' disabled'}>Leeren</button>
+      <button type="button" id="profZurueck" class="ik-nur" data-ik="rueck" aria-label="Zurück" title="Letzten Punkt zurücknehmen"${n ? '' : ' disabled'}>Zurück</button>
+      <button type="button" id="profLeer" class="ik-nur" data-ik="muell" aria-label="Leeren" title="Beide Punkte löschen"${n ? '' : ' disabled'}>Leeren</button>
     </div>`) +
     (profDgm ? `<p class="prof-quelle">Profil aus Daten ${profQuelle(profDgm)}</p>` : '');
 
@@ -10265,7 +10251,6 @@ function mappeLeiste() {
     <textarea id="mappeText" class="mappe-text" rows="4" spellcheck="false" autocomplete="off"
       aria-label="Strecken und Kilometer, je Zeile eine Strecke"
       placeholder="5321 106,0 &amp; 106,2&#10;5100 12,5">${esc(prefs.mappeText || '')}</textarea>
-    <p class="mappe-hilfe">Je Zeile eine Strecke, dahinter ein oder mehrere km. Jeder Querschnitt wird eine Seite.</p>
     <p class="mappe-fehler" id="mappeFehler"></p>
     <div class="prof-regler">
       <span class="prof-ebenen">${ebene('mappeGeb', !!prefs.mappeGeb, 'Gebäude', true)}${ebene('mappeDom', !!prefs.mappeDom, 'Oberfläche')}</span>
@@ -10279,8 +10264,8 @@ function mappeLeiste() {
     </div>
     <div class="bb-actions knapp">
       <button type="button" id="mappeAktuell"${view.ref && view.km != null ? '' : ' disabled'}
-        title="Strecke und km des aktuellen Suchergebnisses anhängen">+ Aktuelles Ergebnis</button>
-      <button type="button" id="mappeLos" class="primary">PDF erstellen</button>
+        title="Strecke und km des aktuellen Suchergebnisses anhängen" data-ik="plus">Aktuelles Ergebnis</button>
+      <button type="button" id="mappeLos" class="primary" data-ik="blatt">PDF erstellen</button>
     </div>
     ${stand}${fehlt}`;
 
@@ -13956,38 +13941,11 @@ function applyPalette() {
   if (routeAn) routeZeichnen();     // die Linie trägt die Signalfarbe als festen Wert
 }
 
-function buildPalRow() {
-  const box = $('#palRow');
-  if (!box) return;
-  box.textContent = '';
-  Object.entries(PALETTEN).forEach(([key, p]) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'pal-btn';
-    b.dataset.palette = key;
-    b.title = p.name;
-    b.setAttribute('aria-label', 'Signalfarbe ' + p.name);
-    // Das Feld zeigt beide Töne: links der helle, rechts der dunkle Grund
-    b.style.setProperty('--pal-dark', p.dark.accent);
-    b.style.setProperty('--pal-light', p.light.accent);
-    b.addEventListener('click', () => {
-      prefs.palette = key;
-      applyPalette();
-      syncButtons();
-      saveStore();
-    });
-    box.appendChild(b);
-  });
-  syncButtons();   // applyTheme läuft vor bind(), da gibt es die Felder noch nicht
-}
-
 function syncButtons() {
   document.querySelectorAll('[data-base]').forEach(b =>
     b.classList.toggle('is-on', b.dataset.base === (prefs.base || 'osm')));
   document.querySelectorAll('[data-theme]').forEach(b =>
     b.classList.toggle('is-on', b.dataset.theme === (prefs.theme || 'auto')));
-  document.querySelectorAll('[data-palette]').forEach(b =>
-    b.classList.toggle('is-on', b.dataset.palette === (prefs.palette || 'lapis')));
 
   /* Parzellenfarbe: eine der festen, Auto — oder eine eigene, dann ist das
    * Pluszeichen markiert und trägt die Farbe */
@@ -14158,11 +14116,13 @@ async function wetterHolen() {
     $('#wetterTemp').textContent = `${eins.format(c.temperature_2m)} °C`;
     $('#wetterFeuchte').textContent = `${nfM.format(c.relative_humidity_2m)} %`;
     const zeit = (c.time || '').slice(11, 16);
-    ort.textContent = `${standort ? 'Eigener Standort' : 'Kartenmitte'} · ${nfM.format(Number.isFinite(hoehe) ? hoehe : j.elevation)} m ` +
-      `${Number.isFinite(hoehe) ? 'ü. NHN (DGM1)' : '(Höhenmodell des Dienstes)'} · Stand ${zeit} Uhr · `;
+    // Kurz, weil die Zeile unter den drei Werten steht: Ort, Höhe, Stand, Quelle. Ohne DGM1 ist es
+    // die Höhe aus dem Modell des Dienstes — dann steht „Modell“ dahinter.
+    ort.textContent = `${standort ? 'Standort' : 'Kartenmitte'} · ${nfM.format(Number.isFinite(hoehe) ? hoehe : j.elevation)} m` +
+      `${Number.isFinite(hoehe) ? '' : ' (Modell)'} · ${zeit} Uhr · `;
     // Open-Meteo gibt seine Werte unter CC BY 4.0 und bittet um Link — als Knoten, die Zeit kommt vom Dienst
     const om = document.createElement('span');
-    om.innerHTML = `Wetterdaten <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (${CC_BY})`;
+    om.innerHTML = `© <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (${CC_BY})`;
     ort.append(om);
     wetterZuletzt = Date.now();
   } catch (err) {
@@ -14301,7 +14261,6 @@ function bind() {
     applyTheme();
     saveStore();
   }));
-  buildPalRow();
   // Bei 'Automatisch' muss die Signalfarbe mitgehen, wenn das Gerät umschaltet
   window.matchMedia('(prefers-color-scheme: light)')
     .addEventListener('change', () => { if (prefs.theme === 'auto') applyPalette(); });

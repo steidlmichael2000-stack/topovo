@@ -249,17 +249,16 @@
            dazu die Linien, die die Rechnung belegen. Die Grundkarten stehen in zwei
            Reihen: gezeichnete Karten und Bilder. -->
       <p class="pal-label">Grundkarte</p>
-      <div class="seg" role="group" aria-label="Grundkarte, gezeichnet">
-        <button class="seg-btn" type="button" data-base="osm">Karte</button>
-        <button class="seg-btn" type="button" data-base="dark">Dunkel</button>
+      <div class="seg seg-zwei" role="group" aria-label="Grundkarte, gezeichnet">
+        <button class="seg-btn" type="button" data-base="osm" data-ik="karte">Karte</button>
+        <button class="seg-btn" type="button" data-base="dark" data-ik="mond">Dunkel</button>
       </div>
-      <div class="seg" role="group" aria-label="Grundkarte, Bild" style="margin-top:7px">
-        <button class="seg-btn" type="button" data-base="dop">Luftbild</button>
+      <div class="seg seg-zwei" role="group" aria-label="Grundkarte, Bild" style="margin-top:7px">
+        <button class="seg-btn" type="button" data-base="dop" data-ik="foto">Luftbild</button>
         <!-- Tippen wählt das Relief, lange drücken oder Rechtsklick öffnet darunter
              die Wahl Grau oder Höhenfarben — wie bei DB-Netz und Festpunkten. -->
-        <button class="seg-btn parz-knopf" type="button" data-base="relief" id="reliefBtn" aria-controls="reliefWahl"
-                aria-expanded="false" title="Lange drücken oder Rechtsklick: grau oder Höhenfarben"><svg
-                class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg>Relief</button>
+        <button class="seg-btn parz-knopf" type="button" data-base="relief" id="reliefBtn" data-ik="berg" aria-controls="reliefWahl"
+                aria-expanded="false" title="Lange drücken oder Rechtsklick: grau oder Höhenfarben">Relief<svg class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg></button>
       </div>
       <div class="parz-wahl" id="reliefWahl" hidden>
         <p class="pal-label">Relief zeigen</p>
@@ -271,27 +270,25 @@
         nur in Bayern und Baden-Württemberg, auf Knopfdruck in der Leiste unten.</p>
       </div>
       <p class="pal-label">Auflagen</p>
-      <div class="seg" role="group" aria-label="Auflagen">
-        <button class="seg-btn" type="button" id="ormBtn">Bahn-Layer</button>
+      <div class="seg seg-zwei" role="group" aria-label="Auflagen">
+        <button class="seg-btn" type="button" id="ormBtn" data-ik="gleis">Bahn-Layer</button>
         <!-- Tippen schaltet, lange drücken oder Rechtsklick öffnet die Farbwahl darunter.
              Das Feld vor dem Wort zeigt die Farbe, in der sie gerade gezeichnet werden. -->
         <button class="seg-btn parz-knopf" type="button" id="parzBtn" aria-controls="parzRow"
                 title="Lange drücken oder Rechtsklick: Farbe"><span class="parz-jetzt" aria-hidden="true"></span>Parzellen</button>
         <!-- Das InfraGO-Netz. Tippen schaltet, lange drücken oder Rechtsklick öffnet
-             die Auswahl, was es zeigt. Die drei Striche vor dem Wort sagen, dass es da
+             die Auswahl, was es zeigt. Die drei Striche hinter dem Wort sagen, dass es da
              etwas auszuwählen gibt — wie das Farbfeld bei den Parzellen. -->
-        <button class="seg-btn parz-knopf" type="button" id="ifgBtn" aria-controls="ifgWahl" aria-expanded="false"
-                title="Lange drücken oder Rechtsklick: was gezeigt wird"><svg class="ifg-wahl-zeichen" viewBox="0 0 10 9"
-                aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg>DB-Netz</button>
-      </div>
-      <div class="seg" role="group" aria-label="Straßen, Ortsnamen, Festpunkte" style="margin-top:7px">
-        <button class="seg-btn" type="button" id="strBtn">Straßen</button>
-        <button class="seg-btn" type="button" id="ortBtn">Ortsnamen</button>
+        <button class="seg-btn parz-knopf" type="button" id="ifgBtn" data-ik="kreuz" aria-controls="ifgWahl" aria-expanded="false"
+                title="Lange drücken oder Rechtsklick: was gezeigt wird">DB-Netz<svg class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg></button>
         <!-- Festpunkte (BW) aus der OGC API des LGL. Tippen schaltet, lange drücken
              oder Rechtsklick öffnet die Auswahl der Punktarten — wie beim DB-Netz. -->
-        <button class="seg-btn parz-knopf" type="button" id="fpBtn" aria-controls="fpWahl" aria-expanded="false"
-                title="Lange drücken oder Rechtsklick: welche Punkte"><svg class="ifg-wahl-zeichen" viewBox="0 0 10 9"
-                aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg>Festpunkte</button>
+        <button class="seg-btn parz-knopf" type="button" id="fpBtn" data-ik="tp" aria-controls="fpWahl" aria-expanded="false"
+                title="Lange drücken oder Rechtsklick: welche Punkte">Festpunkte<svg class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg></button>
+      </div>
+      <div class="seg seg-zwei" role="group" aria-label="Straßen und Ortsnamen" style="margin-top:7px">
+        <button class="seg-btn" type="button" id="strBtn" data-ik="strasse">Straßen</button>
+        <button class="seg-btn" type="button" id="ortBtn" data-ik="schrift">Ortsnamen</button>
       </div>
       <!-- Die beiden Auswahlen klappen unter der ganzen Auflagengruppe auf, nicht
            zwischen ihren Reihen: Dort sahen Straßen und Ortsnamen aus, als gehörten
@@ -399,11 +396,11 @@
       </div>
       <p class="wetter-ort" id="wetterOrt"></p>
       <div class="seg">
-        <button id="wetterHolen" class="seg-btn" type="button">Aktualisieren</button>
+        <button id="wetterHolen" class="seg-btn" type="button" data-ik="neu">Aktualisieren</button>
       </div>
       <p class="pal-label">Auf der Karte</p>
       <div class="seg" role="group" aria-label="Wetter auf der Karte">
-        <button class="seg-btn" type="button" id="radarBtn">Regenradar</button>
+        <button class="seg-btn" type="button" id="radarBtn" data-ik="radar">Regenradar</button>
       </div>
       <button type="button" class="erkl-knopf" aria-expanded="false" aria-controls="erklWetter">Erklärung</button>
       <div class="erkl" id="erklWetter" hidden>
@@ -426,14 +423,14 @@
     <details class="sheet-sec" data-sec="kml">
       <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8.5L18 6.5V21H6zM14.5 3v3.5H18"/><circle cx="12" cy="13.5" r="2.2"/></svg><h2>Eigene KML-Dateien</h2></summary>
       <div class="seg">
-        <button id="kmlAdd" class="seg-btn" type="button">KML oder KMZ öffnen</button>
+        <button id="kmlAdd" class="seg-btn" type="button" data-ik="ordner">KML oder KMZ öffnen</button>
       </div>
       <input id="kmlFile" type="file" multiple hidden
              accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz">
       <div id="kmlList" class="kml-list"></div>
 
       <div class="seg" role="group" aria-label="Beschriftung">
-        <button class="seg-btn" type="button" id="kmlNamenBtn">Namen auf der Karte</button>
+        <button class="seg-btn" type="button" id="kmlNamenBtn" data-ik="etikett">Namen auf der Karte</button>
       </div>
 
       <button type="button" class="erkl-knopf" aria-expanded="false" aria-controls="erklKml">Erklärung</button>
@@ -465,21 +462,11 @@
       <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path class="voll" d="M12 3.5a8.5 8.5 0 0 0 0 17z"/></svg><h2>Ansicht</h2></summary>
       <p class="pal-label">Helligkeit</p>
       <div class="seg" role="group" aria-label="Helligkeit">
-        <button class="seg-btn" type="button" data-theme="auto">Automatisch</button>
-        <button class="seg-btn" type="button" data-theme="light">Hell</button>
-        <button class="seg-btn" type="button" data-theme="dark">Dunkel</button>
+        <button class="seg-btn" type="button" data-theme="auto" data-ik="auto">Automatisch</button>
+        <button class="seg-btn" type="button" data-theme="light" data-ik="sonne">Hell</button>
+        <button class="seg-btn" type="button" data-theme="dark" data-ik="mond">Dunkel</button>
       </div>
 
-      <!-- Die Felder baut die App aus PALETTEN in app.js. -->
-      <p class="pal-label">Signalfarbe</p>
-      <div class="pal" id="palRow" role="group" aria-label="Signalfarbe"></div>
-      <button type="button" class="erkl-knopf" aria-expanded="false" aria-controls="erklAnsicht">Erklärung</button>
-      <div class="erkl" id="erklAnsicht" hidden>
-      <p class="fine">Die Signalfarbe markiert den gefundenen Punkt, gefüllte Knöpfe und
-      alles Angetippte. Jede Farbe hat einen eigenen Ton für Hell und Dunkel, damit
-      Beschriftungen auf beiden Gründen lesbar bleiben. Der eigene Standort auf der Karte bleibt
-      blau, damit er sich vom gefundenen Punkt unterscheidet.</p>
-      </div>
     </details>
 
     <!-- Aufgebaut wie die übrigen Abschnitte: Beschriftung über jeder Gruppe,
@@ -494,15 +481,15 @@
                aria-label="Layer-Name">
       </div>
       <div class="seg" role="group" aria-label="Eigener WMS-Layer">
-        <button id="wmsLoad" class="seg-btn" type="button">Layer laden</button>
-        <button id="wmsLogin" class="seg-btn" type="button">Anmelden</button>
-        <button id="wmsToggle" class="seg-btn" type="button">Anzeigen</button>
+        <button id="wmsLoad" class="seg-btn" type="button" data-ik="liste">Layer laden</button>
+        <button id="wmsLogin" class="seg-btn" type="button" data-ik="schluessel">Anmelden</button>
+        <button id="wmsToggle" class="seg-btn" type="button" data-ik="auge">Anzeigen</button>
       </div>
 
       <div id="wmsPaste" class="stack" hidden>
         <textarea id="wmsXml" rows="3" spellcheck="false"
           placeholder="GetCapabilities-XML aus dem Anmelde-Tab hier einfügen"></textarea>
-        <div class="seg"><button id="wmsParse" class="seg-btn" type="button">XML auswerten</button></div>
+        <div class="seg"><button id="wmsParse" class="seg-btn" type="button" data-ik="code">XML auswerten</button></div>
       </div>
 
       <div id="wmsList" class="fac-out"></div>
@@ -646,7 +633,7 @@
       <div class="hoehen-werte"><span id="hoehenTief"></span><span id="hoehenMitte"></span><span id="hoehenHoch"></span></div>
     </div>
     <p id="hoehenSkalaText" class="bb-note plain"></p>
-    <div class="bb-actions"><button type="button" id="hoehenKnopf" class="maps">Ausschnitt einfärben</button></div>
+    <div class="bb-actions"><button type="button" id="hoehenKnopf" class="maps" data-ik="pinsel">Ausschnitt einfärben</button></div>
   </div>
 
   <div id="ziel" class="bar bar-ziel" hidden></div>

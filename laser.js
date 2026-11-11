@@ -377,19 +377,19 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         <span class="slider-val lz-groesse-wert"></span>
       </label>
       <details class="sheet-sec" open>
-        <summary><h2>Färbung</h2></summary>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5s-6 6.5-6 10.5a6 6 0 0 0 12 0c0-4-6-10.5-6-10.5z"/></svg><h2>Färbung</h2></summary>
         <div class="seg seg-paar lz-faerbung" role="group" aria-label="Färbung">
-          <button type="button" class="seg-btn" data-faerbung="rgb">Farbe</button>
-          <button type="button" class="seg-btn is-on" data-faerbung="klasse">Klasse</button>
-          <button type="button" class="seg-btn" data-faerbung="hoehe">Höhe</button>
-          <button type="button" class="seg-btn" data-faerbung="intensitaet">Intensität</button>
-          <button type="button" class="seg-btn" data-faerbung="normalen">Normalen</button>
-          <button type="button" class="seg-btn" data-faerbung="neigung">Neigung</button>
-          <button type="button" class="seg-btn" data-faerbung="luftbild">Luftbild</button>
+          <button type="button" class="seg-btn" data-faerbung="rgb" data-ik="farbe">Farbe</button>
+          <button type="button" class="seg-btn is-on" data-faerbung="klasse" data-ik="klasse">Klasse</button>
+          <button type="button" class="seg-btn" data-faerbung="hoehe" data-ik="hoehe">Höhe</button>
+          <button type="button" class="seg-btn" data-faerbung="intensitaet" data-ik="intensitaet">Intensität</button>
+          <button type="button" class="seg-btn" data-faerbung="normalen" data-ik="normalen">Normalen</button>
+          <button type="button" class="seg-btn" data-faerbung="neigung" data-ik="neigung">Neigung</button>
+          <button type="button" class="seg-btn" data-faerbung="luftbild" data-ik="foto">Luftbild</button>
         </div>
       </details>
       <details class="sheet-sec">
-        <summary><h2>Effekte</h2></summary>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.2 5.6 5.8.4-4.5 3.7 1.5 5.8-5-3.2-5 3.2 1.5-5.8L4 9.5l5.8-.4z"/></svg><h2>Effekte</h2></summary>
         <label class="slider-row">Schatten
           <input type="range" class="lz-licht" min="0" max="100" step="5" value="50">
           <span class="slider-val lz-licht-wert"></span>
@@ -399,23 +399,23 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <span class="slider-val lz-edl-wert"></span>
         </label>
         <div class="lz-klassen lz-effekte">
-          <button type="button" class="seg-btn lz-klasse" data-effekt="verdeckung" aria-pressed="false"><span class="lz-name">Verdeckung</span><small>aus</small></button>
-          <button type="button" class="seg-btn lz-klasse" data-effekt="kugeln" aria-pressed="false"><span class="lz-name">Kugeln</span><small>aus</small></button>
-          <button type="button" class="seg-btn lz-klasse" data-effekt="linien" aria-pressed="false"><span class="lz-name">Höhenlinien</span><small>aus</small></button>
+          <button type="button" class="seg-btn lz-klasse" data-effekt="verdeckung" data-ik="verdeckung" aria-pressed="false"><span class="lz-name">Verdeckung</span><small>aus</small></button>
+          <button type="button" class="seg-btn lz-klasse" data-effekt="kugeln" data-ik="kugeln" aria-pressed="false"><span class="lz-name">Kugeln</span><small>aus</small></button>
+          <button type="button" class="seg-btn lz-klasse" data-effekt="linien" data-ik="linien" aria-pressed="false"><span class="lz-name">Höhenlinien</span><small>aus</small></button>
         </div>
       </details>
       <details class="sheet-sec lz-klassen-titel" open>
-        <summary><h2>Klassen</h2></summary>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/></svg><h2>Klassen</h2></summary>
         <div class="lz-klassen lz-klassenliste"></div>
       </details>
       <details class="sheet-sec lz-aufl-titel">
-        <summary><h2>Auflagen</h2></summary>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9 4.5-9 4.5L3 8zM3 12l9 4.5 9-4.5M3 16l9 4.5 9-4.5"/></svg><h2>Auflagen</h2></summary>
         <div class="lz-klassen lz-aufl">
           <button type="button" class="seg-btn lz-klasse lz-geb" aria-pressed="false">
             <span class="lz-feld" style="background:#e4e7ec"></span><span class="lz-name">3D-Gebäudemodell LoD2</span><small></small></button>
           <div class="seg seg-paar lz-geb-dach" role="group" aria-label="Dächer" hidden>
-            <button type="button" class="seg-btn is-on" data-dach="grau">Dächer grau</button>
-            <button type="button" class="seg-btn" data-dach="luftbild" title="Dachflächen in den Farben des Luftbilds (DOP20), Wände bleiben grau">Dächer Luftbild</button>
+            <button type="button" class="seg-btn is-on" data-dach="grau" data-ik="haus">Dächer grau</button>
+            <button type="button" class="seg-btn" data-dach="luftbild" data-ik="foto" title="Dachflächen in den Farben des Luftbilds (DOP20), Wände bleiben grau">Dächer Luftbild</button>
           </div>
           <button type="button" class="seg-btn lz-klasse lz-achsen" aria-pressed="false">
             <span class="lz-feld" style="background:${ACHS_FARBE}"></span><span class="lz-name">Streckenachsen</span><small></small></button>
@@ -430,21 +430,21 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         </div>
       </details>
       <details class="sheet-sec">
-        <summary><h2>Ansicht</h2></summary>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg><h2>Ansicht</h2></summary>
         <p class="pal-label">Kamera</p>
         <div class="seg seg-paar" role="group" aria-label="Kamera">
-          <button type="button" class="seg-btn is-on" data-kamera="perspektive">Perspektive</button>
-          <button type="button" class="seg-btn" data-kamera="ortho">Orthografisch</button>
+          <button type="button" class="seg-btn is-on" data-kamera="perspektive" data-ik="perspektive">Perspektive</button>
+          <button type="button" class="seg-btn" data-kamera="ortho" data-ik="ortho">Orthografisch</button>
         </div>
         <p class="pal-label">Hintergrund</p>
         <div class="seg seg-paar" role="group" aria-label="Hintergrund">
-          <button type="button" class="seg-btn is-on" data-grund="verlauf">Verlauf</button>
-          <button type="button" class="seg-btn" data-grund="schwarz">Schwarz</button>
-          <button type="button" class="seg-btn" data-grund="weiss">Weiß</button>
+          <button type="button" class="seg-btn is-on" data-grund="verlauf" data-ik="verlauf">Verlauf</button>
+          <button type="button" class="seg-btn" data-grund="schwarz" data-ik="schwarz">Schwarz</button>
+          <button type="button" class="seg-btn" data-grund="weiss" data-ik="weiss">Weiß</button>
         </div>
       </details>
       <details class="sheet-sec">
-        <summary><h2>Ausschnitt</h2></summary>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.8v5.7"/><circle class="voll" cx="12" cy="7.8" r="1.1"/></svg><h2>Ausschnitt</h2></summary>
         <div class="lz-info"></div>
       </details>
     </div>

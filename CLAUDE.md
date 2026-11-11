@@ -47,7 +47,8 @@ Daten liegen haben — wer sie streicht, löscht die Daten dieser Geräte mit.
 
 ## Signalfarbe
 
-Umschaltbar, Standard ist **Lapis** (`#1761A3`) — der Blauton des Firmenlogos.
+**Fest Lapis** (`#1761A3`) — der Blauton des Firmenlogos. Die Wahl unter „Ansicht“ ist seit 11.11.2026 raus
+(so gewünscht: es bleibt beim Blau); `PALETTEN` hat nur noch `lapis`, gespeicherte andere Werte fallen darauf zurück.
 Die Farben stehen in `PALETTEN` in `app.js`, **nicht** im Stylesheet: jede Farbe
 braucht einen eigenen Ton für Hell und für Dunkel, und die Wahl muss zur
 Laufzeit umschaltbar sein. `applyPalette()` setzt `--accent` und `--accent-ink`
@@ -432,13 +433,24 @@ MESSWERK bleibt, aber gerundet und mit Glas. Alles hängt an Tokens oben in `sty
   Leisten. Ein dichteres Menü hat der Nutzer abgelehnt. Hell war .74 zu deckend („das Durchsichtige
   hat es nicht ins Helle geschafft").
 - Knöpfe ohne Rahmen: `border: 1px solid transparent` statt weg, damit die Maße pixelgleich
-  bleiben. Gewählt = gefüllt in `--accent`; Kartenknöpfe an = getöntes Glas (`color-mix`), nicht
+  bleiben. Gewählt = „Ton in Ton“ (seit 11.11.2026, aus fünf Entwürfen gewählt): Fläche `--accent-flaeche`
+  (getönt), Rand `--accent-ring`, Schrift `--accent`; die Sammelregel am Ende von `style.css` — wer einen neuen
+  gewählten Knopf baut, hängt ihn dort an. Voll gefüllt und Verlauf wirkten im Dunkeln billig; Kartenknöpfe an = getöntes Glas (`color-mix`), nicht
   gefüllt (gefüllt sah „komisch" aus).
 - Regler mit rundem weißem Knauf (`--knauf`), kein blauer Klotz. `--warn` kräftiger (#ff9f0a / #d96400).
 - Höhenprofil: Fläche mit Verlauf `#profVerlauf` (oben kräftig, unten durchsichtig) — ausdrücklich
   gewünscht, nur in der App, im PDF darf es anders sein. Zeigerschild ohne schwarze Kontur.
 - Aufklapp-Animationen (`von-oben`, `von-unten`, `vom-knopf`, `einblenden`, Kurve `--auf`) nur mit
   transform/opacity, sonst stimmen die Höhen in `updateBH` nicht. Die Tour misst nach `animationend`.
+
+**Symbole auf Knöpfen** (11.11.2026, so gewünscht): `data-ik="name"` am Knopf, das Symbol kommt als
+`::before`-Maske in `currentColor` aus den Regeln `[data-ik="…"]` am Ende von `style.css` (Strich 24er-Raster,
+erzeugt aus SVG-Pfaden). Als Pseudo-Element bleibt es stehen, wenn JS den Text per `textContent` tauscht.
+`.ik-nur` = nur Symbol (Profil Zurück/Leeren, mit `aria-label`/`title`), `.seg-ik-oben` = Symbol über dem Wort
+(Laser-Auswahl, vier schmale Knöpfe). Auch die Tafel der 3D-Ansicht (`laser.js`) trägt sie, samt Symbolen an den
+Abschnittsköpfen; der PW-Viewer bekommt Symbole und Verlauf erst mit `topovo-holen.sh` (er lädt `topovo/style.css`). Grundkarte und Auflagen stehen dafür in zwei gleichen Spalten
+(`.seg-zwei`); die drei Striche „Auswahl per langem Druck“ stehen hinter dem Wort. Hinweistexte in den Leisten
+nur noch knapp (Zustand), die Bedienung erklärt das ? (`HILFE` in `tour.js`).
 
 **Stand 03.11.2026:** Desktop durchgeklickt (Suche, Leiste zu/auf, alle Abschnitte, Grundkarten, Hell,
 Profil, Mappe, Polygon, Live, Radar, Route, Tour mit allen 11 Zielen, KML-Import mit sieben Dateien des
