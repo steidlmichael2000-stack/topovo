@@ -207,7 +207,7 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Eigene Dateien und Abstecken',
-    text: 'KML- und KMZ-Dateien bleiben auf dem Gerät, auch ohne Netz. Haben sie Punkte, erscheint ' +
+    text: 'KML-, KMZ- und GPX-Dateien bleiben auf dem Gerät, auch ohne Netz. Haben sie Punkte, erscheint ' +
       'rechts ein Fähnchen: Punkt wählen, dann zeigen Pfeil und Entfernung den Weg dorthin — auf ' +
       'Wunsch nach dem Kompass des Handys.',
     ziel: () => tourSichtbar('#sheet [data-sec="kml"]'),

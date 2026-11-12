@@ -5489,6 +5489,81 @@ function kmlParse(xmlText) {
   };
 }
 
+/* -------- GPX (12.11.2026, so gewünscht: Wanderrouten) --------
+ * Liefert dasselbe wie kmlParse, damit GPX-Dateien wie KML in Liste, Karte, Abstecken und
+ * Laserviewer erscheinen: Wegpunkte (wpt) als Punkte mit Höhe, Tracks (trk, je Segment) und
+ * Routen (rte) als Linien. Bei Linien steht in der Beschreibung die Länge (auf dem Ellipsoid) und,
+ * wo die Datei Höhen hat, Auf- und Abstieg — mit 5 m Schwelle, sonst zählte das Rauschen der
+ * GNSS-Höhen jeden Meter mit. Stile gibt es in GPX nicht; die Farbe kommt von der Datei. */
+function gpxParse(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('kein lesbares GPX');
+  const kind = (el, name) => { for (const c of el.children) if (c.localName === name) return c; return null; };
+  const text = (el, name) => { const c = kind(el, name); return c ? c.textContent.trim() : ''; };
+  const punkt = el => {
+    const lat = parseFloat(el.getAttribute('lat')), lon = parseFloat(el.getAttribute('lon'));
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    const ele = parseFloat(text(el, 'ele'));
+    return { koord: [lat, lon], ele: isFinite(ele) ? ele : null };
+  };
+  const objekte = [];
+  let sLat = 90, wLon = 180, nLat = -90, oLon = -180;
+  const merken = k => {
+    if (k[0] < sLat) sLat = k[0];
+    if (k[0] > nLat) nLat = k[0];
+    if (k[1] < wLon) wLon = k[1];
+    if (k[1] > oLon) oLon = k[1];
+  };
+  const zahl1 = v => v.toLocaleString('de-DE', { maximumFractionDigits: v < 10 ? 2 : 1 });
+  /** Länge, Auf- und Abstieg eines Linienzugs als Zeile. */
+  const kennzahlen = pts => {
+    let laenge = 0, auf = 0, ab = 0, ref = null;
+    for (let i = 0; i < pts.length; i++) {
+      if (i) laenge += ellipsoidAbstand(pts[i - 1].koord, pts[i].koord);
+      const h = pts[i].ele;
+      if (h == null) continue;
+      if (ref == null) { ref = h; continue; }
+      if (h - ref >= 5) { auf += h - ref; ref = h; } else if (ref - h >= 5) { ab += ref - h; ref = h; }
+    }
+    const mitHoehe = pts.some(p => p.ele != null);
+    return `Länge ${zahl1(laenge / 1000)} km` + (mitHoehe ? ` · ↑ ${Math.round(auf).toLocaleString('de-DE')} m · ↓ ${Math.round(ab).toLocaleString('de-DE')} m` : '');
+  };
+  const linie = (pts, name, beschreibung, ordner, typ) => {
+    if (pts.length < 2) return;
+    pts.forEach(p => merken(p.koord));
+    objekte.push({ art: 'l', koord: pts.map(p => p.koord), name, ordner,
+      text: [kennzahlen(pts), beschreibung].filter(Boolean).join(' · ').slice(0, 700),
+      daten: typ ? [['Typ', typ]] : [], stil: null });
+  };
+  for (const el of doc.getElementsByTagNameNS('*', 'wpt')) {
+    const p = punkt(el);
+    if (!p) continue;
+    merken(p.koord);
+    objekte.push({ art: 'p', koord: p.koord, ...(p.ele != null && p.ele !== 0 ? { hoehe: p.ele } : {}),
+      name: text(el, 'name'), text: (text(el, 'desc') || text(el, 'cmt')).slice(0, 700),
+      daten: text(el, 'type') ? [['Typ', text(el, 'type')]] : [], ordner: 'Wegpunkte', stil: null });
+  }
+  for (const trk of doc.getElementsByTagNameNS('*', 'trk')) {
+    const name = text(trk, 'name'), segmente = [...trk.children].filter(c => c.localName === 'trkseg');
+    segmente.forEach((seg, i) => {
+      const pts = [...seg.children].filter(c => c.localName === 'trkpt').map(punkt).filter(Boolean);
+      linie(pts, segmente.length > 1 ? `${name || 'Track'} (${i + 1})` : name, text(trk, 'desc'), 'Tracks', text(trk, 'type'));
+    });
+  }
+  for (const rte of doc.getElementsByTagNameNS('*', 'rte')) {
+    const pts = [...rte.children].filter(c => c.localName === 'rtept').map(punkt).filter(Boolean);
+    linie(pts, text(rte, 'name'), text(rte, 'desc'), 'Routen', text(rte, 'type'));
+  }
+  const meta = [...doc.documentElement.children].find(c => c.localName === 'metadata');
+  return {
+    objekte,
+    titel: meta ? text(meta, 'name') : '',
+    grenzen: objekte.length && nLat >= sLat ? [[sLat, wLon], [nLat, oLon]] : null
+  };
+}
+/** GPX statt KML? Nach der Endung oder dem Wurzelelement. */
+const istGpx = (name, text) => /\.gpx$/i.test(name) || /<gpx[\s>]/i.test(text.slice(0, 3000));
+
 /* -------- KMZ auspacken -------- */
 
 /* Obergrenzen gegen präparierte Dateien. Großzügig: Vermessungs-KML mit einigen
@@ -5977,14 +6052,14 @@ async function kmlOeffnen(dateien) {
       const buf = await datei.arrayBuffer();
       const istZip = buf.byteLength > 4 && new DataView(buf).getUint32(0, false) === 0x504b0304;
       const roh = istZip ? await kmzText(buf) : kmlDekodieren(buf);
-      const geparst = kmlParse(roh);
+      const geparst = !istZip && istGpx(datei.name, roh) ? gpxParse(roh) : kmlParse(roh);
       if (!geparst.objekte.length) { toast(datei.name + ': keine Geometrie gefunden.'); continue; }
 
       const vorlaeufig = { objekte: geparst.objekte };
       const autoFeld = kmlAutoFeld(vorlaeufig);
       const akte = {
         id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        name: datei.name.replace(/\.(kml|kmz)$/i, '') || 'KML',
+        name: datei.name.replace(/\.(kml|kmz|gpx)$/i, '') || 'KML',
         /* Trägt die Datei ein Merkmal, das nach Typ aussieht, werden die Formen
          * gleich danach unterschieden — genau dafür steht es ja drin. */
         symbol: autoFeld ? 'auto' : 'kreis',
@@ -14611,9 +14686,9 @@ function bind() {
   window.addEventListener('drop', ev => {
     if (!zieht(ev)) return;
     ev.preventDefault();      // sonst öffnet der Browser die Datei und die App ist weg
-    const dateien = [...ev.dataTransfer.files].filter(f => /\.(kml|kmz)$/i.test(f.name));
+    const dateien = [...ev.dataTransfer.files].filter(f => /\.(kml|kmz|gpx)$/i.test(f.name));
     if (dateien.length) kmlOeffnen(dateien);
-    else toast('Nur KML- und KMZ-Dateien.');
+    else toast('Nur KML-, KMZ- und GPX-Dateien.');
   });
 
   // WMS: Adresse und Layer merken, Zugangsdaten bleiben beim Browser

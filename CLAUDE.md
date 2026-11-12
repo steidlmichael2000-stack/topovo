@@ -350,6 +350,13 @@ erklärt die Tour eine App, die es so nicht mehr gibt.
   Blase ein, `getBoundingClientRect` meldet dann Zwischenstände. Die gesetzten Werte in `style`
   vergleichen oder vorher einen Screenshot auslösen.
 
+## GPX-Import (12.11.2026, so gewünscht für Wanderrouten)
+
+GPX läuft durch den KML-Import (`kmlOeffnen`): `istGpx` (Endung oder `<gpx` im Kopf) → `gpxParse`, das dasselbe liefert
+wie `kmlParse` — Wegpunkte als Punkte mit Höhe (ordner „Wegpunkte“), je Track-Segment und Route eine Linie („Tracks“,
+„Routen“) mit Länge (Ellipsoid) und Auf-/Abstieg (5-m-Schwelle gegen GNSS-Rauschen) im Text. Damit gelten Liste, Farbe,
+Abstecken, Laserviewer (Linien auf dem Laserboden) unverändert. Datei-Auswahl, Ziehen und Tour nennen GPX mit.
+
 ## Festpunkte BW (`fp…`, Oktober 2026)
 
 Auflage `fp` (in `AUFLAGEN`), Knopf `#fpBtn` wie DB-Netz über `auswahlKnopfBinden`, Arten in
