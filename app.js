@@ -8276,6 +8276,8 @@ function laserEntwurfZeichnen(ev) {
  * Ist eine Ansicht offen, bleibt sie stehen, bis die neue da ist, und wird dann ersetzt (laserTausch). */
 let laserTausch = false;
 async function laserLaden(auswahl = null) {
+  // Nur eine echte Auswahl aus der Limitbox zählt (v126 verlor sonst den Klick als „auswahl“: am Handy passierte nichts)
+  if (!auswahl || !Array.isArray(auswahl.umriss)) auswahl = null;
   if (!laserHatWahl() || laserLaedt) return;
   const namen = (auswahl ? laserUmrissKacheln(auswahl.umriss).filter(k => laserKacheln().includes(k)) : laserKacheln())
     .filter(k => laserGroessen.get(k) !== 0 || laserGeraet.has(k));
@@ -8810,7 +8812,7 @@ function laserLeiste() {
     regler.addEventListener('change', laserNeuGewaehlt);
   }
   const laden = $('#laserLadenBtn');
-  if (laden) laden.addEventListener('click', laserLaden);
+  if (laden) laden.addEventListener('click', () => laserLaden());   // nicht direkt: das Klick-Ereignis landete sonst in auswahl
   const speichernBtn = $('#laserSpeichernBtn');
   if (speichernBtn) speichernBtn.addEventListener('click', laserSpeichern);
   laserGeraetBinden(b);
