@@ -18,6 +18,51 @@
 
 'use strict';
 
+/* Android-App (android/, 12.11.2026 gewünscht: Karte unter der Statusleiste wie Google Maps). Die App
+ * zeichnet randlos und gibt die Höhe von Statusleiste und Gestenleiste über TopovoAndroid.raender()
+ * als JSON in CSS-Pixeln; bei Änderungen (Drehen) ruft sie window.androidRaender selbst auf. */
+function androidRaender(r) {
+  if (!r) return;
+  const st = document.documentElement.style;
+  st.setProperty('--sa-oben', (+r.oben || 0) + 'px');
+  st.setProperty('--sa-unten', (+r.unten || 0) + 'px');
+}
+if (window.TopovoAndroid) {
+  const A = window.TopovoAndroid;
+  try { androidRaender(JSON.parse(A.raender())); } catch (e) { console.warn(e); }
+  window.androidRaender = androidRaender;
+  /* Der WebView kann weder blob:-Downloads noch navigator.share. Beides geht hier über die App:
+   * Datei in Stücken als Base64 hinüber (3 MB, durch 3 teilbar, also ohne Füllzeichen mittendrin),
+   * gespeichert unter Downloads oder an das Teilen-Menü von Android gegeben. */
+  const androidDatei = async (blob, name, teilen) => {
+    const id = A.beginn(String(name || 'Topovo'), blob.type || '', !!teilen);
+    if (id < 0) throw new Error('Android: Datei nicht angelegt');
+    const STUECK = 3 * 1024 * 1024;
+    try {
+      for (let i = 0; i < blob.size; i += STUECK) {
+        const b = new Uint8Array(await blob.slice(i, i + STUECK).arrayBuffer());
+        let t = '';
+        for (let j = 0; j < b.length; j += 0x8000) t += String.fromCharCode.apply(null, b.subarray(j, j + 0x8000));
+        if (!A.teil(id, btoa(t))) throw new Error('Android: Schreiben fehlgeschlagen');
+      }
+    } catch (e) { A.abbrechen(id); throw e; }
+    A.ende(id);
+  };
+  document.addEventListener('click', ev => {
+    const a = ev.target.closest && ev.target.closest('a[download]');
+    if (!a || !/^(blob|data):/.test(a.href)) return;
+    ev.preventDefault();
+    fetch(a.href).then(r => r.blob()).then(b => androidDatei(b, a.download, false))
+      .catch(e => { console.warn(e); toast('Speichern fehlgeschlagen'); });
+  }, true);
+  navigator.canShare = d => !!(d && ((d.files && d.files.length) || d.url || d.text));
+  navigator.share = async d => {
+    if (d && d.files && d.files.length) return androidDatei(d.files[0], d.files[0].name, true);
+    const text = [d && d.text !== d.title ? d.text : '', d && d.url].filter(Boolean).join('\n');
+    A.teilenText(String((d && d.title) || ''), text || String((d && d.title) || ''));
+  };
+}
+
 const API = 'https://api.openrailwaymap.org/v2';
 const LIMIT = 200;           // Maximum der API je Abfrage
 /* Bis zu welcher Lücke zwischen zwei Steinen wird interpoliert?
