@@ -762,6 +762,15 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   nicht über maps.dwd.de. Geprüft: EPSG-Beispiel 50° N 5° O auf den mm; Gollhofen Rasterfeld 172146 D60 T100
   45,5 mm wie in der CSV des DWD (15 min, 100 a: 32,0 mm = 128 mm/h). Quellenvermerk steht unter den Knöpfen.
 
+## Android-App (`android/`, 12.11.2026)
+
+Randloser WebView um die Live-Seite, damit die Karte unter der Statusleiste läuft (als PWA lässt Android das nicht zu).
+Einzelheiten in `android/README.md`. Für die Seite heißt das: **Ränder nur über `--sa-oben`/`--sa-unten`**, nie direkt
+`env(safe-area-inset-*)` — die App setzt die Variablen (`androidRaender`). Downloads per `a[download]` mit blob: und
+`navigator.share` laufen in der App über die Brücke in `app.js` (Block `window.TopovoAndroid` oben); wer neue Downloads
+baut, nimmt diesen Weg (Link mit `download` klicken), sonst kommt in der App nichts an. Signierschlüssel liegt außerhalb
+des Repos (`~/.local/share/topovo-android/`).
+
 ## Beim Deployen
 
 **Seit 01.11.2026 erst lokal:** Änderungen nicht gleich pushen. Der Nutzer sieht sie in seinem Firefox
