@@ -1252,7 +1252,7 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   zeiten.lesen = (performance.now() - uhr) / 1000;
   uhr = performance.now();
   const dichte = n / Math.max(1, maske ? maske.flaeche : (e1 - e0) * (n1 - n0));
-  const normalen = normalenRechnen(xyz, n, Math.max(0.8, Math.sqrt(12 / (Math.PI * dichte))));
+  const normalen = await normalenParallel(xyz, n, Math.max(0.8, Math.sqrt(12 / (Math.PI * dichte))));
   zeiten.normalen = (performance.now() - uhr) / 1000;
   if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);     // abgebrochen, während die Normalen liefen
   const fertigGitter = gitter ? gitterFertig(gitter, bereich, maske, zMin, ce, cn) : null;
@@ -1382,12 +1382,24 @@ function gitterFertig(g, { e0, n0 }, maske, zMin, ce, cn) {
  * 2,5 D, und neun Zellen reichen. Ausgerichtet nach oben; als Int8 (×127),
  * damit 1,5 Mio. Punkte 4,5 MB brauchen statt 18. */
 function normalenRechnen(xyz, n, r = 0.8) {
+  const g = normalenGitter(xyz, n, r);
+  return normalenPunkte(xyz, n, r, g, null, true);
+}
+
+/** Lage des Gitters: Ecke, Zellen je Richtung (alle Punkte). */
+function normalenGitter(xyz, n, r) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (let i = 0; i < n; i++) {
     const x = xyz[3 * i], y = xyz[3 * i + 1];
     if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
   }
-  const nx = Math.max(1, Math.ceil((x1 - x0) / r) + 1), ny = Math.max(1, Math.ceil((y1 - y0) / r) + 1);
+  return { x0, y0, nx: Math.max(1, Math.ceil((x1 - x0) / r) + 1), ny: Math.max(1, Math.ceil((y1 - y0) / r) + 1) };
+}
+
+/** Normalen der Punkte, deren kern-Eintrag 1 ist (kern null: alle), in deren Reihenfolge; das Gitter
+ *  aus allen n Punkten mit der Lage g. Die Nachbarn kommen je Zelle in Reihenfolge des Index — so
+ *  rechnet ein Streifen (normalenParallel) bitgleich zum Ganzen. */
+function normalenPunkte(xyz, n, r, { x0, y0, nx, ny }, kern, melden) {
   const zelleVon = i => Math.floor((xyz[3 * i + 1] - y0) / r) * nx + Math.floor((xyz[3 * i] - x0) / r);
   // Zählsortierung der Punkte nach Zelle
   const start = new Uint32Array(nx * ny + 1);
@@ -1396,8 +1408,11 @@ function normalenRechnen(xyz, n, r = 0.8) {
   const pos = start.slice(0, nx * ny), folge = new Uint32Array(n);
   for (let i = 0; i < n; i++) folge[pos[zelleVon(i)]++] = i;
 
-  const aus = new Int8Array(n * 3), r2 = r * r;
-  for (let i = 0; i < n; i++) {
+  let m = n;
+  if (kern) { m = 0; for (let i = 0; i < n; i++) m += kern[i]; }
+  const aus = new Int8Array(m * 3), r2 = r * r;
+  for (let i = 0, o = 0; i < n; i++) {
+    if (kern && !kern[i]) continue;
     const px = xyz[3 * i], py = xyz[3 * i + 1], pz = xyz[3 * i + 2];
     const cx = Math.floor((px - x0) / r), cy = Math.floor((py - y0) / r);
     let k = 0, sx = 0, sy = 0, sz = 0, xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
@@ -1421,10 +1436,78 @@ function normalenRechnen(xyz, n, r = 0.8) {
       [ox, oy, oz] = kleinsteAchse(a, b, c, d, e, f);
       if (oz < 0) { ox = -ox; oy = -oy; oz = -oz; }
     }
-    aus[3 * i] = Math.round(ox * 127); aus[3 * i + 1] = Math.round(oy * 127); aus[3 * i + 2] = Math.round(oz * 127);
-    if ((i & 0x3ffff) === 0) self.postMessage({ art: 'normalen', fertig: i, gesamt: n });
+    aus[3 * o] = Math.round(ox * 127); aus[3 * o + 1] = Math.round(oy * 127); aus[3 * o + 2] = Math.round(oz * 127);
+    o++;
+    if (melden && (i & 0x3ffff) === 0) self.postMessage({ art: 'normalen', fertig: i, gesamt: n });
   }
   return aus;
+}
+
+/* Normalen auf allen Kernen (12.11.2026): Die Fläche wird in waagerechte Streifen von Gitterzeilen
+ * mit etwa gleich vielen Punkten geteilt; ein Hilfs-Worker (diese Datei, Auftrag 'normalenTeil')
+ * bekommt die Punkte seines Streifens plus je eine Zeile Rand (die Nachbarn) und rechnet die
+ * Normalen der Punkte im Streifen. Gitterlage und Reihenfolge der Nachbarn sind dieselben wie im
+ * Ganzen, das Ergebnis ist bitgleich zu normalenRechnen. Kopiert wird jeder Punkt etwa einmal.
+ * Scheitert etwas, rechnet der Haupt-Worker wie bisher allein. */
+const NORMALEN_PARALLEL_AB = 200000;
+async function normalenParallel(xyz, n, r) {
+  const helfer = Math.min(7, (self.navigator && navigator.hardwareConcurrency || 2) - 1);
+  if (n < NORMALEN_PARALLEL_AB || helfer < 2 || typeof Worker === 'undefined') return normalenRechnen(xyz, n, r);
+  const g = normalenGitter(xyz, n, r);
+  // Punkte je Gitterzeile, daraus die Streifen
+  const zeileVon = i => Math.floor((xyz[3 * i + 1] - g.y0) / r);
+  const jeZeile = new Uint32Array(g.ny);
+  for (let i = 0; i < n; i++) jeZeile[zeileVon(i)]++;
+  const grenzen = [0];
+  for (let y = 0, summe = 0; y < g.ny; y++) {
+    summe += jeZeile[y];
+    if (summe >= n * grenzen.length / helfer && grenzen.length < helfer && y + 1 < g.ny) grenzen.push(y + 1);
+  }
+  grenzen.push(g.ny);
+  const teile = [];
+  for (let s = 0; s + 1 < grenzen.length; s++) {
+    const a = grenzen[s], b = grenzen[s + 1];
+    let m = 0;
+    for (let y = Math.max(0, a - 1); y < Math.min(g.ny, b + 1); y++) m += jeZeile[y];
+    const sub = new Float32Array(m * 3), kern = new Uint8Array(m), index = [];
+    for (let i = 0, j = 0; i < n; i++) {
+      const y = zeileVon(i);
+      if (y < a - 1 || y > b) continue;
+      sub[3 * j] = xyz[3 * i]; sub[3 * j + 1] = xyz[3 * i + 1]; sub[3 * j + 2] = xyz[3 * i + 2];
+      if (y >= a && y < b) { kern[j] = 1; index.push(i); }
+      j++;
+    }
+    teile.push({ sub, kern, m, index: Uint32Array.from(index) });
+  }
+  const aus = new Int8Array(n * 3);
+  let fertig = 0;
+  const ergebnisse = teile.map(t => new Promise(res => {
+    let w;
+    try { w = new Worker('laser-werk.js'); } catch (err) { res(null); return; }
+    const ende = e => { w.terminate(); res(e); };
+    w.onmessage = ev => ende(ev.data && ev.data.normalen ? ev.data.normalen : null);
+    w.onerror = ev => { if (ev.preventDefault) ev.preventDefault(); console.warn('Normalen im Hilfs-Worker:', ev.message); ende(null); };
+    w.postMessage({ art: 'normalenTeil', xyz: t.sub, kern: t.kern, n: t.m, r, g }, [t.sub.buffer, t.kern.buffer]);
+  }).then(e => {
+    fertig += t.index.length;
+    self.postMessage({ art: 'normalen', fertig, gesamt: n });
+    return e;
+  }));
+  const fertige = await Promise.all(ergebnisse);
+  if (fertige.some(e => !e)) { console.warn('Normalen: Hilfs-Worker gescheitert, rechne allein'); return normalenRechnen(xyz, n, r); }
+  fertige.forEach((e, s) => {
+    const { index } = teile[s];
+    for (let k = 0; k < index.length; k++) {
+      const i = index[k];
+      aus[3 * i] = e[3 * k]; aus[3 * i + 1] = e[3 * k + 1]; aus[3 * i + 2] = e[3 * k + 2];
+    }
+  });
+  return aus;
+}
+/** Im Hilfs-Worker: die Normalen eines Streifens. */
+function normalenTeil({ xyz, kern, n, r, g }) {
+  const normalen = normalenPunkte(xyz, n, r, g, kern, false);
+  self.postMessage({ normalen }, [normalen.buffer]);
 }
 
 /** Eigenvektor zum kleinsten Eigenwert der symmetrischen Matrix
@@ -1880,6 +1963,7 @@ self.onmessage = async ev => {
   if (ev.data.art === 'abbrechen') { if (abbruch) abbruch.abort(); return; }
   if (ev.data.art === 'teilEntpacken') { teilAuftrag = ev.data; return; }       // Hilfs-Worker, siehe entpackPool
   if (ev.data.art === 'stuecke') { stueckAuftrag(ev.data); return; }             // Hilfs-Worker, siehe stueckPool
+  if (ev.data.art === 'normalenTeil') { normalenTeil(ev.data); return; }          // Hilfs-Worker, siehe normalenParallel
   const istExport = ev.data.art === 'export';
   // Eins nach dem anderen: Laden und Export teilen sich den Speicher von laz-perf
   if (abbruch) { if (istExport) self.postMessage({ art: 'fehler', text: 'Es läuft noch ein Auftrag.', export: true }); return; }

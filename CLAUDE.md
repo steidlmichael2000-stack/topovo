@@ -673,6 +673,12 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   Heap-Sichten abgelöst** (Speicher wächst) — `gruppeEntpacken` holt sie neu. Schalter „Entpacken (Vergleich)“ in der
   Laserleiste nur in der App (`topovo-laser-stuecke`), zum Vorher/Nachher am Handy; bleibt bis zur Entscheidung über Stufe 2
   (LASzip nativ über das NDK).
+  **Stufe 2 (NDK) bewusst nicht gebaut** (12.11.2026): am Xiaomi (8 Kerne) Entpacken 12,2 → 2,6 s (1.2) und 15,7 → 3,4 s (1.4);
+  nativ brächte je Kachel nur noch 1–2 s, der Download (198 MB Mobilfunk 23 s) wiegt schwerer.
+- **Normalen auf allen Kernen** (12.11.2026, überall, nicht nur App): `normalenParallel` teilt die Fläche in Streifen von
+  Gitterzeilen mit gleich vielen Punkten, Hilfs-Worker (Auftrag `'normalenTeil'`) bekommen ihren Streifen plus eine Zeile Rand.
+  Bitgleich zu `normalenRechnen` (Nachbarn je Zelle in Index-Reihenfolge, Gitterlage vom Ganzen) — den ruft der PW-Viewer
+  weiter direkt. Ab `NORMALEN_PARALLEL_AB` Punkten, sonst und bei Fehlern wie bisher allein. PC: 2,5 → 1,7 s.
 - **Darstellung „Gelände“** (11.11.2026, so gewünscht): Bodenraster aus **allen** Bodenpunkten, gefüllt in `nimm` vor der
   Ausdünnung (`gitterAnlegen`/`gitterFertig` in laser-werk.js; `LASER_GITTER` Handy 1 Mio., PC 4 Mio. Zellen → 0,5/1/2 m).
   Lücken über eine Pyramide bilinear gefüllt, ohne Bodenpunkt im Umkreis ~32 m bleibt es leer (art 2). In laser.js
