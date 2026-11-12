@@ -5503,8 +5503,9 @@ function gpxParse(xmlText) {
   const punkt = el => {
     const lat = parseFloat(el.getAttribute('lat')), lon = parseFloat(el.getAttribute('lon'));
     if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    // 0 heißt in GPX meist „keine Höhe“ (wie in KML) — echte 0 m ü. NN gibt es in Bayern nicht
     const ele = parseFloat(text(el, 'ele'));
-    return { koord: [lat, lon], ele: isFinite(ele) ? ele : null };
+    return { koord: [lat, lon], ele: isFinite(ele) && ele !== 0 ? ele : null };
   };
   const objekte = [];
   let sLat = 90, wLon = 180, nLat = -90, oLon = -180;
@@ -5514,26 +5515,22 @@ function gpxParse(xmlText) {
     if (k[1] < wLon) wLon = k[1];
     if (k[1] > oLon) oLon = k[1];
   };
-  const zahl1 = v => v.toLocaleString('de-DE', { maximumFractionDigits: v < 10 ? 2 : 1 });
-  /** Länge, Auf- und Abstieg eines Linienzugs als Zeile. */
-  const kennzahlen = pts => {
-    let laenge = 0, auf = 0, ab = 0, ref = null;
-    for (let i = 0; i < pts.length; i++) {
-      if (i) laenge += ellipsoidAbstand(pts[i - 1].koord, pts[i].koord);
-      const h = pts[i].ele;
-      if (h == null) continue;
-      if (ref == null) { ref = h; continue; }
-      if (h - ref >= 5) { auf += h - ref; ref = h; } else if (ref - h >= 5) { ab += ref - h; ref = h; }
-    }
-    const mitHoehe = pts.some(p => p.ele != null);
-    return `Länge ${zahl1(laenge / 1000)} km` + (mitHoehe ? ` · ↑ ${Math.round(auf).toLocaleString('de-DE')} m · ↓ ${Math.round(ab).toLocaleString('de-DE')} m` : '');
+  /* Linienfarbe aus der Erweiterung gpx_style (<extensions><line><color>ff0000</color>), wie sie
+   * Tourenportale schreiben — für „Farbe wie Datei“ in der Liste. */
+  const stilVon = el => {
+    const ext = kind(el, 'extensions'), line = ext && [...ext.getElementsByTagNameNS('*', 'line')][0];
+    const f = line && [...line.children].find(c => c.localName === 'color');
+    const hex = f && /^#?([0-9a-f]{6})$/i.exec(f.textContent.trim());
+    return hex ? { color: '#' + hex[1].toLowerCase(), opacity: 1 } : null;
   };
-  const linie = (pts, name, beschreibung, ordner, typ) => {
+  const linie = (pts, name, beschreibung, ordner, typ, stil) => {
     if (pts.length < 2) return;
     pts.forEach(p => merken(p.koord));
-    objekte.push({ art: 'l', koord: pts.map(p => p.koord), name, ordner,
-      text: [kennzahlen(pts), beschreibung].filter(Boolean).join(' · ').slice(0, 700),
-      daten: typ ? [['Typ', typ]] : [], stil: null });
+    // Ohne Höhen in der Datei (Tourenportale schreiben oft überall 0) kommen Auf- und Abstieg aus dem DGM1 (gpxHoehenNachtragen)
+    const ohneHoehe = pts.every(p => p.ele == null);
+    objekte.push({ art: 'l', koord: pts.map(p => p.koord), name, ordner, beschreibung,
+      text: [gpxKennzahlen(pts.map(p => p.koord), ohneHoehe ? null : pts.map(p => p.ele), 5), beschreibung].filter(Boolean).join(' · ').slice(0, 700),
+      daten: typ ? [['Typ', typ]] : [], stil, ...(ohneHoehe ? { ohneHoehe: true } : {}) });
   };
   for (const el of doc.getElementsByTagNameNS('*', 'wpt')) {
     const p = punkt(el);
@@ -5547,12 +5544,12 @@ function gpxParse(xmlText) {
     const name = text(trk, 'name'), segmente = [...trk.children].filter(c => c.localName === 'trkseg');
     segmente.forEach((seg, i) => {
       const pts = [...seg.children].filter(c => c.localName === 'trkpt').map(punkt).filter(Boolean);
-      linie(pts, segmente.length > 1 ? `${name || 'Track'} (${i + 1})` : name, text(trk, 'desc'), 'Tracks', text(trk, 'type'));
+      linie(pts, segmente.length > 1 ? `${name || 'Track'} (${i + 1})` : name, text(trk, 'desc'), 'Tracks', text(trk, 'type'), stilVon(trk));
     });
   }
   for (const rte of doc.getElementsByTagNameNS('*', 'rte')) {
     const pts = [...rte.children].filter(c => c.localName === 'rtept').map(punkt).filter(Boolean);
-    linie(pts, text(rte, 'name'), text(rte, 'desc'), 'Routen', text(rte, 'type'));
+    linie(pts, text(rte, 'name'), text(rte, 'desc'), 'Routen', text(rte, 'type'), stilVon(rte));
   }
   const meta = [...doc.documentElement.children].find(c => c.localName === 'metadata');
   return {
@@ -5560,6 +5557,40 @@ function gpxParse(xmlText) {
     titel: meta ? text(meta, 'name') : '',
     grenzen: objekte.length && nLat >= sLat ? [[sLat, wLon], [nLat, oLon]] : null
   };
+}
+/** Länge, Auf- und Abstieg eines Linienzugs als Zeile. hoehen: je Punkt oder null (dann nur die Länge).
+ *  schwelle: kleinere Wechsel zählen nicht — GNSS-Höhen rauschen (5 m), das DGM1 kaum (2 m). */
+function gpxKennzahlen(koord, hoehen, schwelle) {
+  let laenge = 0, auf = 0, ab = 0, ref = null;
+  for (let i = 0; i < koord.length; i++) {
+    if (i) laenge += ellipsoidAbstand(koord[i - 1], koord[i]);
+    const h = hoehen && hoehen[i];
+    if (h == null || !isFinite(h)) continue;
+    if (ref == null) { ref = h; continue; }
+    if (h - ref >= schwelle) { auf += h - ref; ref = h; } else if (ref - h >= schwelle) { ab += ref - h; ref = h; }
+  }
+  const km = laenge / 1000, m = v => Math.round(v).toLocaleString('de-DE');
+  return `Länge ${km.toLocaleString('de-DE', { maximumFractionDigits: km < 10 ? 2 : 1 })} km` + (hoehen ? ` · ↑ ${m(auf)} m · ↓ ${m(ab)} m` : '');
+}
+/* Tracks ohne Höhen: Auf- und Abstieg aus dem DGM1 an jedem Trackpunkt (so gewünscht, 12.11.2026 —
+ * „müssten auf Geländehöhe gerechnet werden“). Läuft nach dem Import im Hintergrund; braucht Netz bzw. den
+ * DGM-Vorrat, außerhalb von Bayern/BW bleibt es bei der Länge. Danach wird die Datei neu abgelegt. */
+async function gpxHoehenNachtragen(akte) {
+  let geaendert = false;
+  for (const o of akte.objekte) {
+    if (!o.ohneHoehe || o.art !== 'l') continue;
+    try {
+      const utm = o.koord.map(([la, lo]) => utm32Hin(la, lo));
+      const h = await hoehenWerte('dgm1', Float64Array.from(utm, p => p[0]), Float64Array.from(utm, p => p[1]));
+      if (![...h].some(isFinite)) continue;
+      o.text = [gpxKennzahlen(o.koord, [...h], 2) + ' (Gelände, DGM1)', o.beschreibung].filter(Boolean).join(' · ').slice(0, 700);
+      delete o.ohneHoehe;
+      geaendert = true;
+    } catch (err) { console.warn(err); }
+  }
+  if (!geaendert) return;
+  try { await kmlAblegen(akte); } catch (err) { console.warn(err); }
+  kmlListe();
 }
 /** GPX statt KML? Nach der Endung oder dem Wurzelelement. */
 const istGpx = (name, text) => /\.gpx$/i.test(name) || /<gpx[\s>]/i.test(text.slice(0, 3000));
@@ -6052,7 +6083,8 @@ async function kmlOeffnen(dateien) {
       const buf = await datei.arrayBuffer();
       const istZip = buf.byteLength > 4 && new DataView(buf).getUint32(0, false) === 0x504b0304;
       const roh = istZip ? await kmzText(buf) : kmlDekodieren(buf);
-      const geparst = !istZip && istGpx(datei.name, roh) ? gpxParse(roh) : kmlParse(roh);
+      const gpx = !istZip && istGpx(datei.name, roh);
+      const geparst = gpx ? gpxParse(roh) : kmlParse(roh);
       if (!geparst.objekte.length) { toast(datei.name + ': keine Geometrie gefunden.'); continue; }
 
       const vorlaeufig = { objekte: geparst.objekte };
@@ -6075,11 +6107,13 @@ async function kmlOeffnen(dateien) {
         objekte: geparst.objekte
       };
 
+      if (gpx) akte.gpx = true;           // mit abgelegt: im Laserviewer werden ihre Linien zum Band
       try { await kmlAblegen(akte); }
       catch { toast('Speichern nicht möglich — die Datei ist nur bis zum Neuladen da.'); }
 
       kmlAkten.push(akte);
       kmlZeigen(akte, true);
+      if (gpx) gpxHoehenNachtragen(akte);
       letzte = akte;
       zahl++;
     } catch (err) {
@@ -8068,7 +8102,7 @@ function laserKml(e0, n0, e1, n1) {
       const linie = ob.art === 'l' ? ob.koord : ob.art === 'a' ? [...ob.koord[0], ob.koord[0][0]] : null;
       if (ob.art === 'p' ? !drin(ob.koord) : !linie.some(drin)) continue;
       const mitHoehe = ob.art === 'p' && Number.isFinite(ob.hoehe);
-      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe, hoehe: ob.hoehe, datei,
+      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe, hoehe: ob.hoehe, datei, band: !!a.gpx && ob.art === 'l',
         aufschlag: mitHoehe ? dbrefEllAufschlag(...ob.koord) : null,
         pts: (ob.art === 'p' ? [ob.koord] : linie).map(([la, lo]) => utm32Hin(la, lo)) });
     }

@@ -1683,6 +1683,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const k = art + farbe;
     if (!kmlMats.has(k)) kmlMats.set(k, art === 'p'
       ? new THREE.MeshBasicMaterial({ color: farbe, depthTest: false })
+      : art === 'b' ? new THREE.MeshBasicMaterial({ color: farbe, depthTest: false, depthWrite: false, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
       : new THREE.LineBasicMaterial({ color: farbe, depthTest: false }));
     return kmlMats.get(k);
   };
@@ -1726,6 +1727,15 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         auflKugeln.push(k);
         punkte++;
         if (o.name) schilder.push(schild(p, esc(o.name), 'kml', 'rechts'));
+      } else if (o.band) {
+        /* GPX-Tracks (Wanderwege) als Band auf dem Boden statt 1-px-Linie — die war am Handy kaum zu
+         * sehen. Breite nach dem Ausschnitt: knapp 3 m bei einer Kachel, bei vier knapp 6 m. */
+        const b = Math.max(2, info.seite / 350);
+        for (const st of aufBoden(o.pts)) {
+          const m = new THREE.Mesh(band(st, b), kmlMat(o.farbe, 'b'));
+          m.renderOrder = 4;
+          gruppe.add(m);
+        }
       } else {
         for (const st of aufBoden(o.pts)) gruppe.add(auflLinie(st, kmlMat(o.farbe, 'l')));
       }

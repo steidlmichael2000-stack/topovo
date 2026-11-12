@@ -356,6 +356,11 @@ GPX läuft durch den KML-Import (`kmlOeffnen`): `istGpx` (Endung oder `<gpx` im 
 wie `kmlParse` — Wegpunkte als Punkte mit Höhe (ordner „Wegpunkte“), je Track-Segment und Route eine Linie („Tracks“,
 „Routen“) mit Länge (Ellipsoid) und Auf-/Abstieg (5-m-Schwelle gegen GNSS-Rauschen) im Text. Damit gelten Liste, Farbe,
 Abstecken, Laserviewer (Linien auf dem Laserboden) unverändert. Datei-Auswahl, Ziehen und Tour nennen GPX mit.
+Höhe 0 gilt als keine (Tourenportale wie oberstdorf.de/tramino schreiben überall 0). Tracks **ohne** Höhen bekommen Auf-/Abstieg
+aus dem DGM1 an jedem Trackpunkt (`gpxHoehenNachtragen`, nach dem Import im Hintergrund, 2-m-Schwelle, Text „(Gelände, DGM1)“,
+Datei danach neu abgelegt) — so gewünscht. Rubihorn (1119 Punkte): 16,6 km, ↑ 1.328 m, in 4,5 s. Linienfarbe aus der
+Erweiterung `gpx_style` (`<line><color>`) als `stil.color`. `akte.gpx` (mit abgelegt) macht ihre Linien im Laserviewer zum
+**Band** (`o.band`, Breite `max(2, seite/350)` m) — die 1-px-Linie war am Handy kaum zu sehen.
 
 ## Festpunkte BW (`fp…`, Oktober 2026)
 
