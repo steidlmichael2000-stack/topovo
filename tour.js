@@ -207,9 +207,9 @@ const TOUR_SCHRITTE = [
   },
   {
     titel: 'Eigene Dateien und Abstecken',
-    text: 'KML-, KMZ- und GPX-Dateien bleiben auf dem Gerät, auch ohne Netz. Haben sie Punkte, erscheint ' +
-      'rechts ein Fähnchen: Punkt wählen, dann zeigen Pfeil und Entfernung den Weg dorthin — auf ' +
-      'Wunsch nach dem Kompass des Handys.',
+    text: 'KML-, KMZ- und GPX-Dateien bleiben auf dem Gerät, auch ohne Netz. Ein Tipp auf einen ' +
+      'Punkt, dann „Abstecken“: Pfeil und Entfernung zeigen den Weg dorthin — auf Wunsch nach dem ' +
+      'Kompass des Handys.',
     ziel: () => tourSichtbar('#sheet [data-sec="kml"]'),
     vorher: () => tourAbschnitt('kml'),
     nachher: () => closeSheet()
@@ -483,7 +483,7 @@ const HILFE = {
     {
       titel: 'Offline speichern',
       text: 'Legt die gewählten Kacheln dauerhaft auf dem Gerät ab — dann öffnen sie sich ohne Netz und ohne ' +
-        'Warten. Hier gehen auch mehr als vier Kacheln, etwa ein ganzes Tal. Auf der Karte steht dann ' +
+        'Warten. Hier gehen auch mehr als neun Kacheln, etwa ein ganzes Tal. Auf der Karte steht dann ' +
         '„gespeichert“; unter „Auf dem Gerät“ stehen Größe und Löschen.',
       ziel: () => tourSichtbar('#laserSpeichernBtn')
     },

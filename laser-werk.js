@@ -82,12 +82,14 @@ async function entpacken(LP, { kachel, zeiger, groesse, kopf: k }, nr, von) {
     let puffer = null, d = null;
     for (let i = 0; i < anzahl; i++) {
       laszip.getPoint(punkt);
-      if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
       if ((i & 0xfffff) === 0) {
         senden({ art: 'lesen', nr, von, gelesen: i, gesamt: anzahl });
         await new Promise(r => setTimeout(r));
         if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
       }
+      /* Erst nach dem Warten: Währenddessen kann ein Download den Wasm-Speicher wachsen
+       * lassen, der alte Puffer ist dann abgelöst (Handy, 12.11.2026: „detached ArrayBuffer“). */
+      if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
       x[i] = d.getInt32(0, true) * sx + ox - e0;
       y[i] = d.getInt32(4, true) * sy + oy - n0;
       z[i] = d.getInt32(8, true) * sz + oz;
@@ -612,7 +614,8 @@ async function kachelnHolen(LP, kacheln, vorratMax, leerErlaubt = false, jeKache
     vorrat.set(kachel, v);
     vorratMelden();
     da.push({ kachel, ...v, kopf });
-    if (jeKachel) jeKachel(da[da.length - 1]);
+    // Darf warten (viele Kacheln, strom): die nächste lädt erst, wenn die vorletzte geschnitten ist
+    if (jeKachel) await jeKachel(da[da.length - 1]);
   }
   if (!da.length && !leerErlaubt) throw new Error('Für diese Stelle gibt es keine Laserkachel.');
   return { da, fehlen, megabyte };
@@ -644,7 +647,15 @@ const inMaske = (M, e, n) => {
   return c >= 0 && r >= 0 && c < M.w && r < M.h && M.m[r * M.w + c] === 1;
 };
 
+/* Ab so vielen Kacheln (bis 9, 12.11.2026 so gewünscht) liegen sie nicht mehr alle zugleich im
+ * Speicher von laz-perf (höchstens rund 2 GB, eine Kachel 40–250 MB, im Gebirge bis 1,9 GB):
+ * Jede wird gleich nach ihrem Download ausgeschnitten und dann freigegeben, auch am PC — ohne
+ * Hilfs-Worker und ohne entpackten Vorrat. Im Speicher sind so höchstens zwei zugleich. */
+const STROM_AB = 5;
+
 async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1, gitterZellen = 0, zGrenze = null }) {
+  const strom = kacheln.length >= STROM_AB;
+  if (strom) { entpacktMax = 0; zGrenze = null; }
   if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
   const LP = lazPerf;
 
@@ -798,12 +809,13 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
       let puffer = null, d = null;
       for (let i = 0; i < anzahl; i++) {
         laszip.getPoint(punkt);
-        if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
         if ((i & LESEN_TAKT()) === 0) {
           lesenMelden({ art: 'lesen', nr: t, von, gelesen: i, gesamt: anzahl });
           await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) und den Download durchlassen
           pruefen();
         }
+        // Nach dem Warten: der Download kann den Speicher inzwischen vergrößert haben (siehe entpacken)
+        if (puffer !== LP.HEAPU8.buffer) { puffer = LP.HEAPU8.buffer; d = new DataView(puffer, punkt, k.laenge); }
         const X = d.getInt32(0, true), Y = d.getInt32(4, true);
         if (X < X0 || X > X1 || Y < Y0 || Y > Y1) continue;
         // Formate 0–5: Klasse in den unteren 5 Bit von Byte 15; ab 6 ein ganzes Byte 16
@@ -822,10 +834,25 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
   const geschnitten = new Set();
   const einreihen = (q, t) => {
     geschnitten.add(q.kachel);
-    kette = kette.then(() => { schritt = schrittFuer(q); schrittAnzeige = Math.max(schrittAnzeige, schritt); drin = 0; return schneiden(q, t, kacheln.length); });
+    const davor = kette;
+    kette = kette.then(async () => {
+      schritt = schrittFuer(q); schrittAnzeige = Math.max(schrittAnzeige, schritt); drin = 0;
+      await schneiden(q, t, kacheln.length);
+      if (strom) freigeben(q);
+    });
     kette.catch(() => {});        // ausgewertet wird beim Warten auf die Kette
+    // Bei vielen Kacheln wartet der Download auf den vorigen Schnitt: höchstens zwei LAZ zugleich
+    return strom ? davor.catch(() => {}) : undefined;
   };
   const nrVon = name => kacheln.findIndex(k => k.kachel === name);
+  /** Viele Kacheln (strom): das LAZ nach dem Schnitt aus dem Speicher — es wird nicht mehr gebraucht. */
+  const freigeben = q => {
+    const v = vorrat.get(q.kachel);
+    if (!v || v.zeiger !== q.zeiger) return;
+    LP._free(v.zeiger);
+    vorrat.delete(q.kachel);
+    vorratMelden();
+  };
   if (ueberlappen) {
     stillLesen = true;
     for (const [kachel, D] of vonDatei) einreihen({ kachel, kopf: D.kopf, groesse: D.groesse, datei: D }, nrVon(kachel));
@@ -909,6 +936,7 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
       if (geschnitten.has(q.kachel)) continue;
       schritt = schrittFuer(q); schrittAnzeige = Math.max(schrittAnzeige, schritt); drin = 0;
       await schneiden(q, t, quellen.length);
+      if (strom) freigeben(q);
     }
   } else {
     const erwartet = quellen.reduce((a, q) => a + erwartetVon(q.kopf), 0);
@@ -1421,12 +1449,12 @@ async function lasBauen(LP, da, b, { nurBoden, getrennt, ziel, farbeFuer, maske 
         let heap = null, q = 0;
         for (let i = 0; i < gesamt; i++) {
           laszip.getPoint(punkt);
-          if (heap !== LP.HEAPU8) heap = LP.HEAPU8;
           if ((i & 0xfffff) === 0) {
             senden({ art: 'schreiben', nr: t, von: da.length, gelesen: i, gesamt });
             await new Promise(r => setTimeout(r));          // Nachrichten (Abbrechen) durchlassen
             if (abbruch.signal.aborted) throw new Error(ABGEBROCHEN);
           }
+          if (heap !== LP.HEAPU8) heap = LP.HEAPU8;          // nach dem Warten (siehe entpacken)
           q = punkt;
           const quelle = new DataView(heap.buffer, q, 40);
           const X = quelle.getInt32(0, true), Y = quelle.getInt32(4, true);

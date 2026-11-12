@@ -610,14 +610,28 @@ async function searchOrt(text, signal) {
   // Ortung ist die Kartenmitte der eigene Standort, der soll nicht genauer raus.
   const nah = `&lat=${c.lat.toFixed(2)}&lon=${c.lng.toFixed(2)}`;
   try {
-    const j = await holJson(`${PHOTON}?q=${encodeURIComponent(text)}&lang=de&limit=10${nah}`, signal);
+    /* Gipfel eigens dazu (12.11.2026, so gewünscht): Unter den zehn allgemeinen Treffern
+     * gehen sie neben Orten und Straßen gleichen Namens sonst unter. Beginnt ihr Name wie
+     * das Getippte, stehen sie vorn. */
+    const [j, g] = await Promise.all([
+      holJson(`${PHOTON}?q=${encodeURIComponent(text)}&lang=de&limit=10${nah}`, signal),
+      holJson(`${PHOTON}?q=${encodeURIComponent(text)}&lang=de&limit=3&osm_tag=natural:peak${nah}`, signal)
+        .catch(err => { if (err.name === 'AbortError') throw err; return { features: [] }; })
+    ]);
     /* Bahnobjekte fliegen raus: Nach „Bamberg“ kamen von dort drei weitere
      * Zeilen namens Bamberg zurück — Bahnhof, zwei Haltestellen —, die alle
      * dasselbe meinen wie der Treffer, der schon oben in der Liste steht.
      * Der stammt aus der OpenRailwayMap-Suche und bringt DS100 und UIC mit. */
-    return entdoppeln((j.features || [])
+    const alle = (j.features || [])
       .filter(f => (f.properties || {}).osm_key !== 'railway')
-      .map(photonZeile).filter(Boolean));
+      .map(photonZeile).filter(Boolean);
+    const anfang = text.trim().toLowerCase();
+    const gipfel = (g.features || []).map(photonZeile).filter(Boolean)
+      .filter(t => !alle.some(a => a.name === t.name && haversine(a.lat, a.lon, t.lat, t.lon) < 200));
+    const vorn = gipfel.filter(t => t.name.toLowerCase().startsWith(anfang));
+    const hinten = gipfel.filter(t => !vorn.includes(t));
+    // Fünf Zeilen zeigt die Liste: die passenden Gipfel vorn, andere Gipfel bekommen den letzten Platz
+    return entdoppeln([...vorn, ...alle.slice(0, Math.max(0, 5 - vorn.length - (hinten.length ? 1 : 0))), ...hinten, ...alle]);
   } catch (err) {
     if (err.name === 'AbortError') throw err;
     const j = await holJson(
@@ -668,12 +682,20 @@ const ORT_ART = {
   county: 'Landkreis', state: 'Land', region: 'Region', country: 'Staat'
 };
 
+const GIPFEL_ART = { peak: 'Gipfel', volcano: 'Gipfel', hill: 'Hügel', saddle: 'Sattel', ridge: 'Grat' };
+const GEWAESSER = new Set(['water', 'spring', 'bay', 'wetland', 'glacier', 'strait', 'hot_spring']);
+/** Gipfel, Hügel, Sattel, Grat: in der Liste mit dem Dreieck statt der Nadel. */
+const istGipfel = t => !!t && t.gipfel === true;
+
 function ortArt(key, value, hausnummer) {
   if (hausnummer) return 'Adresse';
   if (key === 'highway') return 'Straße';
   if (key === 'place') return ORT_ART[value] || 'Ort';
   if (key === 'boundary') return ORT_ART[value] || 'Gebiet';
-  if (key === 'waterway' || key === 'natural') return 'Gewässer';
+  /* natural ist nicht nur Wasser: „Schneck“ (Allgäu, natural=peak) stand bis 12.11.2026 als
+   * „Gewässer“ in der Liste. */
+  if (key === 'natural' && GIPFEL_ART[value]) return GIPFEL_ART[value];
+  if (key === 'waterway' || (key === 'natural' && GEWAESSER.has(value))) return 'Gewässer';
   return '';
 }
 
@@ -694,11 +716,12 @@ function photonZeile(f) {
   if (p.country && p.country !== 'Deutschland') teile.push(p.country);
 
   const e = p.extent;
+  const gipfel = p.osm_key === 'natural' && !!GIPFEL_ART[p.osm_value];
   return {
     art: 'ort', name, sub: teile.filter(Boolean).slice(0, 4).join(' · '),
     lat: c[1], lon: c[0],
     bbox: Array.isArray(e) && e.length === 4 ? [[e[3], e[0]], [e[1], e[2]]] : null,
-    typ: p.osm_value || p.type || ''
+    typ: p.osm_value || p.type || '', gipfel
   };
 }
 
@@ -714,7 +737,7 @@ function nominatimZeile(d) {
     lat, lon,
     bbox: Array.isArray(bb) && bb.length === 4
       ? [[Number(bb[0]), Number(bb[2])], [Number(bb[1]), Number(bb[3])]] : null,
-    typ: d.type || ''
+    typ: d.type || '', gipfel: d.category === 'natural' && !!GIPFEL_ART[d.type]
   };
 }
 
@@ -3018,15 +3041,28 @@ function dopUrl(art, land, z, x, y) {
  * späteren am HTTP-Cache vorbei, damit nicht die Fehlermeldung wiederkommt. */
 const DOP_VERSUCHE = 4;
 
+/* Höchstens so lange je Versuch: Nach dem Wiederöffnen der App blieb ein Abruf manchmal
+ * einfach hängen — kein Fehler, also auch keine Wiederholung, das Luftbild kam erst nach
+ * dem Umstellen der Grundkarte (12.11.2026). */
+const DOP_GEDULD_MS = 12000;
+function mitFrist(signal, ms) {
+  const frist = AbortSignal.timeout(ms);
+  if (!signal) return frist;
+  if (AbortSignal.any) return AbortSignal.any([signal, frist]);
+  return signal;
+}
+
 async function dopBild(url, signal) {
   for (let versuch = 1; ; versuch++) {
     let r;
     try {
-      r = await fetch(url, versuch > 1 ? { signal, cache: 'reload' } : { signal });
+      const sig = mitFrist(signal, DOP_GEDULD_MS);
+      r = await fetch(url, versuch > 1 ? { signal: sig, cache: 'reload' } : { signal: sig });
     } catch (err) {
-      /* Netzfehler (TypeError) noch zweimal: Beim Wiederöffnen der App ist das Netz
-       * oft noch nicht wach — ohne Wiederholung blieb das Luftbild leer (04.11.2026). */
-      if (signal?.aborted || !(err instanceof TypeError) || versuch >= 3) throw err;
+      /* Netzfehler (TypeError) und hängende Abrufe noch zweimal: Beim Wiederöffnen der App ist
+       * das Netz oft noch nicht wach — ohne Wiederholung blieb das Luftbild leer (04.11.2026). */
+      const nochmal = err instanceof TypeError || err.name === 'TimeoutError';
+      if (signal?.aborted || !nochmal || versuch >= 3) throw err;
       await new Promise(fertig => setTimeout(fertig, versuch === 1 ? 500 : 1500));
       continue;
     }
@@ -3143,7 +3179,25 @@ L.GridLayer.addInitHook(function () {
   this.on('load', () => { if (!this._fehler) kachelnVersuche = 0; });
 });
 window.addEventListener('online', () => { kachelnVersuche = 0; kachelnNeuSpaeter(300); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { kachelnVersuche = 0; kachelnNeuSpaeter(800); } });
+/* War die App länger weg, kommen Kacheln, die dann noch laden, oft nie an (der Abruf hängt
+ * im eingeschlafenen Netz, ohne Fehler). Nach ein paar Sekunden zeichnen solche Ebenen neu. */
+let verstecktSeit = 0, haengtUhr = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { verstecktSeit = Date.now(); clearTimeout(haengtUhr); return; }
+  kachelnVersuche = 0;
+  kachelnNeuSpaeter(800);
+  if (verstecktSeit && Date.now() - verstecktSeit > 10000) {
+    clearTimeout(haengtUhr);
+    haengtUhr = setTimeout(() => {
+      if (!map || document.hidden) return;
+      map.eachLayer(l => { if (l.redraw && l.isLoading && l.isLoading()) l.redraw(); });
+      if (gl) for (const id of Object.keys(gl.getStyle().sources || {})) {
+        const q = gl.getSource(id);
+        if (q && q.setTiles && q.tiles && !gl.isSourceLoaded(id)) q.setTiles(q.tiles);
+      }
+    }, 5000);
+  }
+});
 
 /** Eine Kachel (art 'dop' oder 'relief') als Bild-Blob: aus einem Dienst
  *  durchgereicht, wo es geht; sonst je Bildpunkt aus dem zuständigen Land, Löcher
@@ -5703,11 +5757,9 @@ function kmlPopup(o, akte) {
    * keine Sprechblase, und daran ändert der Knopf nichts. */
   if (!zeilen.length) return '';
   if (o.art === 'p') zeilen.push(mapsKnopf(o.koord[0], o.koord[1]));
-  zeilen.push(`<button type="button" class="kml-km" data-kmlkm data-ik="stein">Kilometer bestimmen` +
-    `<small>rechnet die Stelle auf die Strecke — braucht Netz</small></button>`);
+  zeilen.push(`<button type="button" class="kml-km" data-kmlkm data-ik="stein">Kilometer bestimmen</button>`);
   if (o.art === 'p') {
-    zeilen.push(`<button type="button" class="kml-km" data-kmlab data-ik="fahne">Abstecken` +
-      `<small>Entfernung und Richtung vom Standort hierher</small></button>`);
+    zeilen.push(`<button type="button" class="kml-km" data-kmlab data-ik="fahne">Abstecken</button>`);
     zeilen.push(routeKnopf(o.koord[0], o.koord[1], o.name || ''));
   }
   return zeilen.join('');
@@ -6757,8 +6809,7 @@ function fpTipp(ev, pt) {
     ? `<small>Bayerische Vermessungsverwaltung, CC BY 4.0 — keine amtliche Auskunft</small>`
     : `<small>LGL-BW, OGC API (Beta) — keine amtliche Auskunft</small>`);
   zeilen.push(mapsKnopf(pt.lat, pt.lon));
-  zeilen.push(`<button type="button" class="kml-km" data-fpkm data-ik="stein">Kilometer bestimmen` +
-    `<small>rechnet den Punkt auf die Strecke — braucht Netz</small></button>`);
+  zeilen.push(`<button type="button" class="kml-km" data-fpkm data-ik="stein">Kilometer bestimmen</button>`);
   zeilen.push(routeKnopf(pt.lat, pt.lon, 'Festpunkt'));
   const blase = L.popup({
     className: 'kml-pop', maxWidth: 300,
@@ -6945,8 +6996,7 @@ function merkPunkt(lat, lon) {
     `<span>${utmText(lat, lon)}</span>` +
     hoeheZeile(lat, lon) +
     mapsKnopf(lat, lon) +
-    `<button type="button" class="kml-km" data-merkkm data-ik="stein">Kilometer bestimmen` +
-    `<small>rechnet die Stelle auf die Strecke</small></button>` +
+    `<button type="button" class="kml-km" data-merkkm data-ik="stein">Kilometer bestimmen</button>` +
     routeKnopf(lat, lon, 'Gesetzter Punkt')
   ).openOn(map);
 
@@ -7690,7 +7740,7 @@ const laserNurBoden = false;
  * waren Punkte per Klick. Die Ansicht rechnet immer mit einem
  * Quadrat (laser.js, info.seite) — Kacheln und Umriss liegen in dem um sie herum,
  * beim Umriss schneidet laser-werk.js den Rest weg. Höchstens LASER_KACHELN_MAX
- * Kacheln: Alle liegen beim Ausschneiden zugleich im Speicher von laz-perf (2 GB). */
+ * Kacheln (siehe dort). */
 let laserArt = 'rahmen';
 const laserWahl = new Set();  // gewählte Kacheln (Art „Kacheln“)
 let laserUmriss = null;       // [[e, n], …] in UTM32 (Arten „Rechteck“ und „Polygon“)
@@ -7698,7 +7748,10 @@ let laserGeladenUmriss = null; // der Umriss der offenen 3D-Ansicht — für der
 let laserEntwurf = [];        // angetippte Ecken, solange Rechteck oder Polygon noch offen sind
 let laserEntwurfLayer = null;
 const laserUmrissArt = () => laserArt === 'rechteck' || laserArt === 'polygon';
-const LASER_KACHELN_MAX = 4;
+/* Bis 12.11.2026 waren es 4 (alle zugleich im Speicher von laz-perf). Ab 5 schneidet
+ * laser-werk.js jede gleich nach dem Download aus und gibt sie frei (STROM_AB) — 9 = 3 × 3,
+ * so gewünscht, auch wenn die Ansicht dann stark ausdünnt (2 Mio. Punkte). */
+const LASER_KACHELN_MAX = 9;
 /* Zum Speichern auf dem Gerät gilt die Grenze nicht (11.11.2026): dort geht eine
  * Kachel nach der anderen in eine Datei. Mehr als ein paar hundert wären am Handy
  * ohnehin zu viel (je Kachel 40–250 MB, im Gebirge bis 1,9 GB). */
@@ -8784,7 +8837,7 @@ function laserGeraetTeil() {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>`).join('');
   return `<details class="sheet-sec laser-geraet"${laserGeraetOffen ? ' open' : ''}>
     <summary><h2>Auf dem Gerät</h2><span class="laser-geraet-summe">${kopf}</span></summary>
-    ${st ? `<p class="bb-note plain">${laserGB(st.belegt)} belegt · ${laserGB(st.frei)} frei${st.dauerhaft ? ' · dauerhaft' : ''}</p>` : ''}
+    ${st ? `<p class="bb-note plain">${laserGB(st.belegt)} belegt · Topovo darf noch ${laserGB(st.frei)}${st.dauerhaft ? ' · dauerhaft' : ''}</p>` : ''}
     ${LASER_IOS && !laserInstalliert() ? '<p class="bb-note">Auf dem iPhone bleiben die Kacheln nur in der installierten App sicher erhalten (Teilen → Zum Home-Bildschirm).</p>' : ''}
     ${laserGeraet.size ? `<ul class="laser-geraet-liste">${zeilen}</ul>
       ${entpacktKnopf ? `<div class="bb-actions">${entpacktKnopf}</div>` : ''}
@@ -8972,7 +9025,7 @@ function hoeheFuellen(el) {
     hoeheHolen(lat, lon).then(h => {
       if (!z.isConnected) return;
       const imBalken = z.closest('#bottom, #ziel');
-      if (Number.isFinite(h)) z.innerHTML = `Höhe <b>${nfH.format(h)} m</b> ü. NHN · DGM1`;
+      if (Number.isFinite(h)) { z.innerHTML = `Höhe <b>${nfH.format(h)} m</b> ü. NHN · DGM1`; quelleDauerhaft(DGM_QUELLE); }
       else z.remove();
       if (imBalken) updateBH();
     });
@@ -11906,6 +11959,12 @@ let routeTreffer = [];
 let routeSuchLauf = 0;
 let routeSuchTimer = 0;
 const ROUTE_MEIN_ORT = 'Mein Standort';
+/* Start per Tipp auf die Karte (12.11.2026, so gewünscht — wie „Auf Karte auswählen“ in Google
+ * Maps): Das ging schon, nur blieb das Feld leer und sah aus, als fehle der Start. */
+const ROUTE_KARTE = 'Punkt auf der Karte';
+const IKON_KARTE_WAHL = '<svg class="s-ikon bahn" viewBox="0 0 24 24" aria-hidden="true">' +
+  '<path d="M3.5 6.5 9 4.5l6 2 5.5-2v13l-5.5 2-6-2-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg>';
+let routeKarteWahl = false;
 let routeWartetAufOrt = false;
 let routeZufahrt = null;       // [lat, lon] gezogen; null = Valhalla nimmt die nächste Straße
 let routeErg = null;           // { linie, dauer, laenge, autobahn, maut, faehre, anfang, ende }
@@ -11919,7 +11978,7 @@ let routeLayer = null;
 /* Ein Knopf in den Sprechblasen — gebunden einmal am Dokument (routeBinden) */
 const routeKnopf = (lat, lon, name = '') =>
   `<button type="button" class="kml-km" data-route="${lat.toFixed(6)},${lon.toFixed(6)}" data-route-name="${esc(name)}">` +
-  `Route mit dem Auto<small>vom Standort hierher, Dauer und Länge — braucht Netz</small></button>`;
+  `Route mit dem Auto</button>`;
 
 function routeBinden() {
   document.addEventListener('click', ev => {
@@ -11975,6 +12034,7 @@ function routeEnde(zeigen = true) {
   routeLauf++;
   routeErg = null;
   routeWartetAufOrt = false;
+  routeKarteWahl = false;
   if (routeLayer) { routeLayer.clearLayers(); map.removeLayer(routeLayer); }
   const k = $('#routeKopf');
   k.hidden = true;
@@ -11994,6 +12054,7 @@ function routeTipp(latlng) {
   routeVomOrt = false;
   routeWartetAufOrt = false;
   routeStartLeeren();
+  routeKarteGesetzt();
   routeZeichnen();
   routeRechnen(!routeErg);
 }
@@ -12024,8 +12085,26 @@ function routeStartLeeren() {
   routeStartName = '';
   routeSuchText = '';
   routeTreffer = [];
+  routeKarteWahl = false;
   routeSuchLauf++;
   clearTimeout(routeSuchTimer);
+}
+
+/** Start kam von der Karte (Tipp oder gezogen): das sagt das Feld. */
+function routeKarteGesetzt() {
+  routeStartName = ROUTE_KARTE;
+  routeSuchText = ROUTE_KARTE;
+  const feld = $('#routeStartFeld');
+  if (feld) feld.blur();
+}
+
+/** „Auf der Karte wählen“: Tastatur weg, der nächste Tipp auf die Karte setzt den Start. */
+function routeKarteWaehlen() {
+  routeKarteWahl = true;
+  routeTreffer = [];
+  const feld = $('#routeStartFeld');
+  if (feld) feld.blur();
+  routeLeiste();
 }
 
 function routeSuchen(text) {
@@ -12045,26 +12124,28 @@ function routeSuchen(text) {
 
 /* Mein Standort steht oben in der Liste, solange nichts getippt ist —
  * wie in Google Maps; dazu das Fadenkreuz rechts im Feld. */
-const routeMitOrt = () => !routeVomOrt && !routeSuchText.trim();
+const routeMitOrt = () => !routeSuchText.trim() || routeSuchText === ROUTE_KARTE || routeSuchText === ROUTE_MEIN_ORT;
 
 function routeTrefferZeigen(meldung = '') {
   const box = $('#routeVorschlag');
   if (!box) return;
   const feld = $('#routeStartFeld');
   if (routeMitOrt() && feld && document.activeElement === feld) {
-    box.innerHTML = suggestZeile('ort', IKON_STANDORT, ROUTE_MEIN_ORT,
-      routeWartetAufOrt ? 'wird bestimmt …' : 'Start am eigenen Standort');
+    box.innerHTML = (routeVomOrt ? '' : suggestZeile('ort', IKON_STANDORT, ROUTE_MEIN_ORT,
+      routeWartetAufOrt ? 'wird bestimmt …' : 'Start am eigenen Standort')) +
+      suggestZeile('karte', IKON_KARTE_WAHL, 'Auf der Karte wählen', 'Tipp auf die Karte setzt den Start');
     box.hidden = false;
-    box.querySelector('[data-i]').addEventListener('mousedown', ev => {
+    box.querySelectorAll('[data-i]').forEach(btn => btn.addEventListener('mousedown', ev => {
       ev.preventDefault();
+      if (btn.dataset.i === 'karte') { routeKarteWaehlen(); return; }
       feld.blur();
       routeVomStandort();
-    });
+    }));
   } else if (!routeTreffer.length) {
     box.innerHTML = meldung ? `<p class="suggest-info">${esc(meldung)}</p>` : '';
     box.hidden = !meldung;
   } else {
-    box.innerHTML = routeTreffer.map((t, i) => suggestZeile(i, IKON_ORT, t.name, t.sub)).join('');
+    box.innerHTML = routeTreffer.map((t, i) => suggestZeile(i, ikonOrt(t), t.name, t.sub)).join('');
     box.hidden = false;
     box.querySelectorAll('[data-i]').forEach(btn => btn.addEventListener('mousedown', ev => {
       ev.preventDefault();   // Fokus im Feld lassen, sonst schließt die Liste zuerst
@@ -12213,7 +12294,7 @@ function routeZeichnen() {
   }
   if (routeStart) {
     griff(routeStart, 'start', 'Start', wo => {
-      routeStart = wo; routeVomOrt = false; routeStartLeeren(); routeRechnen();
+      routeStart = wo; routeVomOrt = false; routeStartLeeren(); routeKarteGesetzt(); routeRechnen();
     });
   }
 }
@@ -12238,6 +12319,7 @@ function routeLeiste() {
       rest >= 10 && `zu Fuß noch ${messText(rest)}`].filter(Boolean).join(' · '));
   }
   if (routeFehler) notizen.push({ warn: routeFehler });
+  else if (routeKarteWahl) notizen.push('Auf die Karte tippen, um den Start zu setzen.');
   else if (!routeStart) notizen.push(routeWartetAufOrt ? 'Standort wird bestimmt …' : 'Start oben eingeben oder auf die Karte tippen.');
   else if (!e) notizen.push('Route wird gerechnet …');
 
@@ -12264,7 +12346,8 @@ function routeKopfZeichnen() {
   k.hidden = false;
   const altFeld = $('#routeStartFeld');
   const ortKnopf = $('#routeOrt');
-  const platzhalter = routeWartetAufOrt ? 'Standort wird bestimmt …' : 'Start: Adresse oder Ort';
+  const platzhalter = routeWartetAufOrt ? 'Standort wird bestimmt …'
+    : routeKarteWahl ? 'Auf die Karte tippen …' : 'Start: Adresse oder Ort';
   if (altFeld && document.activeElement === altFeld) {
     ortKnopf.classList.toggle('is-on', routeVomOrt);
     ortKnopf.classList.toggle('wartet', routeWartetAufOrt);
@@ -12483,7 +12566,19 @@ function quellenSetzen(offen) {
   if (offen) quellenTimer = setTimeout(() => quellenSetzen(false), QUELLEN_OFFEN_MS);
 }
 
+/* Quellen, die nicht an einer Kartenebene hängen (12.11.2026: unter dem © fehlten sie):
+ * die Kilometrierung der DB InfraGO, auf der Suche und „Kilometer bestimmen“ immer
+ * rechnen, und das DGM1, sobald eine Höhe angezeigt wurde. Je Quelle einmal; Leaflet
+ * zählt gleiche Angaben mit, eine Ebene mit derselben Quelle macht keine Dopplung. */
+const quellenDauerhaft = new Set();
+function quelleDauerhaft(q) {
+  if (!q || quellenDauerhaft.has(q) || !map) return;
+  quellenDauerhaft.add(q);
+  map.attributionControl.addAttribution(q);
+}
+
 function quellenEinrichten() {
+  if (typeof IFG_QUELLE === 'string') quelleDauerhaft(IFG_QUELLE);
   // Statt der Leaflet-Fahne: Impressum und Datenschutz, mit einem Griff am ©
   map.attributionControl.setPrefix('<a href="impressum.html">Impressum &amp; Datenschutz</a>');
   $('#quellenText').appendChild(map.attributionControl.getContainer());
@@ -13229,7 +13324,9 @@ function abMoeglich() {
 function abKnopf() {
   const btn = $('#mapZielBtn');
   if (!btn) return;
-  btn.hidden = !abAn && !abMoeglich();
+  /* Der Fähnchenknopf ist seit 12.11.2026 aus (so gewünscht): Abgesteckt wird über den
+   * Tipp auf einen Punkt der Karte, Knopf „Abstecken“ in seiner Sprechblase. */
+  btn.hidden = true;
   btn.classList.toggle('is-on', abAn);
   btn.setAttribute('aria-pressed', abAn ? 'true' : 'false');
 }
@@ -13785,7 +13882,7 @@ function pushRecent(ref, km) {
 function pushRecentOrt(t) {
   const e = {
     art: 'ort', name: t.name, sub: t.sub || '',
-    lat: t.lat, lon: t.lon, bbox: t.bbox || null, typ: t.typ || '',
+    lat: t.lat, lon: t.lon, bbox: t.bbox || null, typ: t.typ || '', gipfel: istGipfel(t),
     stelle: t.art === 'stelle' ? t.roh : null
   };
   recent = [e, ...recent.filter(r => !(recentArt(r) === 'ort'
@@ -13887,6 +13984,10 @@ const IKON_BAHN = '<svg class="s-ikon bahn" viewBox="0 0 24 24" aria-hidden="tru
 const IKON_ORT = '<svg class="s-ikon" viewBox="0 0 24 24" aria-hidden="true">' +
   '<path d="M12 21.5C7.8 16.6 5.5 13.3 5.5 10a6.5 6.5 0 1 1 13 0c0 3.3-2.3 6.6-6.5 11.5z"/>' +
   '<circle cx="12" cy="10" r="2.3"/></svg>';
+// Gipfel: das Dreieck der Karte (glGipfelBild), als Umriss wie die Nadel
+const IKON_GIPFEL = '<svg class="s-ikon" viewBox="0 0 24 24" aria-hidden="true">' +
+  '<path d="M12 5 20.5 19h-17z"/></svg>';
+const ikonOrt = t => istGipfel(t) ? IKON_GIPFEL : IKON_ORT;
 const IKON_KOORD = '<svg class="s-ikon bahn" viewBox="0 0 24 24" aria-hidden="true">' +
   '<circle cx="12" cy="12" r="6.2"/><path d="M12 1.8v4M12 18.2v4M1.8 12h4M18.2 12h4"/></svg>';
 const IKON_STANDORT = '<svg class="s-ikon bahn" viewBox="0 0 24 24" aria-hidden="true">' +
@@ -14014,10 +14115,10 @@ function verlaufZeigen() {
 
   suggestSetzen(list.map(r => recentArt(r) === 'ort'
     ? {
-        html: i => suggestZeile(i, r.stelle ? IKON_BAHN : IKON_ORT, r.name, r.sub),
+        html: i => suggestZeile(i, r.stelle ? IKON_BAHN : ikonOrt(r), r.name, r.sub),
         tun: () => trefferWaehlen({
           art: r.stelle ? 'stelle' : 'ort', roh: r.stelle,
-          name: r.name, sub: r.sub, lat: r.lat, lon: r.lon, bbox: r.bbox, typ: r.typ
+          name: r.name, sub: r.sub, lat: r.lat, lon: r.lon, bbox: r.bbox, typ: r.typ, gipfel: r.gipfel
         })
       }
     : {
@@ -14096,7 +14197,7 @@ async function ortSuchen(text) {
   }
 
   suggestSetzen(treffer.map(t => ({
-    html: i => suggestZeile(i, t.art === 'stelle' ? IKON_BAHN : IKON_ORT, t.name, t.sub),
+    html: i => suggestZeile(i, t.art === 'stelle' ? IKON_BAHN : ikonOrt(t), t.name, t.sub),
     tun: () => trefferWaehlen(t)
   })));
 }

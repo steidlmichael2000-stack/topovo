@@ -120,7 +120,7 @@ const GEL_P = 64;
 const GEL_VS = `
   uniform highp sampler2D H;
   uniform ivec2 n;
-  uniform float zelle, ueber;
+  uniform float zelle, ueber, zurueck;
   uniform vec2 ursprung;
   attribute vec2 stueck;
   varying vec3 vNormale;
@@ -142,7 +142,14 @@ const GEL_VS = `
     vNormale = vec3(dx * ueber, dy * ueber, 2.0 * zelle);
     vZ = z;
     vXY = ursprung + (vec2(c) + 0.5) * zelle;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(vXY, z, 1.0);
+    vec4 mv = modelViewMatrix * vec4(vXY, z, 1.0);
+    /* Nur Tiefe (bild(), Auflagen im Gelände): ein Stück vom Auge weg geschoben, 0,5 m und
+     * 0,4 % der Entfernung — sonst zerfiele, was auf dem Boden liegt (GPX-Band, Straßen). */
+    if (zurueck > 0.5) {
+      if (projectionMatrix[3][3] > 0.5) mv.z -= 0.5 - mv.z * 0.004;
+      else { float l = length(mv.xyz); mv.xyz *= 1.0 + (0.5 + l * 0.004) / max(l, 0.001); }
+    }
+    gl_Position = projectionMatrix * mv;
   }`;
 const GEL_FS = `
   precision highp float;
@@ -527,7 +534,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <button type="button" class="seg-btn lz-klasse lz-gipfel" aria-pressed="false" hidden>
             <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">Gipfel</span><small></small></button>
           <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden>
-            <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">KML</span><small></small></button>
+            <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">KML/GPX</span><small></small></button>
         </div>
       </details>
       <details class="sheet-sec">
@@ -843,7 +850,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     rampeTex.needsUpdate = true;
     const gm = new THREE.ShaderMaterial({
       vertexShader: GEL_VS, fragmentShader: GEL_FS,
-      uniforms: { H: { value: hTex }, n: { value: [G.nx, G.ny] }, zelle: { value: G.zelle }, ueber: { value: 1 },
+      uniforms: { H: { value: hTex }, n: { value: [G.nx, G.ny] }, zelle: { value: G.zelle }, ueber: { value: 1 }, zurueck: { value: 0 },
         ursprung: { value: new THREE.Vector2(G.x0, G.y0) }, modus: { value: 0 }, lichtRichtung: material.uniforms.lichtRichtung,
         licht: material.uniforms.licht, grundFarbe: { value: new THREE.Color(0.82, 0.82, 0.82) },
         neig0: { value: NEIG[0] }, neig1: { value: NEIG[1] }, neig2: { value: NEIG[2] },
@@ -1129,10 +1136,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const linienHauptMat = new THREE.ShaderMaterial({ vertexShader: GEB_VS, fragmentShader: GEB_FS, transparent: true, depthTest: false,
     uniforms: { ...gebUniforms(), kante: { value: 1 }, deckung: { value: 0.75 }, farbe: { value: new THREE.Color(1, 1, 1) } } });
   let linienAbst = 0, linienGebaut = false;
+  // Beschriftung (12.11.2026, so gewünscht): Höhe an den kräftigen Linien, verteilt übers Bild
+  const linienAufl = { gruppe: linienSzene, schilder: [] };
   function hoehenlinienText() { return `${zahl(linienAbst || 1, linienAbst < 1 ? 1 : 0)} m`; }
   function hoehenlinienZeigen(an) {
     if (an && !linienGebaut) { linienGebaut = true; hoehenlinienBauen(); }
     linienSzene.visible = an;
+    if (!an) for (const sch of linienAufl.schilder) sch.el.hidden = true;
   }
   function hoehenlinienBauen() {
     const res = info.seite > 400 ? 2 : 1, m = Math.ceil(info.seite / res) + 1;
@@ -1204,6 +1214,26 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         if (p.length === 4 && ((a + b + c + e) / 4 < h) !== (a < h)) p.push(p.shift());
         for (let j = 0; j + 1 < p.length; j += 2) { punkt(...p[j], h, ziel); punkt(...p[j + 1], h, ziel); }
       }
+    }
+    /* Je Feld eines Rasters von rund 1/7 der Seite höchstens ein Schild, an der kräftigen Linie,
+     * die der Feldmitte am nächsten kommt — so verteilen sie sich, ohne sich zu stapeln. */
+    const feld = info.seite / 7, beste = new Map();
+    for (let j = 0; j + 5 < haupt.length; j += 6) {
+      const x = (haupt[j] + haupt[j + 3]) / 2, y = (haupt[j + 1] + haupt[j + 4]) / 2;
+      const fx = Math.floor((x + halb) / feld), fy = Math.floor((y + halb) / feld);
+      const abst = Math.hypot(x + halb - (fx + 0.5) * feld, y + halb - (fy + 0.5) * feld);
+      const k = fy * 100 + fx, b = beste.get(k);
+      if (!b || abst < b.abst) beste.set(k, { abst, x, y, z: haupt[j + 2] });
+    }
+    /* Ausdünnen: dieselbe Höhe erst wieder nach rund einem Drittel der Seite, irgendeine andere
+     * nicht näher als ein Zehntel — sonst stand „440“ siebenmal in einer Reihe. */
+    const hauptAbst = linienAbst * 5, stellen = Number.isInteger(hauptAbst) ? 0 : Number.isInteger(hauptAbst * 10) ? 1 : 2;
+    const gesetzt = [];
+    for (const b of [...beste.values()].sort((a, c) => a.abst - c.abst)) {
+      const nn = Math.round((b.z - 0.05 + ab) / hauptAbst) * hauptAbst;
+      if (gesetzt.some(g => { const w = Math.hypot(g.x - b.x, g.y - b.y); return w < info.seite / 10 || (g.nn === nn && w < info.seite / 3); })) continue;
+      gesetzt.push({ x: b.x, y: b.y, nn });
+      linienAufl.schilder.push(schild(new THREE.Vector3(b.x, b.y, b.z), zahl(nn, stellen), 'hl', 'mitte'));
     }
     for (const [liste, mat] of [[fein, linienMat], [haupt, linienHauptMat]]) {
       if (!liste.length) continue;
@@ -1988,6 +2018,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const tafel = $('.lz-tafel'), einst = $('.lz-einst');
   function tafelZeigen(an) {
     tafel.hidden = !an;
+    // Beim Schließen alles zuklappen (12.11.2026, so gewünscht) — beim nächsten Öffnen nur die Überschriften
+    if (!an) tafel.querySelectorAll('details').forEach(x => { x.open = false; });
     einst.setAttribute('aria-expanded', String(an));
     einst.classList.toggle('is-on', an);
   }
@@ -2101,6 +2133,31 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * entlang, bis er unter das Raster taucht, dann halbieren. Gibt den Punkt (lokal, z ohne
    * Überhöhung) oder null. */
   const strahl = new THREE.Raycaster();
+  /** Liegt der Punkt (lokal, z ohne Überhöhung) von der Kamera aus hinter der Fläche? Für die
+   *  Schilder der Auflagen in der Darstellung „Gelände“: höchstens 150 Proben entlang des Blicks. */
+  const blick = new THREE.Vector3();
+  function hinterHang(p) {
+    let dx, dy, dz;
+    if (kamera === orthoKamera) {
+      kamera.getWorldDirection(blick);
+      dx = -blick.x; dy = -blick.y; dz = -blick.z / ueber;
+      const h = Math.hypot(dx, dy) || 1e-9, l = info.seite * 1.5 / h;
+      dx *= l; dy *= l; dz *= l;
+    } else {
+      const c = kamera.position;
+      dx = c.x - p.x; dy = c.y - p.y; dz = c.z / ueber - p.z;
+    }
+    const weit = Math.hypot(dx, dy);
+    if (weit < 3) return false;
+    const n = Math.min(150, Math.ceil(weit / G.zelle));
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      if (t * weit < 3) continue;          // die ersten Meter: der Punkt liegt selbst auf dem Boden
+      const h = gelaendeHoehe(p.x + dx * t, p.y + dy * t);
+      if (h > p.z + dz * t + 0.5) return true;
+    }
+    return false;
+  }
   function gelaendeAn(x, y) {
     if (!gelaende || !gelaende.visible) return null;
     strahl.setFromCamera(new THREE.Vector2(x, y), kamera);
@@ -2208,7 +2265,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     return l;
   }
   // lage: wohin das Schild vom Punkt aus rückt — darüber, darunter oder rechts daneben
-  const LAGE = { gipfel: 'translate(-50%, -100%)', oben: 'translate(-50%, -125%)', unten: 'translate(-50%, 35%)', rechts: 'translate(12px, -50%)' };
+  const LAGE = { mitte: 'translate(-50%, -50%)', gipfel: 'translate(-50%, -100%)', oben: 'translate(-50%, -125%)', unten: 'translate(-50%, 35%)', rechts: 'translate(12px, -50%)' };
   function schild(p, html, art = '', lage = 'oben') {
     const el = document.createElement('div');
     el.className = 'lz-marke' + (art ? ' ' + art : '');
@@ -3172,6 +3229,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       ortKern.scale.setScalar(s); ortRand.scale.setScalar(s * 1.4);
       ortKern.scale.z /= ueber; ortRand.scale.z /= ueber;
     }
+    /* Die Geländefläche verdeckt die Auflagen (GPX, KML, Straßen …) hinter einem Hang
+     * (12.11.2026, so gewünscht) — in der Darstellung „Gelände“ und auch bei den Punkten, dort
+     * unsichtbar, nur als Tiefe. Nur die Fläche, nicht die Bäume: sonst verschwände ein Weg im
+     * Wald. Zeigt der Regen sein eigenes Geländemodell, bleibt es dabei. */
+    const regenGelaende = regen && regenAnsicht !== 'punkte';
+    const gelTiefe = !!gelaende && !regenGelaende;
+    auflSzene.traverse(o => { if (o.material) o.material.depthTest = gelTiefe; });
     renderer.setRenderTarget(ziel);
     renderer.clear();
     renderer.render(szene, kamera);
@@ -3179,6 +3243,17 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     renderer.clear();
     renderer.render(schirmSzene, schirmKamera);
     renderer.autoClear = false;
+    if (gelTiefe) {
+      // Nur in die Tiefe des Schirms, ohne Farbe (GEL_VS, zurueck)
+      const gu = gelaende.material.uniforms, sichtbar = gelaende.visible;
+      gelaende.visible = true;
+      gelaende.material.colorWrite = false;
+      gu.zurueck.value = 1;
+      renderer.render(gelaende, kamera);
+      gu.zurueck.value = 0;
+      gelaende.material.colorWrite = true;
+      gelaende.visible = sichtbar;
+    }
     if (regen) renderer.render(regen.szene, kamera);
     if (geb && geb.gruppe.visible) renderer.render(gebSzene, kamera);
     if (effekte.linien) renderer.render(linienSzene, kamera);
@@ -3218,7 +3293,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       }
     }
     const mitOrt = ortSchild && ortGruppe.visible ? [{ schilder: [ortSchild] }] : [];
-    const aufl = [achsen, strassen, kmlAufl, gipfelAufl, zielAufl].filter(a => a && a.gruppe.visible);
+    const aufl = [achsen, strassen, kmlAufl, gipfelAufl, zielAufl, linienAufl].filter(a => a && a.gruppe.visible);
     const auflSet = new Set(aufl);
     for (const m of [...aufl, regenAufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
       // Schilder der Auflagen schneidet die Limitbox mit, Messungen nicht
@@ -3227,7 +3302,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         v.copy(sch.p);
         v.z *= ueber;
         v.project(kamera);
-        const sicht = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2 && (!geschnitten || boxZeigt(sch.p.x, sch.p.y, sch.p.z));
+        const sicht = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2 && (!geschnitten || boxZeigt(sch.p.x, sch.p.y, sch.p.z))
+          && !(gelTiefe && auflSet.has(m) && hinterHang(sch.p));
         sch.el.hidden = !sicht;
         if (sicht) sch.el.style.transform = `translate(${(v.x + 1) / 2 * r.width}px, ${(1 - v.y) / 2 * r.height}px) ${sch.lage}`;
       }
@@ -3235,6 +3311,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     /* Bei schmalen Flächen lagen die Seitenlängen unter der Fläche in der Mitte:
      * Ein kleines Schild, das ein großes (Fläche, Σ, Δh, gesuchte Stelle) berührt,
      * tritt zurück — über alle Messungen und Auflagen hinweg. */
+    // Höhenzahlen, die sich am Schirm berühren: nur die erste bleibt
+    if (linienSzene.visible) {
+      const frei = [];
+      for (const sch of linienAufl.schilder) {
+        if (sch.el.hidden) continue;
+        const k = sch.el.getBoundingClientRect();
+        if (frei.some(g => k.left < g.right + 4 && k.right + 4 > g.left && k.top < g.bottom && k.bottom > g.top)) sch.el.hidden = true;
+        else frei.push(k);
+      }
+    }
     const alle = [...aufl, regenAufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt].flatMap(m => m.schilder).filter(s => !s.el.hidden);
     const gross = alle.filter(s => s.el.classList.contains('gross')).map(s => s.el.getBoundingClientRect());
     if (gross.length) {
