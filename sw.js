@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v132';
+const VERSION = 'v133';
 const SHELL = `topovo-shell-${VERSION}`;
 const TILES = `topovo-tiles-${VERSION}`;
 const DATA = `topovo-data-${VERSION}`;
@@ -20,7 +20,7 @@ const ALT_PRAEFIXE = ['trackpilot-', 'railnav-'];
 
 const SHELL_FILES = [
   './', 'index.html', 'style.css', 'app.js', 'hoehen.js', 'pdf.js', 'gebaeude.js', 'tour.js', 'radar-werk.js',
-  'infrago.js', 'dgm-werk.js', 'laender-grenzen.json', 'impressum.html',
+  'infrago.js', 'dgm-werk.js', 'laender-grenzen.json', 'impressum.html', 'beta2007.bin',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/leaflet-rotate.js',
   // Mit ?v=topovo, genau wie index.html und das Manifest es anfordern: Der Cache
   // vergleicht die volle Adresse, ohne den Zusatz fände er offline nichts.

@@ -5612,6 +5612,247 @@ function gpxParse(xmlText) {
     grenzen: objekte.length && nLat >= sLat ? [[sLat, wLon], [nLat, oLon]] : null
   };
 }
+/* ---------- DXF (12.11.2026 gewünscht; DWG bewusst nicht — erst nach DXF umwandeln) ----------
+ * ASCII-DXF aus CAD und Vermessung. Gelesen werden aus ENTITIES: POINT, LINE, LWPOLYLINE, POLYLINE
+ * (mit VERTEX), 3DFACE, CIRCLE, ARC, SPLINE, TEXT, MTEXT und INSERT (Blockbezug als Punkt, Attribute
+ * wie Punktnummer als Name und Daten). Bögen in Polylinien (bulge) werden zur Sehne. Die Koordinaten
+ * sind Planwerte; welches System, wählt man beim Öffnen (dxfSystemWaehlen) — vorgeschlagen nach den
+ * Zahlen. DB_REF und DHDN sehen gleich aus und sind daran nicht zu unterscheiden. */
+const DHDN = { tx: 598.1, ty: 73.7, tz: 418.2, rx: -0.202, ry: -0.045, rz: 2.455, s: 6.7 };   // EPSG:1777 als Coordinate Frame, 1–3 m
+const DXF_ACI = ['#000000', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffffff', '#808080', '#c0c0c0'];
+/** AutoCAD-Farbindex → Hex; 10–249 nach dem Schema Farbton je 10, darin Helligkeit und Sättigung, 250–255 Grau. */
+function dxfFarbe(aci) {
+  if (!(aci > 0) || aci > 255) return null;
+  if (aci < 10) return DXF_ACI[aci];
+  if (aci >= 250) { const g = Math.round(51 + (aci - 250) * 40.8).toString(16).padStart(2, '0'); return '#' + g + g + g; }
+  const ton = Math.floor((aci - 10) / 10) * 15, stufe = (aci - 10) % 10;
+  // gerade: satt, je zwei Stufen dunkler (10 = #ff0000, 12 = dunkler); ungerade: blasse Fassung (11 = #ff7f7f)
+  const l = (stufe % 2 ? [75, 60, 48, 37, 22] : [50, 40, 32, 25, 15])[stufe >> 1], sat = 100;
+  const a = sat / 100 * Math.min(l / 100, 1 - l / 100), f = n => { const k = (n + ton / 30) % 12; return l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  return '#' + [f(0), f(8), f(4)].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
+}
+
+/** DXF-Text → { objekte: [{ art 'p'|'l', pts [[x, y, z]], layer, name, daten, aci }] } in Planwerten. */
+function dxfLesen(text) {
+  if (/^AutoCAD Binary DXF/.test(text)) throw new Error('binäres DXF — bitte als ASCII-DXF speichern');
+  const z = text.split(/\r?\n/);
+  if (z.length < 4) throw new Error('kein lesbares DXF');
+  // Gruppen: Code und Wert im Wechsel
+  const paare = [];
+  for (let i = 0; i + 1 < z.length; i += 2) paare.push([parseInt(z[i], 10), z[i + 1].trim()]);
+  const layerFarbe = new Map(), objekte = [];
+  let abschnitt = '', i = 0;
+  const leseEntity = () => {           // ab paare[i] = [0, TYP]: alle Gruppen bis zum nächsten 0
+    const typ = paare[i][1], g = [];
+    for (i++; i < paare.length && paare[i][0] !== 0; i++) g.push(paare[i]);
+    return { typ, g };
+  };
+  const wert = (g, code, vor = null) => { const p = g.find(q => q[0] === code); return p ? p[1] : vor; };
+  const zahl = (g, code, vor = 0) => { const v = parseFloat(wert(g, code)); return Number.isFinite(v) ? v : vor; };
+  const alle = (g, code) => g.filter(q => q[0] === code).map(q => parseFloat(q[1]));
+  const kopf = g => ({ layer: wert(g, 8, '0'), aci: parseInt(wert(g, 62, '256'), 10) });
+  const kreis = (cx, cy, cz, r, a0 = 0, a1 = 360) => {
+    if (a1 <= a0) a1 += 360;
+    const n = Math.max(8, Math.ceil((a1 - a0) / 10)), pts = [];
+    for (let k = 0; k <= n; k++) { const w = (a0 + (a1 - a0) * k / n) * Math.PI / 180; pts.push([cx + r * Math.cos(w), cy + r * Math.sin(w), cz]); }
+    return pts;
+  };
+  const mtextRein = t => t.replace(/\\[PpNn]/g, ' ').replace(/\\[A-Za-z][^;]*;/g, '').replace(/[{}]/g, '').replace(/\\(.)/g, '$1').trim();
+  while (i < paare.length) {
+    const [c, v] = paare[i];
+    if (c === 0 && v === 'SECTION') { abschnitt = (paare[i + 1] || [])[1] || ''; i += 2; continue; }
+    if (c === 0 && v === 'ENDSEC') { abschnitt = ''; i++; continue; }
+    if (c !== 0) { i++; continue; }
+    if (abschnitt === 'TABLES' && v === 'LAYER') {
+      const { g } = leseEntity();
+      const name = wert(g, 2);
+      if (name != null) layerFarbe.set(name, Math.abs(parseInt(wert(g, 62, '7'), 10)));
+      continue;
+    }
+    if (abschnitt !== 'ENTITIES') { i++; continue; }
+    const { typ, g } = leseEntity();
+    const k = kopf(g);
+    const xs = alle(g, 10), ys = alle(g, 20), zs = alle(g, 30);
+    if (typ === 'POINT') objekte.push({ art: 'p', pts: [[xs[0], ys[0], zs[0] || 0]], ...k });
+    else if (typ === 'LINE') objekte.push({ art: 'l', pts: [[xs[0], ys[0], zs[0] || 0], [zahl(g, 11), zahl(g, 21), zahl(g, 31)]], ...k });
+    else if (typ === 'LWPOLYLINE') {
+      const el = zahl(g, 38), pts = xs.map((x, j) => [x, ys[j], el]);
+      if (zahl(g, 70) & 1 && pts.length > 2) pts.push(pts[0]);
+      if (pts.length > 1) objekte.push({ art: 'l', pts, ...k });
+    } else if (typ === 'POLYLINE') {
+      const zu = zahl(g, 70) & 1, pts = [];
+      while (i < paare.length && paare[i][1] !== 'SEQEND') {
+        const vtx = leseEntity();
+        if (vtx.typ === 'VERTEX' && !(zahl(vtx.g, 70) & 128 && !(zahl(vtx.g, 70) & 64))) pts.push([zahl(vtx.g, 10), zahl(vtx.g, 20), zahl(vtx.g, 30)]);
+      }
+      if (i < paare.length) leseEntity();         // SEQEND
+      if (zu && pts.length > 2) pts.push(pts[0]);
+      if (pts.length > 1) objekte.push({ art: 'l', pts, ...k });
+    } else if (typ === '3DFACE') {
+      const pts = [10, 11, 12, 13].map(cx => [zahl(g, cx), zahl(g, cx + 10), zahl(g, cx + 20)]);
+      if (pts[3].join() === pts[2].join()) pts.pop();
+      pts.push(pts[0]);
+      objekte.push({ art: 'l', pts, ...k });
+    } else if (typ === 'CIRCLE') objekte.push({ art: 'l', pts: kreis(xs[0], ys[0], zs[0] || 0, zahl(g, 40)), ...k });
+    else if (typ === 'ARC') objekte.push({ art: 'l', pts: kreis(xs[0], ys[0], zs[0] || 0, zahl(g, 40), zahl(g, 50), zahl(g, 51)), ...k });
+    else if (typ === 'SPLINE') {
+      // Stützpunkte, sonst die Kontrollpunkte — als Linienzug genau genug für die Karte
+      const fx = alle(g, 11), fy = alle(g, 21), fz = alle(g, 31);
+      const pts = fx.length > 1 ? fx.map((x, j) => [x, fy[j], fz[j] || 0]) : xs.map((x, j) => [x, ys[j], zs[j] || 0]);
+      if (pts.length > 1) objekte.push({ art: 'l', pts, ...k });
+    } else if (typ === 'TEXT' || typ === 'MTEXT') {
+      const t = typ === 'MTEXT' ? mtextRein(g.filter(q => q[0] === 3 || q[0] === 1).map(q => q[1]).join('')) : wert(g, 1, '').trim();
+      if (t && xs.length) objekte.push({ art: 'p', pts: [[xs[0], ys[0], zs[0] || 0]], name: t.slice(0, 120), text: true, ...k });
+    } else if (typ === 'INSERT') {
+      const daten = [];
+      if (zahl(g, 66) === 1) {
+        while (i < paare.length && paare[i][1] !== 'SEQEND') {
+          const at = leseEntity();
+          if (at.typ === 'ATTRIB') { const w = wert(at.g, 1, '').trim(); if (w) daten.push([wert(at.g, 2, 'Attribut'), w]); }
+        }
+        if (i < paare.length) leseEntity();
+      }
+      objekte.push({ art: 'p', pts: [[xs[0], ys[0], zs[0] || 0]], name: daten.length ? daten[0][1] : '', block: wert(g, 2, ''), daten, ...k });
+    }
+  }
+  for (const o of objekte) if (o.aci === 256 || !(o.aci > 0)) o.aci = layerFarbe.get(o.layer) || 7;
+  return { objekte: objekte.filter(o => o.pts.every(p => Number.isFinite(p[0]) && Number.isFinite(p[1]))) };
+}
+
+/** Vorschlag fürs Koordinatensystem nach den Zahlen (Median der Rechts- und Hochwerte). */
+function dxfVorschlag(objekte) {
+  const xs = [], ys = [];
+  for (const o of objekte) for (const p of o.pts) { xs.push(p[0]); ys.push(p[1]); if (xs.length > 20000) break; }
+  const med = a => a.slice().sort((x, y) => x - y)[a.length >> 1];
+  const x = med(xs), y = med(ys);
+  const hochOk = y > 5.0e6 && y < 6.2e6;
+  if (hochOk && x >= 32e6 && x < 33e6) return { sys: 'utm', x, y, text: 'UTM32 mit Zonenkennung (32 vorn)' };
+  if (hochOk && x >= 2e6 && x < 6e6) return { sys: 'dbref', x, y, streifen: Math.floor(x / 1e6), text: `Gauß-Krüger, Streifen ${Math.floor(x / 1e6)} (7 Stellen)` };
+  if (hochOk && x >= 1e5 && x < 9e5) return { sys: 'utm', x, y, text: 'UTM32 ohne Zonenkennung (6 Stellen)' };
+  return { sys: null, x, y, text: 'keine Landeskoordinaten erkannt — vermutlich lokales System' };
+}
+
+/** Planwerte → [lat, lon] im gewählten System. */
+function dxfNachGrad(x, y, sys, beta) {
+  if (sys === 'utm') return utm32Zurueck(x >= 32e6 ? x - 32e6 : x, y);
+  if (sys === 'dhdn' && beta) return dhdnBetaZurueck(x, y, beta);
+  return gkZurueck(x, y, sys === 'dhdn' ? DHDN : DBREF);
+}
+
+/* BeTA2007 (12.11.2026 gewünscht): Gitter der AdV für DHDN → ETRS89, auf ~0,1–0,2 m statt 1–3 m
+ * mit den sieben Parametern. Datei beta2007.bin = de_adv_BETA2007.tif aus PROJ-data (AdV: „Free
+ * redistribution is allowed and welcome“), umgeschrieben in zwei Float32-Ebenen: erst Versatz Breite,
+ * dann Länge (Ost positiv), in Bogensekunden, je 84 Zeilen (von 55,3° N in 0,1° nach Süden) × 62
+ * Spalten (von 5,5° O in 1/6°). Gelesen wird bilinear an der DHDN-Lage (Bessel), wie NTv2. */
+const BETA = { lon0: 5.5, lat0: 55.3, dLon: 1 / 6, dLat: 0.1, w: 62, h: 84 };
+let betaVersprechen = null;
+function betaLaden() {
+  betaVersprechen ??= fetch('beta2007.bin').then(r => {
+    if (!r.ok) throw new Error(`BeTA2007: HTTP ${r.status}`);
+    return r.arrayBuffer();
+  }).then(b => {
+    if (b.byteLength !== BETA.w * BETA.h * 8) throw new Error('BeTA2007: Datei unvollständig');
+    return new Float32Array(b);
+  }).catch(e => { betaVersprechen = null; throw e; });
+  return betaVersprechen;
+}
+/** Versatz [dLat, dLon] in Grad an der DHDN-Lage, null außerhalb des Gitters. */
+function betaVersatz(g, lat, lon) {
+  const { lon0, lat0, dLon, dLat, w, h } = BETA;
+  const fx = (lon - lon0) / dLon, fy = (lat0 - lat) / dLat;
+  if (!(fx >= 0 && fy >= 0 && fx <= w - 1 && fy <= h - 1)) return null;
+  const i = Math.min(w - 2, Math.floor(fx)), j = Math.min(h - 2, Math.floor(fy)), u = fx - i, v = fy - j;
+  const wert = (eb, ii, jj) => g[eb * w * h + jj * w + ii];
+  const bil = eb => (1 - v) * ((1 - u) * wert(eb, i, j) + u * wert(eb, i + 1, j)) + v * ((1 - u) * wert(eb, i, j + 1) + u * wert(eb, i + 1, j + 1));
+  return [bil(0) / 3600, bil(1) / 3600];
+}
+/** DHDN-Gauß-Krüger → ETRS89 [lat, lon] über BeTA2007; außerhalb des Gitters die sieben Parameter. */
+function dhdnBetaZurueck(r, h, g) {
+  const streifen = Math.floor(r / 1e6);
+  const [pb, lb] = tmZurueck(r, h, ELL_BESSEL, 3 * streifen, 1, streifen * 1e6 + 500000);
+  const v = betaVersatz(g, pb, lb);
+  return v ? [pb + v[0], lb + v[1]] : gkZurueck(r, h, DHDN);
+}
+
+/** Auswahl des Systems (so gewünscht: manuell, mit Vorschlag). Promise: 'utm' | 'dbref' | 'dhdn' | null. */
+function dxfSystemWaehlen(name, vorschlag) {
+  return new Promise(fertig => {
+    const zahl = v => v.toLocaleString('de-DE', { maximumFractionDigits: 0, useGrouping: false });
+    const el = document.createElement('div');
+    el.className = 'dxf-wahl-grund';
+    el.innerHTML = `<div class="dxf-wahl" role="dialog" aria-modal="true" aria-label="Koordinatensystem der DXF">
+      <p class="bb-title">${esc(name)}</p>
+      <p class="bb-sub">Rechts ${zahl(vorschlag.x)} · Hoch ${zahl(vorschlag.y)}<br>Erkannt: ${esc(vorschlag.text)}</p>
+      <p class="pal-label">Koordinatensystem</p>
+      <div class="seg dxf-sys" role="group" aria-label="Koordinatensystem">
+        <button type="button" class="seg-btn" data-sys="utm">UTM32 (ETRS89)</button>
+        <button type="button" class="seg-btn" data-sys="dbref">DB_REF GK</button>
+        <button type="button" class="seg-btn" data-sys="dhdn">DHDN GK</button>
+      </div>
+      <p class="fine dxf-sys-hinweis"></p>
+      <div class="bb-actions"><button type="button" data-dxf="nein">Abbrechen</button><button type="button" class="maps" data-dxf="ja">Laden</button></div>
+    </div>`;
+    document.body.appendChild(el);
+    let sys = vorschlag.sys;
+    const gk = vorschlag.x >= 2e6 && vorschlag.x < 6e6;
+    const zeigen = () => {
+      el.querySelectorAll('[data-sys]').forEach(b => {
+        b.classList.toggle('is-on', b.dataset.sys === sys);
+        // UTM-Werte lassen sich nicht als GK lesen und umgekehrt
+        b.disabled = vorschlag.sys == null || (b.dataset.sys === 'utm') === gk;
+      });
+      el.querySelector('[data-dxf="ja"]').disabled = !sys;
+      el.querySelector('.dxf-sys-hinweis').textContent = !sys ? 'Diese Zahlen liegen nicht in Deutschland — eine DXF in einem Baustellen- oder Ortssystem lässt sich ohne Passpunkte nicht verorten.'
+        : sys === 'utm' ? 'ETRS89/UTM Zone 32, wie die Laserdaten — ohne Umrechnung.'
+        : sys === 'dbref' ? 'DB_REF nach Ril 883.9010, Streifen aus der ersten Ziffer. Gleich aussehende DHDN-Werte lägen in Bayern bis etwa 0,5 m daneben.'
+        : 'DHDN über das BeTA2007-Gitter der AdV — auf etwa 0,1–0,2 m.';
+    };
+    const ende = w => { el.remove(); document.removeEventListener('keydown', taste); fertig(w); };
+    const taste = ev => { if (ev.key === 'Escape') ende(null); };
+    document.addEventListener('keydown', taste);
+    el.querySelectorAll('[data-sys]').forEach(b => b.addEventListener('click', () => { sys = b.dataset.sys; zeigen(); }));
+    el.querySelector('[data-dxf="nein"]').addEventListener('click', () => ende(null));
+    el.querySelector('[data-dxf="ja"]').addEventListener('click', () => ende(sys));
+    el.addEventListener('click', ev => { if (ev.target === el) ende(null); });
+    zeigen();
+  });
+}
+
+/** DXF lesen, System wählen lassen, in die Form der KML-Objekte bringen. null = abgebrochen. */
+async function dxfParse(text, name) {
+  const { objekte: roh } = dxfLesen(text);
+  if (!roh.length) return { objekte: [], titel: '', grenzen: null };
+  const vorschlag = dxfVorschlag(roh);
+  const sys = await dxfSystemWaehlen(name, vorschlag);
+  if (!sys) return null;
+  let beta = null;
+  if (sys === 'dhdn') {
+    try { beta = await betaLaden(); }
+    catch (e) { console.warn(e); toast('BeTA2007 nicht geladen — DHDN mit sieben Parametern (1–3 m)'); }
+  }
+  const objekte = [];
+  let sLat = 90, wLon = 180, nLat = -90, oLon = -180;
+  const grad = p => {
+    const k = dxfNachGrad(p[0], p[1], sys, beta);
+    if (k[0] < sLat) sLat = k[0]; if (k[0] > nLat) nLat = k[0]; if (k[1] < wLon) wLon = k[1]; if (k[1] > oLon) oLon = k[1];
+    return k;
+  };
+  for (const o of roh) {
+    const farbe = dxfFarbe(o.aci);
+    const daten = [['Layer', o.layer], ...(o.block ? [['Block', o.block]] : []), ...(o.daten || []).slice(1)];
+    const stil = farbe && farbe !== '#000000' ? { color: farbe, opacity: 1 } : null;
+    if (o.art === 'p') {
+      const zz = o.pts[0][2];
+      objekte.push({ art: 'p', koord: grad(o.pts[0]), ...(zz ? { hoehe: zz } : {}), name: o.name || '', text: '', daten, ordner: o.layer, stil });
+    } else {
+      objekte.push({ art: 'l', koord: o.pts.map(grad), name: '', text: '', daten, ordner: o.layer, stil });
+    }
+  }
+  const inDe = nLat > 47 && sLat < 55.2 && oLon > 5.5 && wLon < 15.2;
+  if (!inDe) throw new Error('liegt mit diesem Koordinatensystem nicht in Deutschland');
+  return { objekte, titel: '', grenzen: [[sLat, wLon], [nLat, oLon]], sys };
+}
+
 /** Länge, Auf- und Abstieg eines Linienzugs als Zeile. hoehen: je Punkt oder null (dann nur die Länge).
  *  schwelle: kleinere Wechsel zählen nicht — GNSS-Höhen rauschen (5 m), das DGM1 kaum (2 m). */
 function gpxKennzahlen(koord, hoehen, schwelle) {
@@ -5645,6 +5886,14 @@ async function gpxHoehenNachtragen(akte) {
   if (!geaendert) return;
   try { await kmlAblegen(akte); } catch (err) { console.warn(err); }
   kmlListe();
+}
+/** DXF? Nach der Endung oder dem Anfang (Gruppencode 0, SECTION). */
+const istDxf = (name, buf) => /\.dxf$/i.test(name)
+  || /^\s*0\s*\r?\n\s*SECTION/.test(new TextDecoder('latin1').decode(new Uint8Array(buf, 0, Math.min(64, buf.byteLength))));
+/** DXF bis AutoCAD 2004 in der Codepage des Systems (meist ANSI_1252), danach UTF-8. */
+function dxfDekodieren(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return new TextDecoder('windows-1252').decode(buf); }
 }
 /** GPX statt KML? Nach der Endung oder dem Wurzelelement. */
 const istGpx = (name, text) => /\.gpx$/i.test(name) || /<gpx[\s>]/i.test(text.slice(0, 3000));
@@ -6134,16 +6383,18 @@ async function kmlOeffnen(dateien) {
       if (datei.size > KML_MAX_DATEI) throw new Error('größer als ' + Math.round(KML_MAX_DATEI / 1e6) + ' MB');
       const buf = await datei.arrayBuffer();
       const istZip = buf.byteLength > 4 && new DataView(buf).getUint32(0, false) === 0x504b0304;
-      const roh = istZip ? await kmzText(buf) : kmlDekodieren(buf);
-      const gpx = !istZip && istGpx(datei.name, roh);
-      const geparst = gpx ? gpxParse(roh) : kmlParse(roh);
+      const dxf = !istZip && istDxf(datei.name, buf);
+      const roh = istZip ? await kmzText(buf) : dxf ? dxfDekodieren(buf) : kmlDekodieren(buf);
+      const gpx = !istZip && !dxf && istGpx(datei.name, roh);
+      const geparst = dxf ? await dxfParse(roh, datei.name) : gpx ? gpxParse(roh) : kmlParse(roh);
+      if (!geparst) continue;                // DXF: Auswahl des Systems abgebrochen
       if (!geparst.objekte.length) { toast(datei.name + ': keine Geometrie gefunden.'); continue; }
 
       const vorlaeufig = { objekte: geparst.objekte };
       const autoFeld = kmlAutoFeld(vorlaeufig);
       const akte = {
         id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        name: datei.name.replace(/\.(kml|kmz|gpx)$/i, '') || 'KML',
+        name: datei.name.replace(/\.(kml|kmz|gpx|dxf)$/i, '') || 'KML',
         /* Trägt die Datei ein Merkmal, das nach Typ aussieht, werden die Formen
          * gleich danach unterschieden — genau dafür steht es ja drin. */
         symbol: autoFeld ? 'auto' : 'kreis',
@@ -6160,6 +6411,7 @@ async function kmlOeffnen(dateien) {
       };
 
       if (gpx) akte.gpx = true;           // mit abgelegt: im Laserviewer werden ihre Linien zum Band
+      if (dxf) akte.dxf = geparst.sys;     // gewähltes System, nur zur Auskunft
       try { await kmlAblegen(akte); }
       catch { toast('Speichern nicht möglich — die Datei ist nur bis zum Neuladen da.'); }
 
@@ -7899,6 +8151,14 @@ const laserSeiteText = () => laserGanzeKachel() ? 'Kachel' : `${laserSeite} m`;
 /* Für die 3D-Ansicht (laser.js). Die Laserpunkte der BVV haben keine Farbe
  * (Punktformat 1); die Färbung „Luftbild“ holt sie aus dem DOP20 der BVV,
  * gleich in UTM32 — CORS gibt der Dienst frei, auch für localhost (05.11.2026). */
+/* Kataster im Laserviewer (12.11.2026 gewünscht): die Parzellarkarte der BVV als Umring (schwarz auf
+ * durchsichtig), EPSG:25832. Der Dienst liefert bis 6000 px und schickt CORS-Kopfzeilen. */
+function laserKatasterUrl(e0, n0, e1, n1, w, h) {
+  return 'https://geoservices.bayern.de/od/wms/alkis/v1/parzellarkarte?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
+    + '&LAYERS=by_alkis_parzellarkarte_umr_schwarz&STYLES=&CRS=EPSG:25832&FORMAT=image/png&TRANSPARENT=TRUE'
+    + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}`;
+}
+
 function laserLuftbildUrl(e0, n0, e1, n1, w, h) {
   return LAND_WMS.dop.by.replace('EPSG:3857', 'EPSG:25832') + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}&FORMAT=image/jpeg`;
 }
@@ -8104,7 +8364,7 @@ async function ofmImRechteck(e0, n0, e1, n1, namen, was) {
 }
 
 /** Straßen und Wege im Rechteck (UTM32): { strassen: [{ stufe 0 Haupt | 1 Neben | 2 Weg, pts }],
- *  namen: [{ name, pts }] }. */
+ *  namen: [{ name, stufe, pts }] }. */
 async function laserStrassen(e0, n0, e1, n1) {
   const strassen = [], namen = [];
   for (const { ebenen, utm } of await ofmImRechteck(e0, n0, e1, n1, ['transportation', 'transportation_name'], 'das Straßennetz')) {
@@ -8116,7 +8376,7 @@ async function laserStrassen(e0, n0, e1, n1) {
     for (const f of ebenen.transportation_name || []) {
       const name = f.eig['name:de'] || f.eig.name || f.eig.ref;
       if (f.typ !== 2 || !name || f.eig.brunnel === 'tunnel') continue;
-      for (const l of f.linien) namen.push({ name, pts: l.map(utm) });
+      for (const l of f.linien) namen.push({ name, stufe: STR_KLASSEN[f.eig.class] ?? 2, pts: l.map(utm) });
     }
   }
   return { strassen, namen };
@@ -8512,7 +8772,7 @@ async function laserLaden(auswahl = null) {
           ...(unterzeile ? { unterzeile } : {}),
           dichter: a => laserLaden(a), ...(auswahl ? { ausBox: true, ganz: () => laserLaden(), kamera: auswahl.kamera } : {}),
           utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude, kostra: laserKostra,
-          achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel,
+          achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel, kataster: laserKatasterUrl, katasterFarbe: parzFarbe(),
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); if (!laserTausch) wacheLaserZu(); } });
         wacheAuffuellen();
@@ -14821,9 +15081,9 @@ function bind() {
   window.addEventListener('drop', ev => {
     if (!zieht(ev)) return;
     ev.preventDefault();      // sonst öffnet der Browser die Datei und die App ist weg
-    const dateien = [...ev.dataTransfer.files].filter(f => /\.(kml|kmz|gpx)$/i.test(f.name));
+    const dateien = [...ev.dataTransfer.files].filter(f => /\.(kml|kmz|gpx|dxf)$/i.test(f.name));
     if (dateien.length) kmlOeffnen(dateien);
-    else toast('Nur KML-, KMZ- und GPX-Dateien.');
+    else toast('Nur KML-, KMZ-, GPX- und DXF-Dateien.');
   });
 
   // WMS: Adresse und Layer merken, Zugangsdaten bleiben beim Browser

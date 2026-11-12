@@ -2190,6 +2190,24 @@ body { font-variant-numeric: tabular-nums; }
 /* Standort über der Startansicht; an wie der Standortknopf der Karte (getöntes Glas) */
 .lz-ort { right: var(--gap); bottom: calc(var(--gap) + 52px + env(safe-area-inset-bottom)); }
 .lz-ort svg .voll { fill: currentColor; stroke: none; }
+/* Limitbox (12.11.2026): eigener Knopf über dem Standort, der Dialog links daneben */
+.lz-box-knopf { right: var(--gap); bottom: calc(var(--gap) + 104px + env(safe-area-inset-bottom)); }
+.lz-box-dialog {
+  position: absolute; z-index: 2; right: calc(var(--gap) + 52px); bottom: calc(var(--gap) + 104px + env(safe-area-inset-bottom));
+  width: min(300px, calc(100vw - 2 * var(--gap) - 52px)); padding: 4px 14px 14px;
+  border: 1px solid transparent; border-radius: var(--r);
+  background: var(--glass); box-shadow: var(--shadow);
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.lz-box-dialog:not([hidden]) { animation: einblenden .2s var(--auf); }
+.lz-box-kopf { position: relative; display: flex; align-items: center; gap: 8px; height: 40px; margin-bottom: 6px; padding-right: 34px; color: var(--muted); }
+.lz-box-kopf > svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.lz-box-kopf h2 { margin: 0; font-size: .74rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.lz-box-kopf .bb-close { top: 4px; right: -6px; }
+.lz-box-dialog .seg + .seg { margin-top: 8px; }
+.lz-box-dialog .lz-box-mass { margin: 8px 0 0; }
+.lz-box-dialog .lz-box-laden { margin-top: 10px; }
+.regen-modus .lz-box-knopf, .regen-modus .lz-box-dialog, .regen-tafel-offen .lz-box-knopf { display: none; }
 /* Regen am Handy: Knopf über dem Messen (wie der Standort über der Startansicht),
  * die Tafel darüber; leuchtet, solange es regnet */
 .lz-regen-knopf { left: var(--gap); bottom: calc(var(--gap) + 52px + env(safe-area-inset-bottom)); }
@@ -2430,7 +2448,7 @@ body { font-variant-numeric: tabular-nums; }
 .lz-info .fine { margin: 3px 0 0; font-size: .74rem; color: var(--muted); }
 
 /* Spalte und Leiste gibt es nur am Desktop */
-.lz-schiene, .lz-seite { display: none; }
+.lz-schiene, .lz-seite, .lz-seite-griff { display: none; }
 @media (min-width: 1010px) {
   /* Wie Topovo ab 1010 px: Symbolspalte (64 px) und Glasleiste (320 px) links */
   .lz-schiene {
@@ -2460,6 +2478,13 @@ body { font-variant-numeric: tabular-nums; }
     transition: transform .3s var(--auf), opacity .3s var(--auf);
   }
   .seite-zu .lz-seite { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+  /* „<“ an der Kante wie #leisteGriff in Topovo: offen innen in der Leiste, zu außen an der Spalte */
+  .laser-ansicht .lz-seite-griff { display: grid; position: absolute; z-index: 3; left: calc(var(--schiene) + var(--seite) - 20px); }
+  .seite-zu .lz-seite-griff {
+    left: var(--schiene); border-radius: 0 var(--r-knopf) var(--r-knopf) 0;
+    background: var(--schiene-grund); box-shadow: 4px 0 12px rgba(0, 0, 0, .15);
+  }
+  .seite-zu .lz-seite-griff svg { transform: rotate(180deg); }
   .lz-seite-kopf { padding: 2px 0 12px; border-bottom: 1px solid var(--line); }
   .lz-seite-kopf .bb-sub { margin-top: 3px; }
   .lz-seite-titel { margin: 14px 0 4px; font-size: .74rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
@@ -2477,7 +2502,11 @@ body { font-variant-numeric: tabular-nums; }
   /* Die runden Knöpfe der Ecken übernimmt die Spalte */
   .lz-einst, .lz-messen, .lz-heim, .lz-zu, .lz-regen-knopf, .lz-regen-tafel, .lz-regen-leiste { display: none; }
   /* Standort wie in Topovo oben rechts, nicht in der Spalte */
-  .lz-ort { top: 16px; right: 16px; bottom: auto; }
+  .lz-ort { top: 68px; right: 16px; bottom: auto; }
+  .lz-box-knopf { top: 16px; right: 16px; bottom: auto; }
+  .lz-box-dialog { top: 16px; right: 68px; bottom: auto; width: 300px; }
+  /* Die Quellenzeile endet vor dem offenen Dialog */
+  .box-offen .lz-fuss { right: calc(68px + 300px + 12px); }
   /* Fußzeile, Hinweis und Farbskala in der Mitte der freien Fläche */
   .lz-fuss { left: calc(var(--schiene) + var(--seite) + 16px); right: 74px; top: 16px; }
   .lz-tipp { left: calc(50% + (var(--schiene) + var(--seite)) / 2); max-width: calc(100% - var(--schiene) - var(--seite) - 56px); }
@@ -2539,6 +2568,11 @@ body { font-variant-numeric: tabular-nums; }
 [data-ik="strasse"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 3 4 21M16 3l4 18M12 4v3M12 10.5v3M12 17v3'/%3E%3C/svg%3E"); }
 [data-ik="schrift"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7V5h14v2M12 5v14M9 19h6'/%3E%3C/svg%3E"); }
 [data-ik="tp"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4 20.5 19h-17z'/%3E%3Ccircle cx='12' cy='14' r='1.7' fill='black'/%3E%3C/svg%3E"); }
+/* Limitbox (12.11.2026): innen = gestrichelter Rahmen, der Kern gefüllt bleibt; außen = der Rand gefüllt,
+   der Kern ausgespart; Griffe = Rahmen mit runden Griffen an den Seiten */
+[data-ik="box-innen"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='3.5' width='17' height='17' rx='1.5' stroke-dasharray='3 2.6'/%3E%3Crect x='8' y='8' width='8' height='8' rx='1' fill='black'/%3E%3C/svg%3E"); }
+[data-ik="box-aussen"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath fill='black' fill-rule='evenodd' stroke='none' d='M3.5 5A1.5 1.5 0 0 1 5 3.5h14A1.5 1.5 0 0 1 20.5 5v14a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19zM8 8v8h8V8z'/%3E%3C/svg%3E"); }
+[data-ik="griffe"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='1'/%3E%3Ccircle cx='12' cy='4' r='1.9' fill='black' stroke='none'/%3E%3Ccircle cx='20' cy='12' r='1.9' fill='black' stroke='none'/%3E%3Ccircle cx='12' cy='20' r='1.9' fill='black' stroke='none'/%3E%3Ccircle cx='4' cy='12' r='1.9' fill='black' stroke='none'/%3E%3C/svg%3E"); }
 [data-ik="neu"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19.5 12a7.5 7.5 0 1 1-2.2-5.3'/%3E%3Cpath d='M19.5 4v4h-4'/%3E%3C/svg%3E"); }
 [data-ik="radar"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='1.7' fill='black'/%3E%3Cpath d='M12 12l5.5-5.5M20 12a8 8 0 1 1-8-8M16 12a4 4 0 1 1-4-4'/%3E%3C/svg%3E"); }
 [data-ik="ordner"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6.5h6l2 2h9v10.5h-17z'/%3E%3C/svg%3E"); }
@@ -2604,3 +2638,14 @@ body { font-variant-numeric: tabular-nums; }
 }
 .laser-geraet-ent.is-on { background: var(--accent-flaeche); border: 1px solid transparent; color: var(--accent); box-shadow: var(--accent-ring); }
 .laser-geraet-ent:disabled { opacity: .5; cursor: default; }
+
+/* DXF öffnen: Wahl des Koordinatensystems (12.11.2026), mittig über allem */
+.dxf-wahl-grund { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; padding: var(--gap);
+  background: rgba(0, 0, 0, .45); animation: einblenden .2s var(--auf); }
+.dxf-wahl { width: min(380px, 100%); padding: 16px 16px 14px; border-radius: var(--r);
+  background: var(--glass-dicht); box-shadow: var(--shadow); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); color: var(--text); }
+.dxf-wahl .bb-sub { margin: 4px 0 12px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.dxf-wahl .dxf-sys { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+.dxf-wahl .seg-btn:disabled { opacity: .4; cursor: default; }
+.dxf-wahl .fine { min-height: 3.6em; margin: 10px 0 12px; font-size: .76rem; color: var(--muted); line-height: 1.4; }
+.dxf-wahl .bb-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

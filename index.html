@@ -20,6 +20,8 @@
 <link rel="icon" href="/topovo/icons/icon-192.png?v=topovo" type="image/png" sizes="192x192">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Topovo">
+<!-- iPhone: Karte unter der Statusleiste (Uhr, Notch) durchziehen; Suche usw. rücken über env(safe-area-inset-top) darunter -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -423,12 +425,12 @@
     </details>
 
     <details class="sheet-sec" data-sec="kml">
-      <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8.5L18 6.5V21H6zM14.5 3v3.5H18"/><circle cx="12" cy="13.5" r="2.2"/></svg><h2>Eigene KML- und GPX-Dateien</h2></summary>
+      <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8.5L18 6.5V21H6zM14.5 3v3.5H18"/><circle cx="12" cy="13.5" r="2.2"/></svg><h2>Eigene KML-, GPX- und DXF-Dateien</h2></summary>
       <div class="seg">
-        <button id="kmlAdd" class="seg-btn" type="button" data-ik="ordner">KML, KMZ oder GPX öffnen</button>
+        <button id="kmlAdd" class="seg-btn" type="button" data-ik="ordner">KML, KMZ, GPX oder DXF öffnen</button>
       </div>
       <input id="kmlFile" type="file" multiple hidden
-             accept=".kml,.kmz,.gpx,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/gpx+xml">
+             accept=".kml,.kmz,.gpx,.dxf,image/vnd.dxf,application/dxf,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/gpx+xml">
       <div id="kmlList" class="kml-list"></div>
 
       <div class="seg" role="group" aria-label="Beschriftung">

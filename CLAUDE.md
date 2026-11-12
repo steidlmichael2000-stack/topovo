@@ -327,6 +327,10 @@ zugunsten einer Zeile verworfen. Geografische Grad zeigt die Zeile nicht als Bei
 Die gibt dort niemand ein. Nach Änderungen `node werkzeug/dbref-pruefen.mjs` (prüft auch
 den Rückweg).
 
+**DXF-Import mit DHDN** (12.11.2026): über BeTA2007 (`dhdnBetaZurueck`, Gitter `beta2007.bin` = PROJ-data
+`de_adv_BETA2007.tif` als zwei Float32-Ebenen, in `SHELL_FILES`). Geprüft in `dbref-pruefen.mjs` gegen PROJ (0,6 mm).
+Die Koordinatensuche bleibt bei DB_REF (eine Zeile, siehe oben).
+
 ## Tour (`tour.js`, Oktober 2026)
 
 Das ? im ©-Kasten startet sie; beim ersten Start einmal angeboten (`prefs.tourAngeboten`). Die

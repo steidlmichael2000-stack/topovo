@@ -65,4 +65,26 @@ for (const [e, n, h, s, r, hh] of MIT_HOEHE) {
 }
 const ok3 = mitH < 0.001;
 console.log(`${ok3 ? 'ok    ' : 'FEHLER'}  Export UTM32 mit Höhe → DB_REF gegen proj4: größte Abweichung ${(mitH * 1000).toFixed(1)} mm`);
-process.exit(ok && ok2 && ok3 ? 0 : 1);
+/* DHDN über BeTA2007 (DXF-Import, dhdnBetaZurueck + beta2007.bin). Referenz PROJ 9 (pyproj 3.8.0),
+ * ETRS89 → inv hgridshift de_adv_BETA2007.tif → tmerc Bessel, GK2–GK4, 12.11.2026. */
+const dStueck = src.slice(src.indexOf('function dxfNachGrad'), src.indexOf('/** Auswahl des Systems'));
+const { dhdnBetaZurueck } = new Function(stueck + dStueck + '; return { dhdnBetaZurueck };')();
+const gitter = new Float32Array(readFileSync(new URL('../beta2007.bin', import.meta.url)).buffer.slice(0));
+// [lat, lon, Rechts, Hoch]
+const BETA_REF = [
+  [49.66417, 10.05845, 3576487.953, 5503592.698], [47.5, 10.2, 3590487.183, 5263092.928],
+  [50.4, 9.6, 3542733.895, 5585072.687], [48.1, 11.6, 4470314.801, 5329181.12],
+  [49.45, 11.08, 4433397.284, 5479638.123], [47.6, 12.98, 4573803.675, 5273975.731],
+  [50.3, 12.1, 4507231.066, 5573779.105], [52.52, 13.4, 4595132.426, 5821685.882],
+  [53.55, 10.0, 3566350.279, 5935856.645], [51.0, 7.0, 2570240.367, 5652122.837],
+  [48.78, 9.18, 3513304.182, 5404737.975], [54.3, 13.1, 4571714.123, 6019426.737],
+  [47.7, 7.6, 3394996.798, 5285581.695],
+];
+let beta = 0;
+for (const [lat, lon, r, h] of BETA_REF) {
+  const [la, lo] = dhdnBetaZurueck(r, h, gitter);
+  beta = Math.max(beta, Math.hypot((la - lat) * 111320, (lo - lon) * 111320 * Math.cos(lat * Math.PI / 180)));
+}
+const ok4 = beta < 0.002;
+console.log(`${ok4 ? 'ok    ' : 'FEHLER'}  DHDN über BeTA2007 gegen PROJ: größte Abweichung ${(beta * 1000).toFixed(1)} mm an ${BETA_REF.length} Punkten`);
+process.exit(ok && ok2 && ok3 && ok4 ? 0 : 1);
