@@ -6447,6 +6447,11 @@ async function kmlOeffnen(dateien) {
     try {
       if (datei.size > KML_MAX_DATEI) throw new Error('größer als ' + Math.round(KML_MAX_DATEI / 1e6) + ' MB');
       const buf = await datei.arrayBuffer();
+      // DWG (Kopf „AC1…“, binär) liest Topovo nicht — so entschieden am 12.11.2026; als DXF speichern lassen
+      if (/\.dwg$/i.test(datei.name)
+        || (buf.byteLength > 6 && /^AC1\d{3}$/.test(String.fromCharCode(...new Uint8Array(buf, 0, 6))))) {
+        throw new Error('DWG kann Topovo nicht lesen — im CAD als DXF speichern (ASCII)');
+      }
       const istZip = buf.byteLength > 4 && new DataView(buf).getUint32(0, false) === 0x504b0304;
       const dxf = !istZip && istDxf(datei.name, buf);
       const roh = istZip ? await kmzText(buf) : dxf ? dxfDekodieren(buf) : kmlDekodieren(buf);

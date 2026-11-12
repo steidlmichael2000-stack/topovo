@@ -38,3 +38,11 @@ cp "$aus/basis.apk" "$aus/roh.apk"
   --out "$aus/topovo.apk" "$aus/ausgerichtet.apk"
 "$BT/apksigner" verify "$aus/topovo.apk"
 echo "Fertig: $aus/topovo.apk ($(du -h "$aus/topovo.apk" | cut -f1))"
+
+# Ablage in Google Drive (12.11.2026 gewünscht), Name mit versionName aus dem Manifest.
+# Abschalten mit TOPOVO_DRIVE= (leer).
+DRIVE="${TOPOVO_DRIVE-gdrive:Topovo APK}"
+if [ -n "$DRIVE" ] && command -v rclone >/dev/null; then
+  ver="$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' "$hier/AndroidManifest.xml")"
+  rclone copyto "$aus/topovo.apk" "$DRIVE/Topovo-$ver.apk" && echo "In Drive: $DRIVE/Topovo-$ver.apk"
+fi
