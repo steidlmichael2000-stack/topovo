@@ -330,6 +330,10 @@ den Rückweg).
 **DXF-Import mit DHDN** (12.11.2026): über BeTA2007 (`dhdnBetaZurueck`, Gitter `beta2007.bin` = PROJ-data
 `de_adv_BETA2007.tif` als zwei Float32-Ebenen, in `SHELL_FILES`). Geprüft in `dbref-pruefen.mjs` gegen PROJ (0,6 mm).
 Die Koordinatensuche bleibt bei DB_REF (eine Zeile, siehe oben).
+**DWG** (12.11.2026): `dwg-werk.js` wandelt im Gerät mit LibreDWG (GPLv3 wie Topovo, `vendor/libredwg/`, gebaut mit
+`werkzeug/libredwg-bauen.sh`, Emscripten 6.0.13) nach DXF, dann `dxfParse`. Modul ~8,5 MB, erst beim ersten DWG geladen.
+**`-sSTACK_SIZE=8MB` nicht wegnehmen** (sonst DXF ohne Werte). Nach Neubau `DWG_MODUL` in `dwg-werk.js` hochzählen.
+DXF/DWG zeigen nur Geometrie (so gewünscht): keine Texte, keine Namen; Attribute stehen in den Daten.
 
 ## Tour (`tour.js`, Oktober 2026)
 

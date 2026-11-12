@@ -5218,6 +5218,8 @@ function kmlWerteMit(akte, feld) {
  * Gilt überall gleich: Zeichnen, Beschriftung, Fangen beim Messen und die Suche
  * nach dem nächsten Objekt. */
 function kmlSichtbarObj(akte, o) {
+  // Punkte bzw. Linien/Flächen einer Datei ganz aus (12.11.2026 gewünscht: DXF voller Grenzpunkte)
+  if (akte.artenAus && akte.artenAus.includes(o.art === 'p' ? 'p' : 'l')) return false;
   const aus = akte.ausWerte;
   if (!aus || !aus.length || !akte.autoFeld) return true;
   const v = kmlWert(o, akte.autoFeld);
@@ -5777,7 +5779,11 @@ function dxfLesen(text) {
         }
         if (i < paare.length) leseEntity();
       }
-      objekte.push({ art: 'p', pts: [[xs[0], ys[0], zs[0] || 0]], name: daten.length ? daten[0][1] : '', block: wert(g, 2, ''), daten, ...k });
+      // Name: ein Attribut, das danach aussieht (Punktnummer …), sonst das erste — außer es ist eine
+      // Kennung wie urn:adv:oid:… (ALKIS-Auszüge, 12.11.2026: sonst hieß jeder Grenzpunkt so)
+      const nameAt = daten.find(([n]) => /^(p(unkt)?[-_ ]?n(umme)?r|pkt|nr|nummer|name|bez(eichnung)?|punkt(nummer)?)$/i.test(n))
+        || (daten.length && !/^urn:/i.test(daten[0][1]) ? daten[0] : null);
+      objekte.push({ art: 'p', pts: [[xs[0], ys[0], zs[0] || 0]], name: nameAt ? nameAt[1] : '', block: wert(g, 2, ''), daten, ...k });
     }
   }
   for (const o of objekte) if (o.aci === 256 || !(o.aci > 0)) o.aci = layerFarbe.get(o.layer) || 7;
@@ -5904,11 +5910,14 @@ async function dxfParse(text, name) {
   };
   for (const o of roh) {
     const farbe = dxfFarbe(o.aci);
-    const daten = [['Layer', o.layer], ...(o.block ? [['Block', o.block]] : []), ...(o.daten || []).slice(1)];
+    const daten = [['Layer', o.layer], ...(o.block ? [['Block', o.block]] : []), ...(o.daten || [])];
     const stil = farbe && farbe !== '#000000' ? { color: farbe, opacity: 1 } : null;
+    // Nur Geometrie (12.11.2026 so gewünscht): Texte fallen weg, Punkte ohne Namen — keine Schilder.
+    // Attribute wie Punktnummer stehen weiter in den Daten des Punkts.
+    if (o.text) continue;
     if (o.art === 'p') {
       const zz = o.pts[0][2];
-      objekte.push({ art: 'p', koord: grad(o.pts[0]), ...(zz ? { hoehe: zz } : {}), name: o.name || '', text: '', daten, ordner: o.layer, stil });
+      objekte.push({ art: 'p', koord: grad(o.pts[0]), ...(zz ? { hoehe: zz } : {}), name: '', text: '', daten, ordner: o.layer, stil });
     } else {
       objekte.push({ art: 'l', koord: o.pts.map(grad), name: '', text: '', daten, ordner: o.layer, stil });
     }
@@ -6268,6 +6277,7 @@ function kmlListe() {
     const autoKarte = form === 'auto' ? kmlFormKarte(a) : null;
     const werte = kmlWerteMit(a, a.autoFeld);
     const labelFelder = a.labelFelder || ['name'];
+    const anzP = a.objekte.filter(o => o.art === 'p').length, hatPunkte = anzP > 0, hatLinien = anzP < a.objekte.length;
     const zeigeSymbol = form === 'auto' ? (a.autoFeld ? 'auto' : 'kreis') : form;
     /* Bringt die Datei eigene Farben mit, kann man zu ihnen zurück — „wie in der
      * Datei" ist dann gewählt, solange keine eigene Farbe gesetzt ist. */
@@ -6327,6 +6337,12 @@ function kmlListe() {
           `<button class="kml-feld${(a.ausWerte || []).includes(w.wert) ? '' : ' is-on'}" type="button"
                    data-kfilter="${i}" data-wert="${esc(w.wert)}">${esc(w.wert)} <small>${w.anzahl}</small></button>`).join('')}
           ${werte.length > 14 ? `<span class="kml-mehr">+${werte.length - 14} weitere</span>` : ''}</div>` : ''}
+
+        ${hatPunkte && hatLinien ? `
+        <p class="kml-lab">Zeigen</p>
+        <div class="kml-wahl">${[['p', 'Punkte', anzP], ['l', 'Linien und Flächen', a.objekte.length - anzP]].map(([k, t, n]) =>
+          `<button class="kml-feld${(a.artenAus || []).includes(k) ? '' : ' is-on'}" type="button"
+                   data-kart="${i}" data-wert="${k}">${t} <small>${n}</small></button>`).join('')}</div>` : ''}
 
         <p class="kml-lab">Beschriftung</p>
         <div class="kml-wahl">
@@ -6396,6 +6412,13 @@ function kmlListe() {
     stilGesetzt(i, { ausWerte: aus.includes(wert) ? aus.filter(x => x !== wert) : [...aus, wert] });
   }));
 
+  box.querySelectorAll('[data-kart]').forEach(btn => btn.addEventListener('click', () => {
+    const i = Number(btn.dataset.kart), a = kmlAkten[i];
+    if (!a) return;
+    const k = btn.dataset.wert, aus = a.artenAus || [];
+    stilGesetzt(i, { artenAus: aus.includes(k) ? aus.filter(x => x !== k) : [...aus, k] });
+  }));
+
   box.querySelectorAll('[data-klabel]').forEach(btn => btn.addEventListener('click', () => {
     const i = Number(btn.dataset.klabel), a = kmlAkten[i];
     if (!a) return;
@@ -6440,20 +6463,40 @@ function kmlListe() {
 
 /* -------- Dateien öffnen -------- */
 
+/** DWG → DXF (ArrayBuffer) mit LibreDWG im eigenen Worker; das Modul (~MB) kommt erst hier aus dem Netz. */
+function dwgNachDxf(buf, name) {
+  return new Promise((fertig, fehler) => {
+    const w = new Worker('dwg-werk.js');
+    const halt = setTimeout(() => { w.terminate(); fehler(new Error('DWG-Umwandlung dauerte zu lange')); }, 120000);
+    toast(name + ': DWG wird umgewandelt …');
+    w.onmessage = ev => {
+      clearTimeout(halt);
+      w.terminate();
+      if (ev.data.dxf) fertig(ev.data.dxf);
+      else fehler(new Error(ev.data.fehler || 'DWG ließ sich nicht umwandeln'));
+    };
+    w.onerror = ev => {
+      clearTimeout(halt);
+      w.terminate();
+      fehler(new Error(navigator.onLine ? 'DWG-Umwandlung ließ sich nicht starten' : 'DWG braucht beim ersten Mal Netz'));
+      ev.preventDefault();
+    };
+    w.postMessage({ dwg: buf }, [buf]);
+  });
+}
+
 async function kmlOeffnen(dateien) {
   let letzte = null, zahl = 0;
 
   for (const datei of dateien) {
     try {
       if (datei.size > KML_MAX_DATEI) throw new Error('größer als ' + Math.round(KML_MAX_DATEI / 1e6) + ' MB');
-      const buf = await datei.arrayBuffer();
-      // DWG (Kopf „AC1…“, binär) liest Topovo nicht — so entschieden am 12.11.2026; als DXF speichern lassen
-      if (/\.dwg$/i.test(datei.name)
-        || (buf.byteLength > 6 && /^AC1\d{3}$/.test(String.fromCharCode(...new Uint8Array(buf, 0, 6))))) {
-        throw new Error('DWG kann Topovo nicht lesen — im CAD als DXF speichern (ASCII)');
-      }
-      const istZip = buf.byteLength > 4 && new DataView(buf).getUint32(0, false) === 0x504b0304;
-      const dxf = !istZip && istDxf(datei.name, buf);
+      let buf = await datei.arrayBuffer();
+      // DWG (Kopf „AC1…“): im Gerät mit LibreDWG nach DXF, dann wie jede DXF (dwgNachDxf, dwg-werk.js)
+      const dwg = buf.byteLength > 6 && /^AC1\d{3}$/.test(String.fromCharCode(...new Uint8Array(buf, 0, 6)));
+      if (dwg) buf = await dwgNachDxf(buf, datei.name);
+      const istZip = !dwg && buf.byteLength > 4 && new DataView(buf).getUint32(0, false) === 0x504b0304;
+      const dxf = dwg || (!istZip && istDxf(datei.name, buf));
       const roh = istZip ? await kmzText(buf) : dxf ? dxfDekodieren(buf) : kmlDekodieren(buf);
       const gpx = !istZip && !dxf && istGpx(datei.name, roh);
       const geparst = dxf ? await dxfParse(roh, datei.name) : gpx ? gpxParse(roh) : kmlParse(roh);
@@ -6464,7 +6507,7 @@ async function kmlOeffnen(dateien) {
       const autoFeld = kmlAutoFeld(vorlaeufig);
       const akte = {
         id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        name: datei.name.replace(/\.(kml|kmz|gpx|dxf)$/i, '') || 'KML',
+        name: datei.name.replace(/\.(kml|kmz|gpx|dxf|dwg)$/i, '') || 'KML',
         /* Trägt die Datei ein Merkmal, das nach Typ aussieht, werden die Formen
          * gleich danach unterschieden — genau dafür steht es ja drin. */
         symbol: autoFeld ? 'auto' : 'kreis',
@@ -15162,7 +15205,7 @@ function bind() {
   window.addEventListener('drop', ev => {
     if (!zieht(ev)) return;
     ev.preventDefault();      // sonst öffnet der Browser die Datei und die App ist weg
-    const dateien = [...ev.dataTransfer.files].filter(f => /\.(kml|kmz|gpx|dxf)$/i.test(f.name));
+    const dateien = [...ev.dataTransfer.files].filter(f => /\.(kml|kmz|gpx|dxf|dwg)$/i.test(f.name));
     if (dateien.length) kmlOeffnen(dateien);
     else toast('Nur KML-, KMZ-, GPX- und DXF-Dateien.');
   });

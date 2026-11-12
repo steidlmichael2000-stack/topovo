@@ -1,0 +1,4 @@
+LibreDWG 0.14 (GNU, GPLv3 oder später), als WebAssembly gebaut mit Emscripten 6.0.13
+durch werkzeug/libredwg-bauen.sh (nur das Programm dwg2dxf).
+Quelltext: https://ftp.gnu.org/gnu/libredwg/libredwg-0.14.tar.xz
+Projekt:   https://www.gnu.org/software/libredwg/

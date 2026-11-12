@@ -182,7 +182,7 @@ public class Haupt extends Activity {
             if (l != null) uris.addAll(l);
         }
         if (uris.isEmpty()) {
-            if (Intent.ACTION_SEND.equals(a)) Toast.makeText(this, "Topovo öffnet nur Dateien (KML, KMZ, GPX, DXF)", Toast.LENGTH_LONG).show();
+            if (Intent.ACTION_SEND.equals(a)) Toast.makeText(this, "Topovo öffnet nur Dateien (KML, KMZ, GPX, DXF, DWG)", Toast.LENGTH_LONG).show();
             return;
         }
         setIntent(new Intent(Intent.ACTION_MAIN));   // nach Drehen nicht noch einmal öffnen
