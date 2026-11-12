@@ -8089,8 +8089,14 @@ const LASER_PARALLEL = LASER_ENTPACKT ? Math.max(1, Math.min(4, (navigator.hardw
  * abschaltbar (gemerkt unter LASER_STUECKE_SCHLUESSEL). Im Browser 0: dort bleibt alles wie vorher. */
 const LASER_STUECKE_ZAHL = Math.max(1, Math.min(7, (navigator.hardwareConcurrency || 2) - 1));
 const LASER_STUECKE_SCHLUESSEL = 'topovo-laser-stuecke';
-let laserStueckeAn = (() => { try { return localStorage.getItem(LASER_STUECKE_SCHLUESSEL) !== 'aus'; } catch (e) { return true; } })();
-const laserStuecke = () => window.TopovoAndroid && laserStueckeAn ? LASER_STUECKE_ZAHL : 0;
+/* Stufe 2 (12.11.2026): „Nativ“ — die App (ab 1.4, Nativ.java) schreibt die Kachel beim Download mit und
+ * entpackt sie mit libtopovo.so; laser-werk.js holt die Punkte über …/_nativ/schneiden und fällt sonst auf
+ * „Alle Kerne“ zurück. Nur, wenn die App die Bibliothek geladen hat (TopovoAndroid.nativ). */
+const LASER_NATIV_DA = (() => { try { return !!(window.TopovoAndroid && window.TopovoAndroid.nativ && window.TopovoAndroid.nativ()); } catch (e) { return false; } })();
+let laserEntpackWahl = (() => { try { return localStorage.getItem(LASER_STUECKE_SCHLUESSEL) || 'an'; } catch (e) { return 'an'; } })();
+if (laserEntpackWahl === 'nativ' && !LASER_NATIV_DA) laserEntpackWahl = 'an';
+const laserStuecke = () => window.TopovoAndroid && laserEntpackWahl !== 'aus' ? LASER_STUECKE_ZAHL : 0;
+const laserNativ = () => LASER_NATIV_DA && laserEntpackWahl === 'nativ';
 const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
 /* CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen: in der
  * Ansicht unten (LASER_QUELLE), auf der Karte in der Quellenangabe (LASER_ATTR). */
@@ -8824,7 +8830,12 @@ async function laserLaden(auswahl = null) {
   const namen = (auswahl ? laserUmrissKacheln(auswahl.umriss).filter(k => laserKacheln().includes(k)) : laserKacheln())
     .filter(k => laserGroessen.get(k) !== 0 || laserGeraet.has(k));
   if (!namen.length || namen.length > LASER_KACHELN_MAX) return;
-  const kacheln = await Promise.all(namen.map(async kachel => ({ kachel, url: await laserAdresse(kachel), geraet: laserGeraet.has(kachel) })));
+  const kacheln = await Promise.all(namen.map(async kachel => {
+    let url = await laserAdresse(kachel);
+    // Nativ: die App greift den Download nur mit diesem Zeichen ab (die Weiterleitung achtet nur auf den Pfad)
+    if (laserNativ() && url.startsWith(HOEHEN.proxy)) url += (url.includes('?') ? '&' : '?') + 'nativ=1';
+    return { kachel, url, geraet: laserGeraet.has(kachel) };
+  }));
   if (!laserAn || !laserHatWahl() || laserLaedt) return;     // inzwischen beendet oder schon gestartet
   let bereich = laserBereich();
   if (auswahl) {
@@ -8905,7 +8916,7 @@ async function laserLaden(auswahl = null) {
     laserLeiste();
   };
   laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL,
-    gitterZellen: LASER_GITTER, zGrenze: auswahl ? auswahl.zGrenze : null, stuecke: laserStuecke() });
+    gitterZellen: LASER_GITTER, zGrenze: auswahl ? auswahl.zGrenze : null, stuecke: laserStuecke(), nativ: laserNativ() });
 }
 
 /* Export aus der 3D-Ansicht: läuft im selben Worker, damit die Kacheln aus
@@ -9330,8 +9341,9 @@ function laserLeiste() {
         <button type="button" id="laserSpeichernBtn" data-ik="laden"${!wahl || keine || !zuSpeichern.length || laserSpeichert || laserGeraetFehler ? ' disabled' : ''}>${
           wahl && !keine && !zuSpeichern.length ? 'Gespeichert' : 'Offline speichern'}</button>`}</div>
     ${window.TopovoAndroid ? `<p class="bb-sub" style="margin-top:9px">Entpacken (Vergleich)</p>
-      <div class="seg" role="group" aria-label="Entpacken">${[['aus', 'Ein Kern'], ['an', `Alle Kerne (${LASER_STUECKE_ZAHL + 1})`]].map(([w, name]) =>
-        `<button type="button" class="seg-btn${(w === 'an') === laserStueckeAn ? ' is-on' : ''}" data-laser-stuecke="${w}" aria-pressed="${(w === 'an') === laserStueckeAn}"${aus}>${name}</button>`).join('')}</div>` : ''}
+      <div class="seg${LASER_NATIV_DA ? ' seg-drei' : ''}" role="group" aria-label="Entpacken">${[['aus', 'Ein Kern'], ['an', `Alle Kerne (${LASER_STUECKE_ZAHL + 1})`],
+        ...(LASER_NATIV_DA ? [['nativ', 'Nativ']] : [])].map(([w, name]) =>
+        `<button type="button" class="seg-btn${w === laserEntpackWahl ? ' is-on' : ''}" data-laser-stuecke="${w}" aria-pressed="${w === laserEntpackWahl}"${aus}>${name}</button>`).join('')}</div>` : ''}
     ${laserSpeicherTeil()}
     ${laserGeraetTeil()}`;
   b.innerHTML = `
@@ -9368,8 +9380,8 @@ function laserLeiste() {
     regler.addEventListener('change', laserNeuGewaehlt);
   }
   b.querySelectorAll('[data-laser-stuecke]').forEach(k => k.addEventListener('click', () => {
-    laserStueckeAn = k.dataset.laserStuecke === 'an';
-    try { localStorage.setItem(LASER_STUECKE_SCHLUESSEL, laserStueckeAn ? 'an' : 'aus'); } catch (e) { /* ohne Speicher nur für jetzt */ }
+    laserEntpackWahl = k.dataset.laserStuecke;
+    try { localStorage.setItem(LASER_STUECKE_SCHLUESSEL, laserEntpackWahl); } catch (e) { /* ohne Speicher nur für jetzt */ }
     laserLeiste();
   }));
   const laden = $('#laserLadenBtn');

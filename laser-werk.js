@@ -911,7 +911,7 @@ const inMaske = (M, e, n) => {
  * Hilfs-Worker und ohne entpackten Vorrat. Im Speicher sind so höchstens zwei zugleich. */
 const STROM_AB = 5;
 
-async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1, gitterZellen = 0, zGrenze = null, stuecke = 0 }) {
+async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax, entpacktMax = 0, parallel = 1, gitterZellen = 0, zGrenze = null, stuecke = 0, nativ = false }) {
   const strom = kacheln.length >= STROM_AB;
   if (strom) { entpacktMax = 0; zGrenze = null; }
   if (!lazPerf) lazPerf = await Copc.Las.PointData.createLazPerf({ locateFile: f => 'vendor/copc/' + f });
@@ -1057,6 +1057,8 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
       return;
     }
     const { zeiger, groesse, kopf: k } = q;
+    // Android-App ab 1.4, Schalter „Nativ“: libtopovo.so entpackt (nativSchneiden); ohne Kopie oder bei Fehlern weiter wie unten
+    if (nativ && await nativSchneiden(q, t, von)) return;
     if (stuecke > 0) {
       // In der Android-App: in Stücken auf allen Kernen (siehe stueckPool); ohne brauchbare Chunk-Tabelle wie bisher
       let T = null;
@@ -1122,6 +1124,51 @@ async function ausschneiden({ kacheln, bereich, umriss, max, nurBoden, vorratMax
       for (let j = 0; j < e.n; j++) nimm(x[j] * sx + ox, y[j] * sy + oy, z[j] * sz + oz, kl[j], st[j]);
       for (const p of gruppen[i].punkte) gelesen += p;
     }
+  }
+
+  /** Stufe 2: die App entpackt nativ (android/nativ/laser_nativ.cpp) und liefert die Punkte im Rechteck
+   *  in Dateireihenfolge, je 15 Byte — dieselben wie stueckeSchneiden. false: nichts übernommen (keine
+   *  Kopie, alte App, Fehler), dann entpackt die Seite selbst. Scheitert es mittendrin, gibt es einen Fehler. */
+  async function nativSchneiden({ kachel, kopf: k }, t, von) {
+    const [sx, sy, sz] = k.skala, [ox, oy, oz] = k.versatz;
+    const X0 = Math.ceil((e0 - ox) / sx), X1 = Math.floor((e1 - ox) / sx), Y0 = Math.ceil((n0 - oy) / sy), Y1 = Math.floor((n1 - oy) / sy);
+    const url = new URL(`_nativ/schneiden?kachel=${encodeURIComponent(kachel)}&X0=${X0}&X1=${X1}&Y0=${Y0}&Y1=${Y1}`, self.location.href);
+    let leser, anzahl = -1, gelesen = 0, rest = new Uint8Array(0);
+    try {
+      const r = await fetch(url, { cache: 'no-store', signal: abbruch.signal });
+      if (!r.ok || !r.body) return false;
+      leser = r.body.getReader();
+      lesenMelden({ art: 'lesen', nr: t, von, gelesen: 0, gesamt: 0 });
+      for (;;) {
+        const { done, value } = await leser.read();
+        if (done) break;
+        let b = value;
+        if (rest.length) { b = new Uint8Array(rest.length + value.length); b.set(rest); b.set(value, rest.length); }
+        let o = 0;
+        if (anzahl < 0) {
+          if (b.length < 16) { rest = b.slice(); continue; }
+          if (b[0] !== 84 || b[1] !== 80 || b[2] !== 78 || b[3] !== 49) return false;      // „TPN1“
+          anzahl = Number(new DataView(b.buffer, b.byteOffset + 8, 8).getBigUint64(0, true));
+          o = 16;
+        }
+        const d = new DataView(b.buffer, b.byteOffset, b.byteLength);
+        for (; o + 15 <= b.length; o += 15) {
+          nimm(d.getInt32(o, true) * sx + ox, d.getInt32(o + 4, true) * sy + oy, d.getInt32(o + 8, true) * sz + oz,
+            b[o + 14], d.getUint16(o + 12, true));
+          gelesen++;
+        }
+        rest = b.slice(o);
+        lesenMelden({ art: 'lesen', nr: t, von, gelesen, gesamt: anzahl });
+        pruefen();
+      }
+    } catch (err) {
+      if (abbruch.signal.aborted || vorbei) throw new Error(ABGEBROCHEN);
+      if (!gelesen) { console.warn('Nativ:', err); return false; }
+      throw err;
+    }
+    if (anzahl < 0 && !gelesen) return false;
+    if (gelesen !== anzahl || rest.length) throw new Error('Nativ entpackt: Ergebnis unvollständig');
+    return true;
   }
 
   /* Überlappend: die Schnitte laufen nacheinander in einer Kette, gestartet je Kachel gleich

@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v139';
+const VERSION = 'v140';
 const SHELL = `topovo-shell-${VERSION}`;
 const TILES = `topovo-tiles-${VERSION}`;
 const DATA = `topovo-data-${VERSION}`;
@@ -206,6 +206,8 @@ self.addEventListener('fetch', event => {
   /* Laserkacheln (laser-werk.js) sind 60–1000 MB groß und werden je Ansicht
    * einmal gelesen — nie in den Vorrat, auch nicht die lokale Probe. */
   if (url.pathname.endsWith('.laz')) return;
+  // Punkte aus der Android-App (Nativ.java): beantwortet die App selbst, nie in den Vorrat
+  if (url.pathname.includes('/_nativ/')) return;
 
   if (url.origin === self.location.origin) {
     /* Die Nachbar-Apps teilen die Herkunft, nicht diesen Vorrat: Was außerhalb

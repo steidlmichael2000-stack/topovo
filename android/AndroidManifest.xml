@@ -2,8 +2,8 @@
 <!-- Topovo als Android-App: ein randloser WebView um die Live-Seite (README.md hier im Ordner). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="de.topovo.app"
-    android:versionCode="4"
-    android:versionName="1.3">
+    android:versionCode="5"
+    android:versionName="1.4">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35" />
 
@@ -20,6 +20,7 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
         android:networkSecurityConfig="@xml/netz"
+        android:extractNativeLibs="true"
         android:hardwareAccelerated="true">
 
         <activity

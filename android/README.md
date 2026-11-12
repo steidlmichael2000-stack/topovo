@@ -17,6 +17,10 @@ bisher, die APK muss nur neu, wenn sich hier etwas ändert.
   sie über `eingang`/`eingangTeil`/`eingangFertig` ab (`androidEingang` in app.js) → `kmlOeffnen`.
 - Icon: maskable-Grafik auf die sichtbaren 72 von 108 dp verkleinert, Rand mit den Randpixeln verlängert.
 - Keine Bibliotheken, kein Gradle: `./bauen.sh` (aapt2, javac, d8, zipalign, apksigner).
+- **Laserkacheln nativ** (1.4, `Nativ.java`, `nativ/`): Kachel-Download mit `?nativ=1` wird abgegriffen und mitgeschrieben,
+  `…/_nativ/schneiden` entpackt die Kopie mit `libtopovo.so` (laz-perf 3.4.0, Apache 2.0, in `nativ/lazperf/`). `bauen.sh`
+  übersetzt sie mit dem NDK (`ndk;29.0.14206865`, per sdkmanager ohne sudo) für arm64; ohne NDK entsteht die APK ohne.
+  Prüfprogramm am PC: `g++ -O2 -std=c++17 -DTOPOVO_PRUEFEN -Inativ nativ/laser_nativ.cpp nativ/lazperf/*.cpp nativ/lazperf/detail/*.cpp -pthread`.
 - **Debugging vom Laptop** (1.3, 12.11.2026, so gewünscht drin gelassen): `setWebContentsDebuggingEnabled(true)` — nur
   über USB mit eingeschaltetem USB-Debugging und am Handy bestätigtem Rechner. Seite fernsteuern:
   `adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`, dann CDP (`/json`, `Runtime.evaluate`).

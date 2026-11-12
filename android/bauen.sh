@@ -30,9 +30,23 @@ rm -rf "$aus"; mkdir -p "$aus/klassen" "$aus/dex" "$aus/gen"
 javac -nowarn -source 11 -target 11 -encoding UTF-8 -classpath "$JAR" -d "$aus/klassen" \
   $(find "$hier/src" "$aus/gen" -name '*.java') 2>&1 | grep -v 'bootstrap class path\|^Hinweis\|^warning\|^1 warning\|^Warnung' || true
 [ -f "$aus/klassen/de/topovo/app/Haupt.class" ] || { echo "javac fehlgeschlagen" >&2; exit 1; }
+# Nativer Entpacker für Laserkacheln (nativ/, Nativ.java): mit dem NDK für arm64, Teile parallel übersetzt.
+# Seiten von 16 KB (Android 15+) mit max-page-size. Ohne NDK entsteht die APK ohne — die Seite entpackt dann selbst.
+NDK="$(ls -d "$SDK"/ndk/*/ 2>/dev/null | sort -V | tail -1)"
+if [ -n "$NDK" ]; then
+  CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
+  mkdir -p "$aus/nativ" "$aus/lib/arm64-v8a"
+  find "$hier/nativ" -name '*.cpp' | xargs -P "$(nproc)" -I{} sh -c \
+    '"$1" -O3 -DNDEBUG -std=c++17 -fPIC -fvisibility=hidden -I"$2" -c "$3" -o "$4/$(echo "$3" | md5sum | cut -c1-12).o"' _ "$CXX" "$hier/nativ" {} "$aus/nativ"
+  "$CXX" -shared -static-libstdc++ -Wl,-z,max-page-size=16384 -Wl,--gc-sections -s "$aus"/nativ/*.o -o "$aus/lib/arm64-v8a/libtopovo.so"
+  echo "Nativ: $(du -h "$aus/lib/arm64-v8a/libtopovo.so" | cut -f1)"
+else
+  echo "Kein NDK unter $SDK/ndk — APK ohne nativen Entpacker" >&2
+fi
 "$BT/d8" --release --min-api 29 --lib "$JAR" --output "$aus/dex" $(find "$aus/klassen" -name '*.class')
 cp "$aus/basis.apk" "$aus/roh.apk"
 (cd "$aus/dex" && zip -q -j "$aus/roh.apk" classes.dex)
+[ -f "$aus/lib/arm64-v8a/libtopovo.so" ] && (cd "$aus" && zip -q -0 "$aus/roh.apk" lib/arm64-v8a/libtopovo.so)
 "$BT/zipalign" -p -f 4 "$aus/roh.apk" "$aus/ausgerichtet.apk"
 "$BT/apksigner" sign --ks "$SCHL" --ks-pass "file:$PW" --ks-key-alias topovo \
   --out "$aus/topovo.apk" "$aus/ausgerichtet.apk"

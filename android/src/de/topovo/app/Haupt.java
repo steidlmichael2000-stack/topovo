@@ -23,7 +23,10 @@ import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.ServiceWorkerClient;
+import android.webkit.ServiceWorkerController;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -99,7 +102,15 @@ public class Haupt extends Activity {
             return ins;
         });
 
+        // Laserkacheln nativ (Nativ.java): Kachel mitschreiben und …/_nativ/schneiden beantworten — aus Seite, Workern und Service Worker
+        ServiceWorkerController.getInstance().setServiceWorkerClient(new ServiceWorkerClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebResourceRequest r) { return Nativ.abfangen(Haupt.this, r); }
+        });
         web.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) { return Nativ.abfangen(Haupt.this, r); }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
@@ -301,6 +312,10 @@ public class Haupt extends Activity {
             File datei;
             String name, mime;
         }
+
+        /** Ob libtopovo.so geladen ist (Laserkacheln nativ entpacken, Nativ.java) */
+        @JavascriptInterface
+        public boolean nativ() { return Nativ.DA; }
 
         /** Freier und gesamter Platz der Datenpartition in Bytes (navigator.storage.estimate kappt bei 10 GiB) */
         @JavascriptInterface

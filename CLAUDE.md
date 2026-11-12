@@ -673,8 +673,16 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   Heap-Sichten abgelöst** (Speicher wächst) — `gruppeEntpacken` holt sie neu. Schalter „Entpacken (Vergleich)“ in der
   Laserleiste nur in der App (`topovo-laser-stuecke`), zum Vorher/Nachher am Handy; bleibt bis zur Entscheidung über Stufe 2
   (LASzip nativ über das NDK).
-  **Stufe 2 (NDK) bewusst nicht gebaut** (12.11.2026): am Xiaomi (8 Kerne) Entpacken 12,2 → 2,6 s (1.2) und 15,7 → 3,4 s (1.4);
-  nativ brächte je Kachel nur noch 1–2 s, der Download (198 MB Mobilfunk 23 s) wiegt schwerer.
+  Am Xiaomi (8 Kerne) gemessen: Entpacken 12,2 → 2,6 s (1.2) und 15,7 → 3,4 s (1.4).
+- **Stufe 2 „Nativ“** (12.11.2026, v140, APK 1.4, so gewünscht; **am Handy noch ungetestet**, Schalter dritte Wahl, voreingestellt
+  bleibt „Alle Kerne“): app.js hängt bei „Nativ“ `?nativ=1` an die Kachel-Adresse der Weiterleitung; die App (`Nativ.java`,
+  `shouldInterceptRequest` für Seite/Worker und `ServiceWorkerClient`) holt die Kachel selbst, reicht sie durch und schreibt eine
+  Kopie in `cache/laser/` (bis 2 GB, älteste zuerst weg). Dann fragt `nativSchneiden` in laser-werk.js `…/_nativ/schneiden?kachel=…&X0=…`;
+  `libtopovo.so` (`android/nativ/laser_nativ.cpp` + laz-perf 3.4.0 C++) entpackt auf allen Kernen und gibt die Punkte im Rechteck
+  binär zurück (Kopf „TPN1“, je Punkt 15 Byte). Ohne Kopie/Bibliothek/bei Fehler vor dem ersten Punkt: Rückfall auf „Alle Kerne“.
+  `sw.js` lässt `/_nativ/` durch. Geprüft am PC: nativ bytegleich zu WASM (1.2 und 1.4), pro Kern 1,2–1,5 × schneller; Lesen der
+  Antwort in der Seite bitgleich (Punkte, Raster, Normalen), Rückfall bei 404. Offen am Gerät: ob die WebView die Abrufe aus dem
+  Worker wirklich an `shouldInterceptRequest` gibt, und die Zeiten.
 - **Normalen auf allen Kernen** (12.11.2026, überall, nicht nur App): `normalenParallel` teilt die Fläche in Streifen von
   Gitterzeilen mit gleich vielen Punkten, Hilfs-Worker (Auftrag `'normalenTeil'`) bekommen ihren Streifen plus eine Zeile Rand.
   Bitgleich zu `normalenRechnen` (Nachbarn je Zelle in Index-Reihenfolge, Gitterlage vom Ganzen) — den ruft der PW-Viewer
