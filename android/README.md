@@ -17,6 +17,11 @@ bisher, die APK muss nur neu, wenn sich hier etwas ändert.
   sie über `eingang`/`eingangTeil`/`eingangFertig` ab (`androidEingang` in app.js) → `kmlOeffnen`.
 - Icon: maskable-Grafik auf die sichtbaren 72 von 108 dp verkleinert, Rand mit den Randpixeln verlängert.
 - Keine Bibliotheken, kein Gradle: `./bauen.sh` (aapt2, javac, d8, zipalign, apksigner).
+- **Debugging vom Laptop** (1.3, 12.11.2026, so gewünscht drin gelassen): `setWebContentsDebuggingEnabled(true)` — nur
+  über USB mit eingeschaltetem USB-Debugging und am Handy bestätigtem Rechner. Seite fernsteuern:
+  `adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`, dann CDP (`/json`, `Runtime.evaluate`).
+  `res/xml/netz.xml` erlaubt http **nur** zu `localhost`: mit `adb reverse tcp:5192 tcp:5192` lässt sich die lokale
+  Fassung in der App öffnen, bevor sie gepusht ist. Vor einer Weitergabe der App das Debugging wieder ausbauen.
 
 Werkzeuge unter `~/.local/share/android-werkzeug/`: JDK 17 (Temurin) und Android-SDK
 (cmdline-tools, `platforms;android-35`, `build-tools;35.0.0`, `platform-tools`), Lizenz vom Nutzer

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Unverschlüsselt nur zum eigenen Rechner über das USB-Kabel (adb reverse tcp:5192 tcp:5192):
+     so lässt sich die lokale Fassung unter http://localhost:5192/trackpilot/ in der App prüfen,
+     bevor sie gepusht ist. Alles andere bleibt https. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

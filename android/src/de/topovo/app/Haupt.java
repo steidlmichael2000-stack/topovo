@@ -68,6 +68,9 @@ public class Haupt extends Activity {
         if (Build.VERSION.SDK_INT >= 30) w.getAttributes().layoutInDisplayCutoutMode =
                 android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
 
+        /* Seite vom Laptop aus über USB prüfen (chrome://inspect bzw. adb, 12.11.2026): geht nur mit
+         * eingeschaltetem USB-Debugging und am Handy bestätigtem Rechner. */
+        WebView.setWebContentsDebuggingEnabled(true);
         web = new WebView(this);
         web.setBackgroundColor(0xff14181d);
         setContentView(web);
