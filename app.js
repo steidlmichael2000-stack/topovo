@@ -55,6 +55,26 @@ if (window.TopovoAndroid) {
     fetch(a.href).then(r => r.blob()).then(b => androidDatei(b, a.download, false))
       .catch(e => { console.warn(e); toast('Speichern fehlgeschlagen'); });
   }, true);
+  /* „Öffnen mit“ / Teilen an Topovo: die App hält die Dateien und ruft androidEingang, sobald die Seite
+   * steht. Abgeholt in 3-MB-Stücken (Base64), dann wie gewählte Dateien durch kmlOeffnen. */
+  window.androidEingang = async () => {
+    let liste;
+    try { liste = JSON.parse(A.eingang()); } catch { return; }
+    if (!liste.length) return;
+    const dateien = [];
+    for (let k = 0; k < liste.length; k++) {
+      const teile = [];
+      for (let von = 0; von < liste[k].groesse; von += 3 * 1024 * 1024) {
+        const t = atob(A.eingangTeil(k, von, 3 * 1024 * 1024));
+        const b = new Uint8Array(t.length);
+        for (let j = 0; j < t.length; j++) b[j] = t.charCodeAt(j);
+        teile.push(b);
+      }
+      dateien.push(new File(teile, liste[k].name));
+    }
+    A.eingangFertig(liste.length);
+    kmlOeffnen(dateien);
+  };
   navigator.canShare = d => !!(d && ((d.files && d.files.length) || d.url || d.text));
   navigator.share = async d => {
     if (d && d.files && d.files.length) return androidDatei(d.files[0], d.files[0].name, true);
@@ -8956,7 +8976,18 @@ async function laserGeraetLesen() {
   try {
     const { usage, quota } = await navigator.storage.estimate();
     const dauerhaft = navigator.storage.persisted ? await navigator.storage.persisted() : false;
-    laserGeraetStand = { belegt: usage, frei: Math.max(0, quota - usage), dauerhaft };
+    let frei = Math.max(0, quota - usage);
+    // Chrome und der Android-WebView melden höchstens „belegt + 10 GiB“ (gegen Wiedererkennung am
+    // Speicher, 12.11.2026 am Handy: 10,7 GB bei 87,9 GB frei). Erlaubt sind bis 60 % des Speichers.
+    const gekappt = Math.abs(quota - usage - 10 * 2 ** 30) < 2 ** 26;
+    let mindestens = gekappt;
+    if (window.TopovoAndroid && window.TopovoAndroid.speicher) {
+      try {
+        const g = JSON.parse(window.TopovoAndroid.speicher());
+        if (g.frei > 0) { frei = Math.max(0, Math.min(g.frei, 0.6 * g.gesamt - usage)); mindestens = false; }
+      } catch (err) { /* dann die Schätzung des Browsers */ }
+    }
+    laserGeraetStand = { belegt: usage, frei, dauerhaft, mindestens };
   } catch (err) { laserGeraetStand = null; }
   if (!laserAn) return;
   laserRasterZeichnen();
@@ -8971,7 +9002,7 @@ async function laserSpeichern() {
   if (!namen.length) return;
   // Bekannte Größen gegen den freien Platz — durch den Worker ist sie meist unbekannt
   const bekannt = namen.reduce((s, k) => s + Math.max(0, laserGroessen.get(k) || 0), 0);
-  if (laserGeraetStand && bekannt > laserGeraetStand.frei) {
+  if (laserGeraetStand && !laserGeraetStand.mindestens && bekannt > laserGeraetStand.frei) {
     laserSpeicherMeldung = `Zu wenig Platz: ${laserGB(bekannt)} zu speichern, frei ${laserGB(laserGeraetStand.frei)}.`;
     laserLeiste();
     return;
@@ -9034,7 +9065,7 @@ function laserEntpacktSpeichern(wahl) {
   const namen = (wahl || [...laserGeraet.keys()]).filter(k => laserGeraet.has(k) && !laserGeraetEntpackt.has(k));
   if (!namen.length) return;
   const bedarf = namen.reduce((s, k) => s + laserEntpacktGroesse(k), 0);
-  if (laserGeraetStand && bedarf > laserGeraetStand.frei) {
+  if (laserGeraetStand && !laserGeraetStand.mindestens && bedarf > laserGeraetStand.frei) {
     laserSpeicherMeldung = `Zu wenig Platz: entpackt ${laserGB(bedarf)}, frei ${laserGB(laserGeraetStand.frei)}.`;
     laserLeiste();
     return;
@@ -9142,7 +9173,7 @@ function laserGeraetTeil() {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>`).join('');
   return `<details class="sheet-sec laser-geraet"${laserGeraetOffen ? ' open' : ''}>
     <summary><h2>Auf dem Gerät</h2><span class="laser-geraet-summe">${kopf}</span></summary>
-    ${st ? `<p class="bb-note plain">${laserGB(st.belegt)} belegt · Topovo darf noch ${laserGB(st.frei)}${st.dauerhaft ? ' · dauerhaft' : ''}</p>` : ''}
+    ${st ? `<p class="bb-note plain">${laserGB(st.belegt)} belegt · Topovo darf noch ${st.mindestens ? 'mindestens ' : ''}${laserGB(st.frei)}${st.dauerhaft ? ' · dauerhaft' : ''}</p>` : ''}
     ${LASER_IOS && !laserInstalliert() ? '<p class="bb-note">Auf dem iPhone bleiben die Kacheln nur in der installierten App sicher erhalten (Teilen → Zum Home-Bildschirm).</p>' : ''}
     ${laserGeraet.size ? `<ul class="laser-geraet-liste">${zeilen}</ul>
       ${entpacktKnopf ? `<div class="bb-actions">${entpacktKnopf}</div>` : ''}

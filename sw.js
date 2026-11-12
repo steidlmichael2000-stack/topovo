@@ -5,7 +5,7 @@
  * neue Version sofort ankommt statt hinter einem alten Cache zu hängen.
  */
 
-const VERSION = 'v134';
+const VERSION = 'v135';
 const SHELL = `topovo-shell-${VERSION}`;
 const TILES = `topovo-tiles-${VERSION}`;
 const DATA = `topovo-data-${VERSION}`;

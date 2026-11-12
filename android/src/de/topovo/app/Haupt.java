@@ -11,7 +11,9 @@ import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.database.Cursor;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.util.Base64;
 import android.view.View;
 import android.view.Window;
@@ -30,6 +32,9 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 
@@ -50,6 +55,10 @@ public class Haupt extends Activity {
     ValueCallback<Uri[]> dateiRueckruf;
     GeolocationPermissions.Callback ortRueckruf;
     String ortHerkunft;
+    boolean geladen;
+    /** Mit „Öffnen mit“ oder Teilen übergebene Dateien, bis die Seite sie abholt (androidEingang in app.js) */
+    final ArrayList<Object[]> eingang = new ArrayList<>();
+    static final int EINGANG_MAX = 100_000_000;   // wie KML_MAX_DATEI in app.js
 
     @Override
     protected void onCreate(Bundle stand) {
@@ -98,7 +107,11 @@ public class Haupt extends Activity {
             }
 
             @Override
-            public void onPageFinished(WebView v, String url) { raenderSenden(); }
+            public void onPageFinished(WebView v, String url) {
+                raenderSenden();
+                geladen = true;
+                synchronized (eingang) { if (!eingang.isEmpty()) eingangMelden(); }
+            }
 
             @Override
             public boolean onRenderProcessGone(WebView v, android.webkit.RenderProcessGoneDetail d) {
@@ -146,6 +159,58 @@ public class Haupt extends Activity {
 
         if (stand != null) web.restoreState(stand);
         else web.loadUrl(START);
+        eingangAufnehmen(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        eingangAufnehmen(i);
+    }
+
+    /** Liest übergebene Dateien gleich ein — die Leseberechtigung gilt nur, solange der Auftrag läuft. */
+    void eingangAufnehmen(Intent i) {
+        if (i == null) return;
+        ArrayList<Uri> uris = new ArrayList<>();
+        String a = i.getAction();
+        if (Intent.ACTION_VIEW.equals(a) && i.getData() != null) uris.add(i.getData());
+        else if (Intent.ACTION_SEND.equals(a)) {
+            Uri u = (Uri) i.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (u != null) uris.add(u);
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(a)) {
+            ArrayList<Uri> l = i.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (l != null) uris.addAll(l);
+        }
+        if (uris.isEmpty()) {
+            if (Intent.ACTION_SEND.equals(a)) Toast.makeText(this, "Topovo öffnet nur Dateien (KML, KMZ, GPX, DXF)", Toast.LENGTH_LONG).show();
+            return;
+        }
+        setIntent(new Intent(Intent.ACTION_MAIN));   // nach Drehen nicht noch einmal öffnen
+        for (Uri u : uris) {
+            String name = "Datei";
+            try (Cursor c = getContentResolver().query(u, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst() && c.getString(0) != null) name = c.getString(0);
+            } catch (Exception ignoriert) { }
+            if ("Datei".equals(name) && u.getLastPathSegment() != null) name = u.getLastPathSegment();
+            try (InputStream ein = getContentResolver().openInputStream(u)) {
+                ByteArrayOutputStream puffer = new ByteArrayOutputStream();
+                byte[] b = new byte[1 << 16];
+                int n, summe = 0;
+                while ((n = ein.read(b)) > 0) {
+                    summe += n;
+                    if (summe > EINGANG_MAX) throw new java.io.IOException("zu groß");
+                    puffer.write(b, 0, n);
+                }
+                synchronized (eingang) { eingang.add(new Object[]{name, puffer.toByteArray()}); }
+            } catch (Exception e) {
+                Toast.makeText(this, name + " ließ sich nicht lesen", Toast.LENGTH_LONG).show();
+            }
+        }
+        if (geladen) eingangMelden();
+    }
+
+    void eingangMelden() {
+        web.post(() -> web.evaluateJavascript("window.androidEingang&&window.androidEingang()", null));
     }
 
     void raenderSenden() {
@@ -234,9 +299,46 @@ public class Haupt extends Activity {
             String name, mime;
         }
 
+        /** Freier und gesamter Platz der Datenpartition in Bytes (navigator.storage.estimate kappt bei 10 GiB) */
+        @JavascriptInterface
+        public String speicher() {
+            File d = getFilesDir();
+            return "{\"frei\":" + d.getUsableSpace() + ",\"gesamt\":" + d.getTotalSpace() + "}";
+        }
+
         @JavascriptInterface
         public String raender() {
             return String.format(Locale.ROOT, "{\"oben\":%.2f,\"unten\":%.2f}", oben, unten);
+        }
+
+        /** Liste der übergebenen Dateien als JSON [{"name":…,"groesse":…}], Reihenfolge = Index */
+        @JavascriptInterface
+        public String eingang() {
+            StringBuilder j = new StringBuilder("[");
+            synchronized (eingang) {
+                for (int k = 0; k < eingang.size(); k++) {
+                    if (k > 0) j.append(',');
+                    String n = ((String) eingang.get(k)[0]).replace("\\", "\\\\").replace("\"", "\\\"");
+                    j.append("{\"name\":\"").append(n).append("\",\"groesse\":").append(((byte[]) eingang.get(k)[1]).length).append('}');
+                }
+            }
+            return j.append(']').toString();
+        }
+
+        @JavascriptInterface
+        public String eingangTeil(int k, int von, int laenge) {
+            synchronized (eingang) {
+                if (k < 0 || k >= eingang.size()) return "";
+                byte[] b = (byte[]) eingang.get(k)[1];
+                int bis = Math.min(b.length, von + laenge);
+                return von >= bis ? "" : Base64.encodeToString(b, von, bis - von, Base64.NO_WRAP);
+            }
+        }
+
+        /** Die ersten n Einträge sind abgeholt */
+        @JavascriptInterface
+        public void eingangFertig(int n) {
+            synchronized (eingang) { for (int k = 0; k < n && !eingang.isEmpty(); k++) eingang.remove(0); }
         }
 
         @JavascriptInterface

@@ -2,8 +2,8 @@
 <!-- Topovo als Android-App: ein randloser WebView um die Live-Seite (README.md hier im Ordner). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="de.topovo.app"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="2"
+    android:versionName="1.1">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="35" />
 
@@ -30,6 +30,44 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- „Öffnen mit“ für KML, KMZ, GPX und DXF. Android kennt die Typen oft nicht und meldet
+                 octet-stream oder XML; die Seite erkennt die Art selbst am Inhalt (kmlOeffnen). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.google-earth.kml+xml" />
+                <data android:mimeType="application/vnd.google-earth.kmz" />
+                <data android:mimeType="application/gpx+xml" />
+                <data android:mimeType="application/gpx" />
+                <data android:mimeType="application/dxf" />
+                <data android:mimeType="application/x-dxf" />
+                <data android:mimeType="image/vnd.dxf" />
+                <data android:mimeType="image/x-dxf" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Teilen an Topovo (aus Mail, WhatsApp, Dateimanager) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.google-earth.kml+xml" />
+                <data android:mimeType="application/vnd.google-earth.kmz" />
+                <data android:mimeType="application/gpx+xml" />
+                <data android:mimeType="application/gpx" />
+                <data android:mimeType="application/dxf" />
+                <data android:mimeType="application/x-dxf" />
+                <data android:mimeType="image/vnd.dxf" />
+                <data android:mimeType="image/x-dxf" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 

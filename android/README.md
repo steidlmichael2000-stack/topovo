@@ -12,6 +12,10 @@ bisher, die APK muss nur neu, wenn sich hier etwas ändert.
 - Downloads (`a[download]` mit blob:) und `navigator.share` kann der WebView nicht — app.js reicht
   die Dateien in 3-MB-Stücken als Base64 an die Brücke (`beginn`/`teil`/`ende`), gespeichert unter
   Downloads (MediaStore) bzw. geteilt über `Teilen.java` (eigener ContentProvider statt AndroidX).
+- „Öffnen mit“ und Teilen an Topovo (KML, KMZ, GPX, DXF; Filter nach MIME, auch octet-stream/XML, weil
+  Android die Typen oft nicht kennt): `eingangAufnehmen` liest die Datei sofort (bis 100 MB), die Seite holt
+  sie über `eingang`/`eingangTeil`/`eingangFertig` ab (`androidEingang` in app.js) → `kmlOeffnen`.
+- Icon: maskable-Grafik auf die sichtbaren 72 von 108 dp verkleinert, Rand mit den Randpixeln verlängert.
 - Keine Bibliotheken, kein Gradle: `./bauen.sh` (aapt2, javac, d8, zipalign, apksigner).
 
 Werkzeuge unter `~/.local/share/android-werkzeug/`: JDK 17 (Temurin) und Android-SDK
