@@ -8084,6 +8084,13 @@ const LASER_ENTPACKT = matchMedia('(pointer: coarse)').matches ? 0 : 2e9;
  * am Handy 1 Mio. (2 m bei vier Kacheln), am PC 4 Mio. (1 m bei vier Kacheln, 0,5 m bei einer). */
 const LASER_GITTER = LASER_ENTPACKT ? 4e6 : 1e6;
 const LASER_PARALLEL = LASER_ENTPACKT ? Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)) : 1;
+/* Nur in der Android-App (12.11.2026): jede Kachel in Stücken auf allen Kernen entpacken (laser-werk.js,
+ * stueckPool) — so viele Hilfs-Worker, ein Kern bleibt dem Haupt-Worker. Zum Vergleich am Handy
+ * abschaltbar (gemerkt unter LASER_STUECKE_SCHLUESSEL). Im Browser 0: dort bleibt alles wie vorher. */
+const LASER_STUECKE_ZAHL = Math.max(1, Math.min(7, (navigator.hardwareConcurrency || 2) - 1));
+const LASER_STUECKE_SCHLUESSEL = 'topovo-laser-stuecke';
+let laserStueckeAn = (() => { try { return localStorage.getItem(LASER_STUECKE_SCHLUESSEL) !== 'aus'; } catch (e) { return true; } })();
+const laserStuecke = () => window.TopovoAndroid && laserStueckeAn ? LASER_STUECKE_ZAHL : 0;
 const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
 /* CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen: in der
  * Ansicht unten (LASER_QUELLE), auf der Karte in der Quellenangabe (LASER_ATTR). */
@@ -8898,7 +8905,7 @@ async function laserLaden(auswahl = null) {
     laserLeiste();
   };
   laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL,
-    gitterZellen: LASER_GITTER, zGrenze: auswahl ? auswahl.zGrenze : null });
+    gitterZellen: LASER_GITTER, zGrenze: auswahl ? auswahl.zGrenze : null, stuecke: laserStuecke() });
 }
 
 /* Export aus der 3D-Ansicht: läuft im selben Worker, damit die Kacheln aus
@@ -9322,6 +9329,9 @@ function laserLeiste() {
       : `<button type="button" id="laserLadenBtn" class="maps" data-ik="wuerfel"${keine || zuViele ? ' disabled' : ''}>In 3D ansehen</button>
         <button type="button" id="laserSpeichernBtn" data-ik="laden"${!wahl || keine || !zuSpeichern.length || laserSpeichert || laserGeraetFehler ? ' disabled' : ''}>${
           wahl && !keine && !zuSpeichern.length ? 'Gespeichert' : 'Offline speichern'}</button>`}</div>
+    ${window.TopovoAndroid ? `<p class="bb-sub" style="margin-top:9px">Entpacken (Vergleich)</p>
+      <div class="seg" role="group" aria-label="Entpacken">${[['aus', 'Ein Kern'], ['an', `Alle Kerne (${LASER_STUECKE_ZAHL + 1})`]].map(([w, name]) =>
+        `<button type="button" class="seg-btn${(w === 'an') === laserStueckeAn ? ' is-on' : ''}" data-laser-stuecke="${w}" aria-pressed="${(w === 'an') === laserStueckeAn}"${aus}>${name}</button>`).join('')}</div>` : ''}
     ${laserSpeicherTeil()}
     ${laserGeraetTeil()}`;
   b.innerHTML = `
@@ -9357,6 +9367,11 @@ function laserLeiste() {
     });
     regler.addEventListener('change', laserNeuGewaehlt);
   }
+  b.querySelectorAll('[data-laser-stuecke]').forEach(k => k.addEventListener('click', () => {
+    laserStueckeAn = k.dataset.laserStuecke === 'an';
+    try { localStorage.setItem(LASER_STUECKE_SCHLUESSEL, laserStueckeAn ? 'an' : 'aus'); } catch (e) { /* ohne Speicher nur für jetzt */ }
+    laserLeiste();
+  }));
   const laden = $('#laserLadenBtn');
   if (laden) laden.addEventListener('click', () => laserLaden());   // nicht direkt: das Klick-Ereignis landete sonst in auswahl
   const speichernBtn = $('#laserSpeichernBtn');

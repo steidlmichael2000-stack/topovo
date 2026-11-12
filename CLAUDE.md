@@ -664,6 +664,15 @@ und Messwerte in der README (*Laserpunkte in 3D*).
   (`LESEN_TAKT`). Endet das Laden mit Fehler/Abbruch, beendet `vorbei` die laufenden Schnitte, bevor der Fehler hinausgeht.
   Nicht mit Höhengrenze (dort passt sich der Schritt beim Lesen an). Die Schneideschleife ist dafür `schneiden(q, t, von)`.
   Paralleler **Download** bringt nichts (gemessen: 1 Verbindung 10,5 MB/s, 2: 8,9, 3: 11,3 — die Leitung ist voll).
+- **In Stücken auf allen Kernen** (12.11.2026, v138, **nur Android-App**): Auftrag `stuecke` (app.js `laserStuecke()`, Hilfs-Worker
+  = Kerne − 1, höchstens 7; im Browser und im PW-Viewer 0 → alles wie vorher). `chunkTabelle` liest die Chunk-Tabelle der LAZ
+  (LASzip-Arithmetikdecoder nachgebaut, laz-perf gibt sie nicht heraus; Probe: Ende der Stücke = Tabellenanfang), je 4 Stücke
+  (200 000 Punkte) entpackt ein Hilfs-Worker (`stueckPool`, Auftrag `'stuecke'`) mit `ChunkDecoder` und schickt nur Punkte im
+  Rechteck zurück; `stueckeSchneiden` gibt sie in Dateireihenfolge an `nimm` — Ergebnis bitgleich zum Durchgang (geprüft 1.2 und
+  1.4, überlappend, Polygon, Höhengrenze). Am PC (2 Kerne) 11,9 → 5,2 s je Kachel. **Nach `ChunkDecoder.open` sind die
+  Heap-Sichten abgelöst** (Speicher wächst) — `gruppeEntpacken` holt sie neu. Schalter „Entpacken (Vergleich)“ in der
+  Laserleiste nur in der App (`topovo-laser-stuecke`), zum Vorher/Nachher am Handy; bleibt bis zur Entscheidung über Stufe 2
+  (LASzip nativ über das NDK).
 - **Darstellung „Gelände“** (11.11.2026, so gewünscht): Bodenraster aus **allen** Bodenpunkten, gefüllt in `nimm` vor der
   Ausdünnung (`gitterAnlegen`/`gitterFertig` in laser-werk.js; `LASER_GITTER` Handy 1 Mio., PC 4 Mio. Zellen → 0,5/1/2 m).
   Lücken über eine Pyramide bilinear gefüllt, ohne Bodenpunkt im Umkreis ~32 m bleibt es leer (art 2). In laser.js
