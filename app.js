@@ -48,12 +48,24 @@ if (window.TopovoAndroid) {
     } catch (e) { A.abbrechen(id); throw e; }
     A.ende(id);
   };
+  /* Die Datei hinter einer blob:-Adresse merken: fetch('blob:…') verbietet die CSP (connect-src nur
+   * self/https) — so kam bis 17.11.2026 in der App kein Download an. */
+  const blobs = new Map();
+  const erzeugen = URL.createObjectURL.bind(URL), freigeben = URL.revokeObjectURL.bind(URL);
+  URL.createObjectURL = o => { const u = erzeugen(o); if (o instanceof Blob) blobs.set(u, o); return u; };
+  URL.revokeObjectURL = u => { blobs.delete(u); freigeben(u); };
+  const ausDataUrl = u => {
+    const [kopf, daten] = u.split(',', 2), b64 = /;base64$/i.test(kopf);
+    const text = b64 ? atob(daten) : decodeURIComponent(daten);
+    return new Blob([Uint8Array.from(text, c => c.charCodeAt(0) & 255)], { type: kopf.slice(5).replace(/;base64$/i, '') });
+  };
   document.addEventListener('click', ev => {
     const a = ev.target.closest && ev.target.closest('a[download]');
     if (!a || !/^(blob|data):/.test(a.href)) return;
     ev.preventDefault();
-    fetch(a.href).then(r => r.blob()).then(b => androidDatei(b, a.download, false))
-      .catch(e => { console.warn(e); toast('Speichern fehlgeschlagen'); });
+    const blob = a.href.startsWith('data:') ? ausDataUrl(a.href) : blobs.get(a.href);
+    if (!blob) { toast('Speichern fehlgeschlagen'); return; }
+    androidDatei(blob, a.download, false).catch(e => { console.warn(e); toast('Speichern fehlgeschlagen'); });
   }, true);
   /* „Öffnen mit“ / Teilen an Topovo: die App hält die Dateien und ruft androidEingang, sobald die Seite
    * steht. Abgeholt in 3-MB-Stücken (Base64), dann wie gewählte Dateien durch kmlOeffnen. */
@@ -233,7 +245,7 @@ const svUrl = (lat, lon, blick) =>
   (Number.isFinite(blick) ? `&heading=${Math.round(((blick % 360) + 360) % 360)}` : '');
 const svAttr = (lat, lon) => ` data-sv="${lat.toFixed(6)},${lon.toFixed(6)}"`;
 const mapsKnopf = (lat, lon) =>
-  `<a class="kml-km" href="${gmapsUrl(lat, lon)}"${svAttr(lat, lon)} target="_blank" rel="noopener">` +
+  `<a class="kml-km" data-ik="pin" href="${gmapsUrl(lat, lon)}"${svAttr(lat, lon)} target="_blank" rel="noopener">` +
   'In Google Maps öffnen</a>';
 
 /** "12+250" → 12.25, "12,5" → 12.5 */
@@ -6088,8 +6100,36 @@ function kmlPopup(o, akte) {
   return zeilen.join('');
 }
 
+/* Viele Punkte als einzelne Kartensymbole bringen den Android-WebView zum Absturz (17.11.2026, Xiaomi:
+ * DWG mit 2212 Punkten, SIGSEGV in drawVk beim Zoomen — jedes Symbol ist eine eigene Ebene auf der
+ * Grafikkarte). Ab KML_PUNKTE_DICHT Punkten stehen deshalb nur die im Bild, und davon je Feld von
+ * KML_PUNKT_FELD Bildpunkten einer; höchstens KML_PUNKTE_SICHT. Neu verteilt nach jedem Verschieben. */
+const KML_PUNKTE_DICHT = 300, KML_PUNKT_FELD = 9, KML_PUNKTE_SICHT = 500;
+function kmlPunkteSichtbar(gruppe, punkte) {
+  const sicht = L.layerGroup().addTo(gruppe);
+  const gezeigt = new Set();
+  const neu = () => {
+    if (!gruppe._map) return;
+    const z = map.getZoom(), rahmen = map.getBounds().pad(0.2), belegt = new Set(), wahl = new Set();
+    for (const p of punkte) {
+      if (wahl.size >= KML_PUNKTE_SICHT) break;
+      if (!rahmen.contains(p.wo)) continue;
+      const q = map.project(p.wo, z), feld = Math.floor(q.x / KML_PUNKT_FELD) + ',' + Math.floor(q.y / KML_PUNKT_FELD);
+      if (belegt.has(feld)) continue;
+      belegt.add(feld);
+      wahl.add(p);
+    }
+    for (const p of gezeigt) if (!wahl.has(p)) { sicht.removeLayer(p.l); gezeigt.delete(p); }
+    for (const p of wahl) if (!gezeigt.has(p)) { sicht.addLayer(p.l); gezeigt.add(p); }
+  };
+  gruppe.on('add', () => { map.on('moveend', neu); neu(); });
+  gruppe.on('remove', () => { map.off('moveend', neu); });
+}
+
 function kmlEbene(akte) {
   const gruppe = L.featureGroup();
+  const vielePunkte = akte.objekte.filter(o => o.art === 'p' && kmlSichtbarObj(akte, o)).length > KML_PUNKTE_DICHT;
+  const punkte = [];
   const grund = akte.farbe || KML_FARBEN[0];
   const form = akte.symbol || 'kreis';
   const autoKarte = form === 'auto' ? kmlFormKarte(akte) : null;
@@ -6163,8 +6203,10 @@ function kmlEbene(akte) {
         abZielSetzen({ a: akte, o });
       });
     });
-    l.addTo(gruppe);
+    if (vielePunkte && o.art === 'p') punkte.push({ l, wo: L.latLng(o.koord[0], o.koord[1]) });
+    else l.addTo(gruppe);
   }
+  if (punkte.length) kmlPunkteSichtbar(gruppe, punkte);
   return gruppe;
 }
 
@@ -6938,6 +6980,22 @@ function reliefWahlZeigen(an) {
   if (btn) btn.setAttribute('aria-expanded', an ? 'true' : 'false');
 }
 function reliefKnopfBinden() { auswahlKnopfBinden('relief', '#reliefWahl', reliefWahlZeigen, () => setBase('relief')); }
+
+/* Offene Auswahlen (Relief, Parzellen, DB-Netz, Festpunkte) gehen zu, sobald woanders getippt wird —
+ * etwa auf „Luftbild“ (17.11.2026 gewünscht; vorher blieb die Relief-Wahl stehen). Einfangphase und
+ * pointerdown: Der Knopf, der sie öffnet, und die Auswahl selbst zählen nicht. */
+function auswahlenAutoZu() {
+  const paare = [['#reliefWahl', '#reliefBtn', reliefWahlZeigen], ['#parzWahl', '#parzBtn', parzWahlZeigen],
+    ['#ifgWahl', '#ifgBtn', ifgWahlZeigen], ['#fpWahl', '#fpBtn', fpWahlZeigen]];
+  document.addEventListener('pointerdown', ev => {
+    for (const [box, knopf, zeigen] of paare) {
+      const b = $(box);
+      if (!b || b.hidden) continue;
+      if (b.contains(ev.target) || ($(knopf) && $(knopf).contains(ev.target))) continue;
+      zeigen(false);
+    }
+  }, true);
+}
 
 /* ============================ Auflage Festpunkte (BW) ============================
  *
@@ -12388,7 +12446,7 @@ let routeLayer = null;
 
 /* Ein Knopf in den Sprechblasen — gebunden einmal am Dokument (routeBinden) */
 const routeKnopf = (lat, lon, name = '') =>
-  `<button type="button" class="kml-km" data-route="${lat.toFixed(6)},${lon.toFixed(6)}" data-route-name="${esc(name)}">` +
+  `<button type="button" class="kml-km" data-ik="route" data-route="${lat.toFixed(6)},${lon.toFixed(6)}" data-route-name="${esc(name)}">` +
   `Route mit dem Auto</button>`;
 
 function routeBinden() {
@@ -13690,10 +13748,15 @@ function liveLeiste() {
   }
 
   if (!stuecke.length) { leer(); return; }
+  /* × beendet die Kilometer-Rechnung, der Standort läuft weiter (17.11.2026: die Zeile ließ sich
+   * nur über das Beenden der Verfolgung wegmachen). Ein neuer Tipp auf den Punkt startet sie wieder. */
+  if (liveKmAn) stuecke.push('<button type="button" class="live-zu" data-livezu aria-label="Kilometer ausblenden" title="Kilometer ausblenden">×</button>');
   el.innerHTML = stuecke.join('');
   el.hidden = false;
   const knopf = el.querySelector('[data-livekm]');
   if (knopf) knopf.addEventListener('click', liveKmFest);
+  const zu = el.querySelector('[data-livezu]');
+  if (zu) zu.addEventListener('click', () => { liveVergessen(); liveLeiste(); });
   updateBH();
 }
 
@@ -15096,6 +15159,7 @@ function bind() {
   buildParzRow();
   ifgKnopfBinden();
   reliefKnopfBinden();
+  auswahlenAutoZu();
   ifgWahlBauen();
   fpKnopfBinden();
   fpWahlBauen();

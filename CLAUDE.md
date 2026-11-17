@@ -797,6 +797,11 @@ Einzelheiten in `android/README.md`. Für die Seite heißt das: **Ränder nur ü
 `navigator.share` laufen in der App über die Brücke in `app.js` (Block `window.TopovoAndroid` oben); wer neue Downloads
 baut, nimmt diesen Weg (Link mit `download` klicken), sonst kommt in der App nichts an. Signierschlüssel liegt außerhalb
 des Repos (`~/.local/share/topovo-android/`).
+**17.11.2026 am Gerät gefunden:** (1) Viele KML/DXF-Punkte als einzelne Symbole ließen den WebView abstürzen (SIGSEGV in
+`drawVk`, Vulkan) — ab `KML_PUNKTE_DICHT` zeigt `kmlPunkteSichtbar` nur die im Bild, je Feld einen, höchstens 500. (2) Die
+CSP verbietet `fetch('blob:…')`; die Brücke merkt sich Blobs deshalb in `URL.createObjectURL` (Android-Block in app.js).
+Prüfen per USB: `adb reverse tcp:5190 tcp:5190`, Seite über CDP `Page.navigate` umstellen (ein `location.href` aus der Seite
+öffnet den externen Browser), vorher `Network.clearBrowserCache`.
 
 ## Beim Deployen
 
