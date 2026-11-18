@@ -2568,6 +2568,7 @@ body { font-variant-numeric: tabular-nums; }
 [data-ik="rahmen"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='1.5'/%3E%3Ccircle cx='12' cy='12' r='1.8' fill='black'/%3E%3C/svg%3E"); }
 [data-ik="rechteck"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='6' width='17' height='12' rx='1' stroke-dasharray='3.2 2.4'/%3E%3C/svg%3E"); }
 [data-ik="polygon"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 19 3 9.5 11.5 4 20.5 9 18 18.5z'/%3E%3Ccircle cx='5' cy='19' r='1.7' fill='black'/%3E%3Ccircle cx='11.5' cy='4' r='1.7' fill='black'/%3E%3Ccircle cx='20.5' cy='9' r='1.7' fill='black'/%3E%3C/svg%3E"); }
+[data-ik="kreis"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 12h8.5'/%3E%3Ccircle cx='12' cy='12' r='1.7' fill='black'/%3E%3C/svg%3E"); }
 [data-ik="kacheln"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='1.5'/%3E%3Cpath d='M12 4v16M4 12h16'/%3E%3C/svg%3E"); }
 [data-ik="wuerfel"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3 20 7.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9'/%3E%3C/svg%3E"); }
 [data-ik="laden"] { --ik: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v11M7.5 10.5 12 15l4.5-4.5'/%3E%3Cpath d='M5 16v3.5h14V16'/%3E%3C/svg%3E"); }
@@ -2613,7 +2614,7 @@ body { font-variant-numeric: tabular-nums; }
 .seg-zwei .seg-btn { min-width: 0; }
 /* Allein in der letzten Reihe (Gipfel unter Straßen/Ortsnamen): über beide Spalten */
 .seg-zwei > .seg-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
-/* Vier schmale Knöpfe (Laser: Rahmen, Rechteck, Polygon, Kacheln): Symbol über dem Wort wie in der Spalte */
+/* Fünf schmale Knöpfe (Laser: Rahmen, Rechteck, Polygon, Kreis, Kacheln): Symbol über dem Wort wie in der Spalte */
 .seg-ik-oben .seg-btn[data-ik] {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding-top: 7px; padding-bottom: 6px; font-size: .78rem;

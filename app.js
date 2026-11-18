@@ -8179,11 +8179,23 @@ const laserNurBoden = false;
  * Kacheln (siehe dort). */
 let laserArt = 'rahmen';
 const laserWahl = new Set();  // gewählte Kacheln (Art „Kacheln“)
-let laserUmriss = null;       // [[e, n], …] in UTM32 (Arten „Rechteck“ und „Polygon“)
+let laserUmriss = null;       // [[e, n], …] in UTM32 (Arten „Rechteck“, „Polygon“ und „Kreis“)
 let laserGeladenUmriss = null; // der Umriss der offenen 3D-Ansicht — für deren Export
 let laserEntwurf = [];        // angetippte Ecken, solange Rechteck oder Polygon noch offen sind
 let laserEntwurfLayer = null;
-const laserUmrissArt = () => laserArt === 'rechteck' || laserArt === 'polygon';
+const laserUmrissArt = () => laserArt === 'rechteck' || laserArt === 'polygon' || laserArt === 'kreis';
+/* Kreis (18.11.2026, nach dem Video zu STEP Topo): erster Tipp die Mitte, zweiter der Rand. Danach ein
+ * gewöhnlicher Umriss mit 72 Ecken — Zuschnitt, Kacheln, Verschieben und Export laufen wie beim Polygon. */
+const LASER_KREIS_ECKEN = 72;
+const laserKreisPunkte = (e, n, r) => Array.from({ length: LASER_KREIS_ECKEN }, (_, i) => {
+  const w = i / LASER_KREIS_ECKEN * 2 * Math.PI;
+  return [e + r * Math.cos(w), n + r * Math.sin(w)];
+});
+/** Radius eines Kreis-Umrisses (Mitte = Schwerpunkt der Ecken). */
+function laserKreisRadius(u) {
+  const ce = u.reduce((a, p) => a + p[0], 0) / u.length, cn = u.reduce((a, p) => a + p[1], 0) / u.length;
+  return Math.hypot(u[0][0] - ce, u[0][1] - cn);
+}
 /* Bis 12.11.2026 waren es 4 (alle zugleich im Speicher von laz-perf). Ab 5 schneidet
  * laser-werk.js jede gleich nach dem Download aus und gibt sie frei (STROM_AB) — 9 = 3 × 3,
  * so gewünscht, auch wenn die Ansicht dann stark ausdünnt (2 Mio. Punkte). */
@@ -8799,6 +8811,13 @@ function laserEckeTipp(ll) {
     laserUmrissSetzen([[a[0], a[1]], [e, a[1]], [e, n], [a[0], n]]);
     return;
   }
+  if (laserArt === 'kreis') {
+    if (!laserEntwurf.length) { laserEntwurf = [[e, n]]; laserEntwurfZeichnen(); laserLeiste(); return; }
+    const [m] = laserEntwurf, r = Math.hypot(e - m[0], n - m[1]);
+    if (r < 6) return;                                                   // zu klein, wohl ein Doppeltipp
+    laserUmrissSetzen(laserKreisPunkte(m[0], m[1], Math.round(r)));
+    return;
+  }
   // Polygon: nahe am ersten Punkt (auf dem Schirm) schließt
   if (laserEntwurf.length >= 3) {
     const p0 = map.latLngToContainerPoint(utm32Zurueck(...laserEntwurf[0])), p = map.latLngToContainerPoint(ll);
@@ -8868,6 +8887,18 @@ function laserEntwurfZeichnen(ev) {
       const [a] = laserEntwurf, [e, n] = utm32Hin(zeiger.lat, zeiger.lng);
       L.polygon([[a[0], a[1]], [e, a[1]], [e, n], [a[0], n]].map(p => utm32Zurueck(...p)), { ...stil, dashArray: '5 5', fillOpacity: 0.08 }).addTo(laserEntwurfLayer);
     }
+  } else if (laserArt === 'kreis') {
+    if (zeiger) {
+      const [m] = laserEntwurf, [e, n] = utm32Hin(zeiger.lat, zeiger.lng), r = Math.hypot(e - m[0], n - m[1]);
+      if (r >= 1) {
+        L.polygon(laserKreisPunkte(m[0], m[1], r).map(p => utm32Zurueck(...p)), { ...stil, dashArray: '5 5', fillOpacity: 0.08 }).addTo(laserEntwurfLayer);
+        L.polyline([lls[0], zeiger], { ...stil, weight: 1.5, dashArray: '2 4' }).addTo(laserEntwurfLayer);
+        // Radius am Zeiger, wie die Kilometerschilder (.ms)
+        L.marker(zeiger, { interactive: false, keyboard: false,
+          icon: L.divIcon({ className: '', html: `<span class="ms">r = ${Math.round(r).toLocaleString('de-DE')} m</span>`, iconSize: null, iconAnchor: [-10, 10] })
+        }).addTo(laserEntwurfLayer);
+      }
+    }
   } else {
     L.polyline(lls, stil).addTo(laserEntwurfLayer);
     if (zeiger) L.polyline([lls[lls.length - 1], zeiger, ...(lls.length >= 2 ? [lls[0]] : [])], { ...stil, dashArray: '5 5', weight: 2 }).addTo(laserEntwurfLayer);
@@ -8907,7 +8938,7 @@ async function laserLaden(auswahl = null) {
   const umriss = auswahl ? auswahl.umriss.map(p => p.slice()) : laserUmrissArt() ? laserUmriss.map(p => p.slice()) : null;
   const unterzeile = auswahl ? `Limitbox · ${flaecheText(laserUmrissFlaeche(umriss))} · ${
     Math.round(auswahl.zGrenze[1] - auswahl.zGrenze[0]).toLocaleString('de-DE')} m hoch`
-    : umriss ? `${laserArt === 'rechteck' ? 'Rechteck' : 'Polygon'} · ${flaecheText(laserUmrissFlaeche(umriss))}`
+    : umriss ? `${laserArt === 'rechteck' ? 'Rechteck' : laserArt === 'kreis' ? `Kreis r = ${Math.round(laserKreisRadius(umriss)).toLocaleString('de-DE')} m` : 'Polygon'} · ${flaecheText(laserUmrissFlaeche(umriss))}`
     : laserArt === 'kacheln' ? `${namen.length} ${namen.length === 1 ? 'Kachel' : 'Kacheln'} · ${seite} × ${seite} m` : null;
   const ansichtOffen = !!laserSchliessen;
   let stufeGesagt = '';
@@ -8962,7 +8993,7 @@ async function laserLaden(auswahl = null) {
           dichter: a => laserLaden(a), ...(auswahl ? { ausBox: true, ganz: () => laserLaden(), kamera: auswahl.kamera } : {}),
           utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude, kostra: laserKostra,
           achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel, kataster: laserKatasterUrl, katasterFarbe: parzFarbe(),
-          kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
+          kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, umriss, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); if (!laserTausch) wacheLaserZu(); } });
         wacheAuffuellen();
       } catch (err) {
@@ -9349,7 +9380,7 @@ async function laserGeraetLoeschen(namen) {
   await laserGeraetLesen();
 }
 
-const LASER_ARTEN = [['rahmen', 'Rahmen'], ['rechteck', 'Rechteck'], ['polygon', 'Polygon'], ['kacheln', 'Kacheln']];
+const LASER_ARTEN = [['rahmen', 'Rahmen'], ['rechteck', 'Rechteck'], ['polygon', 'Polygon'], ['kreis', 'Kreis'], ['kacheln', 'Kacheln']];
 
 /** Hinweis unter der Auswahl, je nach Art und ob schon etwas gewählt ist. */
 function laserHinweis() {
@@ -9360,6 +9391,9 @@ function laserHinweis() {
   if (laserArt === 'rechteck') return laserEntwurf.length ? 'Jetzt die gegenüberliegende Ecke antippen.'
     : laserUmriss ? 'Rechteck am Rand ziehen zum Verschieben. Tipp in die Karte beginnt ein neues.'
     : 'Tippe zwei gegenüberliegende Ecken an.';
+  if (laserArt === 'kreis') return laserEntwurf.length ? 'Jetzt den Rand antippen — der Abstand ist der Radius.'
+    : laserUmriss ? 'Kreis am Rand ziehen zum Verschieben. Tipp in die Karte beginnt einen neuen.'
+    : 'Erst die Mitte antippen, dann den Rand.';
   if (laserArt === 'polygon') return laserEntwurf.length >= 3 ? `Weitere Ecken antippen — ${MAUS.matches ? 'Doppelklick, Rechtsklick oder ' : ''}Tipp auf den ersten Punkt schließt die Fläche.`
     : laserEntwurf.length ? 'Weitere Ecken antippen.'
     : laserUmriss ? 'Polygon am Rand ziehen zum Verschieben. Tipp in die Karte beginnt ein neues.'
