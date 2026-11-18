@@ -1064,7 +1064,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     neu = true;
   }));
   // Rauschen (NRW Klasse 18: Vögel, Wolken, Dampf) gleich aus — die Punkte hängen sonst hoch über der Wolke
-  if (KLASSEN === KLASSEN_NW) { const b = $('[data-klasse="18"]'); if (b) b.click(); }
+  // Nicht per click(): der Handler setzt `neu`, das hier noch nicht deklariert ist (gezeichnet wird ohnehin erst später)
+  if (KLASSEN === KLASSEN_NW) {
+    const b = $('[data-klasse="18"]');
+    if (b) { b.classList.remove('is-on'); b.setAttribute('aria-pressed', 'false'); masken[18] = 0; }
+  }
 
   /* Kurzer Hinweis über der Fußzeile, wo beim Öffnen die Bedienung steht */
   let hinweisUhr = 0;
