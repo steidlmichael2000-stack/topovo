@@ -515,6 +515,14 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     <div class="lz-tafel" hidden>
       <!-- Oben fest die Punktgröße, darunter Abschnitte zum Aufklappen wie im Menü
            der Karte (.sheet-sec) — die Tafel wurde sonst zu lang. -->
+      <!-- Stile (18.11.2026, seine drei Einstellungen vom Tablet, fest): ein Tipp stellt Darstellung,
+           Färbung, Regler, Effekte, Klassen, Auflagen und Ansicht auf einmal um (STILE). -->
+      <p class="pal-label lz-stil-titel">Stil</p>
+      <div class="seg seg-drei lz-stil" role="group" aria-label="Stil">
+        <button type="button" class="seg-btn" data-stil="realismus" data-ik="foto" title="Gelände im Luftbild, Gebäude LoD2 mit Luftbild-Dächern">Realismus</button>
+        <button type="button" class="seg-btn" data-stil="hoehe" data-ik="hoehe" title="Gelände nach Höhe, Höhenlinien, Schatten">Höhe</button>
+        <button type="button" class="seg-btn" data-stil="neigung" data-ik="neigung" title="Punkte nach Neigung, Höhenlinien, voller Schatten">Neigung</button>
+      </div>
       <!-- Punkte oder Gelände als Fläche (nur mit Bodenraster, d.gitter) -->
       <div class="seg seg-paar lz-darstellung" role="group" aria-label="Darstellung" hidden>
         <button type="button" class="seg-btn is-on" data-darstellung="punkte" data-ik="punkte">Punkte</button>
@@ -3639,7 +3647,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       kamera: kamera === orthoKamera ? 'ortho' : 'perspektive',
       darstellung: gelaende ? darstellung : gemerkt.darstellung,
       grund: wurzel.dataset.grund,
-      offen: [...tafel.querySelectorAll('details')].map(x => x.open)
+      offen: [...tafel.querySelectorAll('details')].map(x => x.open),
+      stil: typeof stilAktiv === 'string' ? stilAktiv : undefined
     };
   }
   function einstSpeichern() {
@@ -3665,6 +3674,82 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (Array.isArray(g.offen)) tafel.querySelectorAll('details').forEach((x, i) => { if (typeof g.offen[i] === 'boolean') x.open = g.offen[i]; });
   }
   einstAnwenden(gemerkt);
+
+  /* ---------- Stile ----------
+   * Drei feste Zusammenstellungen (18.11.2026: „mach diese 3 Presets mal fest“ — von seinem
+   * Tablet abgelesen). Anders als einstAnwenden schalten sie auch aus. groesse in Metern;
+   * fehlt sie, bleibt die Punktgröße. klassenAus: diese Klassen aus, alle anderen an. */
+  const STILE = {
+    realismus: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'luftbild', licht: 0, edl: 0,
+      effekte: { verdeckung: false, kugeln: true, linien: false }, klassenAus: [6],
+      geb: true, dach: 'luftbild', achsen: true, strassen: true, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
+    hoehe: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'hoehe', licht: 55, edl: 20,
+      effekte: { verdeckung: true, kugeln: true, linien: true }, klassenAus: [6],
+      geb: true, dach: 'grau', achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
+    neigung: { darstellung: 'punkte', faerbung: 'neigung', licht: 100, edl: 10,
+      effekte: { verdeckung: true, kugeln: true, linien: true }, klassenAus: [],
+      geb: false, achsen: true, strassen: true, kataster: false, kamera: 'perspektive', grund: 'verlauf' }
+  };
+  const stilKnoepfe = wurzel.querySelectorAll('[data-stil]');
+  let stilAktiv = null, stilWendet = false;
+  const stilMarkieren = art => {
+    stilAktiv = art;
+    stilKnoepfe.forEach(b => b.classList.toggle('is-on', b.dataset.stil === art));
+  };
+  function stilAnwenden(art) {
+    const g = STILE[art];
+    if (!g) return;
+    stilWendet = true;
+    try {
+      const klick = sel => { const b = typeof sel === 'string' ? $(sel) : sel; if (b && !b.hidden && !b.disabled) b.click(); };
+      if (g.darstellung && gelaende && g.darstellung !== darstellung) darstellungSetzen(g.darstellung);
+      // Färbung vor den Reglern: „Normalen“ und „Intensität“ stellen den Schatten selbst
+      if (g.faerbung && g.faerbung !== faerbungWahl) klick(`[data-faerbung="${g.faerbung}"]`);
+      if (Number.isFinite(g.groesse)) groesse.value = String(Math.min(400, Math.max(5, Math.round(g.groesse * 20) * 5)));
+      edlRegler.value = String(g.edl);
+      if (!lichtRegler.disabled) lichtRegler.value = String(g.licht);
+      reglerZeigen();
+      for (const e of Object.keys(effekte)) if (!!g.effekte[e] !== effekte[e]) klick(`[data-effekt="${e}"]`);
+      wurzel.querySelectorAll('.lz-klassenliste [data-klasse]').forEach(b => {
+        const soll = !g.klassenAus.includes(Number(b.dataset.klasse));
+        if (soll !== b.classList.contains('is-on')) b.click();
+      });
+      if (info.gebaeude) {
+        const gebAn = geb ? geb.gruppe.visible : gebLaeuft;
+        if (g.geb !== gebAn) klick(gebKnopf);
+        if (g.geb && g.dach && (g.dach === 'luftbild') !== dachBild && (g.dach !== 'luftbild' || info.luftbild)) dachSetzen(g.dach);
+      }
+      if (info.achsen) {
+        if (achsen) { if (g.achsen !== achsen.gruppe.visible) klick(achsKnopf); }
+        else gemerkt.achsen = g.achsen;        // lädt noch — achsenLaden schaut nach gemerkt.achsen
+      }
+      if (info.strassen && strKnopf) {
+        const strAn = strassen ? strassen.gruppe.visible : strLaedt;
+        if (g.strassen !== strAn) klick(strKnopf);
+      }
+      if (info.kataster && katKnopf) {
+        const katAn = kataster ? kataster.gruppe.visible : katLaedt;
+        if (g.kataster !== katAn) klick(katKnopf);
+      }
+      if (g.kamera && (g.kamera === 'ortho') !== (kamera === orthoKamera)) klick(`[data-kamera="${g.kamera}"]`);
+      if (g.grund && g.grund !== wurzel.dataset.grund) klick(`.lz-tafel [data-grund="${g.grund}"]`);
+    } finally { stilWendet = false; }
+    stilMarkieren(art);
+  }
+  stilKnoepfe.forEach(b => b.addEventListener('click', () => stilAnwenden(b.dataset.stil)));
+  // Wer danach selbst etwas verstellt, ist nicht mehr in diesem Stil
+  const stilVerlassen = ev => {
+    if (stilWendet || !stilAktiv || ev.target.closest('.lz-stil, summary')) return;
+    if (ev.target.closest('button, input')) stilMarkieren(null);
+  };
+  tafel.addEventListener('click', stilVerlassen);
+  tafel.addEventListener('input', stilVerlassen);
+  // Der zuletzt gewählte Stil bleibt markiert, solange die gemerkte Einstellung ihm noch entspricht
+  if (STILE[gemerkt.stil]) {
+    const g = STILE[gemerkt.stil];
+    if (g.faerbung === gemerkt.faerbung && g.edl === gemerkt.edl && g.grund === gemerkt.grund) stilMarkieren(gemerkt.stil);
+  }
+
   const imHintergrund = () => { if (document.visibilityState === 'hidden') einstSpeichern(); };
   document.addEventListener('visibilitychange', imHintergrund);
   bild();
