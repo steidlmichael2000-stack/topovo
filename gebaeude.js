@@ -128,9 +128,11 @@ async function gebStromLesen(antwort) {
 }
 
 /** Alle Gebäude einer Kachel. Bayern: 2 km, Südwestecke e, n in km, gerade
- *  Zahlen. BW (land 'bw'): 1 km aus dem ZIP des LGL. */
+ *  Zahlen. BW (land 'bw'): 1 km aus dem ZIP des LGL. NRW (land 'nw', 18.11.2026): 1 km als
+ *  CityGML direkt von opengeodata.nrw.de (CORS *, dl-de/zero-2-0), gleicher AdV-Aufbau wie in Bayern. */
+const GEB_NW_URL = (e, n) => `https://www.opengeodata.nrw.de/produkte/geobasis/3dg/lod2_gml/lod2_gml/LoD2_32_${e}_${n}_1_NW.gml`;
 function gebaeudeKachel(e, n, land = 'by') {
-  const s = land === 'bw' ? `bw/${e}_${n}` : `${e}_${n}`;
+  const s = land === 'bw' || land === 'nw' ? `${land}/${e}_${n}` : `${e}_${n}`;
   if (hoehenFehlen.has(`lod2/${s}`)) return Promise.resolve([]);
   const da = gebKacheln.get(s);
   if (da) { gebKacheln.delete(s); gebKacheln.set(s, da); return da; }
@@ -143,7 +145,7 @@ function gebaeudeKachel(e, n, land = 'by') {
       if (!datei) { hoehenFehlen.add(`lod2/${s}`); return []; }
       liste = await gebStromLesen(new Response(datei.daten));
     } else {
-      const r = await fetch(gebAdresseUrl(e, n));
+      const r = await fetch(land === 'nw' ? GEB_NW_URL(e, n) : gebAdresseUrl(e, n));
       if (r.status === 404) { hoehenFehlen.add(`lod2/${s}`); return []; }   // keine Kachel: außerhalb Bayerns
       if (!r.ok) throw new Error(`Gebäude: HTTP ${r.status}`);
       liste = await gebStromLesen(r);

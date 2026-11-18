@@ -180,7 +180,7 @@ const TOUR_SCHRITTE = [
         'zeigt die Punktwolke der Befliegung: Boden, Bewuchs, Gebäude, Leitungen. Auf der Karte erscheint ' +
         'das Raster der Kacheln zu 1 × 1 km; ein Tipp setzt den Ausschnitt, der Rahmen lässt sich ziehen, ' +
         '„Nur Boden“ lässt alles darüber weg. Im 3D-Bild drehen, einfärben und messen — Distanz, ' +
-        'Fläche, Höhe. Nur in Bayern; eine Kachel hat meist 40 bis 250 MB.';
+        'Fläche, Höhe. In Bayern und NRW; eine Kachel hat meist 40 bis 250 MB.';
     },
     ziel: () => SEITENLEISTE.matches ? tourSichtbar('#laserSchieneBtn') : tourSichtbar('#mapLaserBtn')
   },

@@ -15,7 +15,7 @@ import { OrbitControls } from './vendor/three/OrbitControls.js';
 
 /* Punktklassen der BVV (Beschreibung der Punktklassen, Stand September 2023).
  * Farben nach dem Brauch der Laser-Viewer: Boden braun, Bewuchs grün, Gebäude rot. */
-const KLASSEN = {
+const KLASSEN_BVV = {
   1: ['Unklassifiziert', '#9aa3ad'],
   2: ['Boden', '#b9824d'],
   6: ['Gebäude', '#e2543e'],
@@ -25,6 +25,23 @@ const KLASSEN = {
   23: ['Boden, abgeleitet', '#d8ad7c'],
   24: ['Boden aus bDOM', '#cbb08f']
 };
+/* Punktklassen von Geobasis NRW (Nutzerinformation 3D-Messdaten, Bezirksregierung Köln; info.klassen 'nw').
+ * 20 sind dort alle letzten Echos ohne Boden — Gebäude, Autos, auch Baumkronen —, 1 die Zwischenechos
+ * der Vegetation. Eine eigene Gebäudeklasse gibt es nicht. */
+const KLASSEN_NW = {
+  1: ['Unklassifiziert, Bewuchs', '#4fb35a'],
+  2: ['Boden', '#b9824d'],
+  9: ['Gewässer, aufgefüllt', '#3d86e0'],
+  17: ['Brücke', '#a274e3'],
+  18: ['Rauschen', '#ff453a'],
+  20: ['Letztes Echo, nicht Boden', '#d9d4c7'],
+  21: ['Gebäude, aufgefüllt', '#e2543e'],
+  24: ['Keller', '#8c6d4f'],
+  26: ['Boden, aufgefüllt', '#d8ad7c']
+};
+const KLASSEN_JE = { nw: KLASSEN_NW };
+// Je Ansicht gesetzt (laserAnsicht: info.klassen, info.boden, info.baumKlassen); ohne Angabe die der BVV
+let KLASSEN = KLASSEN_BVV;
 const klasseName = k => (KLASSEN[k] || [`Klasse ${k}`])[0];
 const klasseFarbe = k => (KLASSEN[k] || [0, '#c8c8c8'])[1];
 // Dieselben Töne wie die Höhenfarben auf der Karte (HOEHEN_RAMPE in app.js)
@@ -35,12 +52,13 @@ const RAMPE = ['#2c3e94', '#2a7dc4', '#33b2b0', '#7ccc6c', '#e6dd55', '#f19a3c',
  * kommt im PW-Viewer aus dem Dateinamen. */
 const LIZENZ_LINKS = {
   'CC BY 4.0': 'https://creativecommons.org/licenses/by/4.0/deed.de',
+  'dl-de/zero-2-0': 'https://www.govdata.de/dl-de/zero-2-0',
   'ODbL': 'https://www.openstreetmap.org/copyright',
   'dl-de/by-2-0': 'https://www.govdata.de/dl-de/by-2-0'
 };
 function lizenzTextSetzen(el, text) {
   el.replaceChildren();
-  for (const teil of String(text).split(/(CC BY 4\.0|ODbL|dl-de\/by-2-0)/)) {
+  for (const teil of String(text).split(/(CC BY 4\.0|ODbL|dl-de\/by-2-0|dl-de\/zero-2-0)/)) {
     if (!LIZENZ_LINKS[teil]) { if (teil) el.append(teil); continue; }
     const a = document.createElement('a');
     a.href = LIZENZ_LINKS[teil]; a.target = '_blank'; a.rel = 'noopener'; a.textContent = teil;
@@ -340,7 +358,8 @@ const STAMM_FARBE = '#ecebe7';     // Stämme weiß wie das Modell
  * ins Lineare um, der Shader gibt das ohne Rückrechnung aus — das Grün wurde fast schwarz. */
 const shaderFarbe = hex => { const v = parseInt(hex.slice(1), 16); return new THREE.Color().setRGB((v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255); };
 /* Klassen, aus denen Bäume erkannt werden: BVV „Objekte, Bewuchs“, dazu die ASPRS-Vegetation anderer Wolken */
-const BAUM_KLASSEN = new Set([3, 4, 5, 20]);
+const BAUM_KLASSEN_BVV = [3, 4, 5, 20];
+let BAUM_KLASSEN = new Set(BAUM_KLASSEN_BVV);
 /* Regen: gewünschte Zeitraffung (Sekunden Regen je Sekunde). Wie viele Schritte
  * je Bild gehen, regelt bild() nach der Bildrate — auf einer Intel-Grafik schaffte
  * „Schnell“ mit festen 140 Schritten nur 3 Bilder je Sekunde. */
@@ -350,8 +369,9 @@ const ZIEL_FARBE = '#ff453a';
  * Straßen auf Karten, abgestuft; Blau trägt die Bahn, Weiß die Höhenlinien. */
 const STR_FARBEN = ['#f5d76e', '#e9dfb4', '#cfc6a3'];
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-// Boden im Sinne der BVV: Boden, Gewässer, abgeleiteter Boden (wie in laser-werk.js)
-const BODEN = new Set([2, 9, 23, 24]);
+// Boden im Sinne der BVV: Boden, Gewässer, abgeleiteter Boden (wie in laser-werk.js); NRW über info.boden
+const BODEN_BVV = [2, 9, 23, 24];
+let BODEN = new Set(BODEN_BVV);
 
 /** Öffnet die Ansicht über der Karte. d: Ergebnis aus laser-werk.js,
  *  info: { kachel, quelle, seite }. Gibt eine Funktion zum Schließen zurück.
@@ -363,6 +383,9 @@ const BODEN = new Set([2, 9, 23, 24]);
  *  unterzeile, datenName (vor der Quellenangabe) und in d die Punktfarben rgb
  *  (Uint8, sRGB) — dann gibt es die Färbung „Farbe“ und sie ist die erste. */
 export function laserAnsicht(d, info, { beimSchliessen } = {}) {
+  KLASSEN = KLASSEN_JE[info.klassen] || KLASSEN_BVV;
+  BODEN = new Set(info.boden || BODEN_BVV);
+  BAUM_KLASSEN = new Set(info.baumKlassen || BAUM_KLASSEN_BVV);
   const wurzel = document.createElement('div');
   wurzel.className = 'laser-ansicht';
   wurzel.innerHTML = `
@@ -1040,6 +1063,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     masken[Number(b.dataset.klasse) & 31] = an ? 1 : 0;
     neu = true;
   }));
+  // Rauschen (NRW Klasse 18: Vögel, Wolken, Dampf) gleich aus — die Punkte hängen sonst hoch über der Wolke
+  if (KLASSEN === KLASSEN_NW) { const b = $('[data-klasse="18"]'); if (b) b.click(); }
 
   /* Kurzer Hinweis über der Fußzeile, wo beim Öffnen die Bedienung steht */
   let hinweisUhr = 0;
@@ -1071,7 +1096,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (!info.quelleKurz) { fuss.replaceChildren(lang, punkte); return; }
     const kurz = document.createElement('span');
     kurz.className = 'lz-fuss-kurz';
-    lizenzTextSetzen(kurz, (mitAchsen ? info.quelleKurz.replace('© BVV', '© BVV, DB InfraGO') : info.quelleKurz) +
+    lizenzTextSetzen(kurz, (!mitAchsen ? info.quelleKurz : info.quelleKurz.includes('© BVV')
+      ? info.quelleKurz.replace('© BVV', '© BVV, DB InfraGO') : `${info.quelleKurz} · © DB InfraGO (CC BY 4.0)`) +
       // Kurz, damit es am Handy in eine Zeile passt (mit „OpenStreetMap“ stand das ⓘ allein in einer zweiten);
       // die ganze Angabe kommt per Tipp. Das ⓘ hängt fest am letzten Wort.
       (osm.length ? ' · © OSM (ODbL)' : '') + '\u00a0ⓘ');
@@ -2340,7 +2366,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     let text;
     if (exOriginal()) {
       const g = exKacheln.reduce((s, k) => s + k.groesse, 0);
-      text = `${exKacheln.length} × LAZ der BVV, unverändert · ${MB(g)}`;
+      text = `${exKacheln.length} × LAZ ${info.lazName || 'der BVV'}, unverändert · ${MB(g)}`;
     } else {
       let punkte = 0;
       if (ex.umfang === 'kacheln') punkte = exKacheln.reduce((s, k) => s + k.anzahl, 0);
@@ -3455,7 +3481,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           if (gebaeude === 'punkte') regenGebQuelle = 'punkte';
           if (!laeuft) return false;
         }
-        const r = regenAnlegen({ renderer, d, seite: info.seite, gebaeude,
+        const r = regenAnlegen({ renderer, d, seite: info.seite, gebaeude, boden: [...BODEN],
           lichtRichtung: material.uniforms.lichtRichtung, tiefeUniforms: { tiefe: edl.uniforms.tiefe, nah: edl.uniforms.nah, fern: edl.uniforms.fern, ortho: edl.uniforms.ortho } });
         if (r.fehler) { hinweis(r.fehler); return false; }
         regen = r;
@@ -3966,10 +3992,10 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * fehlt sie, bleibt die Punktgröße. klassenAus: diese Klassen aus, alle anderen an; nurBoden: nur BODEN an. */
   const STILE = {
     realismus: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'luftbild', licht: 0, edl: 0,
-      effekte: { verdeckung: false, kugeln: true, linien: false }, klassenAus: [6],
+      effekte: { verdeckung: false, kugeln: true, linien: false }, klassenAus: [6, 18],
       geb: true, dach: 'luftbild', achsen: true, strassen: true, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
     hoehe: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'hoehe', licht: 55, edl: 20,
-      effekte: { verdeckung: true, kugeln: true, linien: true }, klassenAus: [6],
+      effekte: { verdeckung: true, kugeln: true, linien: true }, klassenAus: [6, 18],
       geb: true, dach: 'grau', achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
     // Geländeanalyse (18.11.2026 statt „Neigung“ mit Bewuchs): nur Boden, als Fläche, wo es ein Bodenraster gibt
     gelaende: { darstellung: 'gelaende', faerbung: 'neigung', licht: 100, edl: 10,

@@ -554,6 +554,14 @@ Eigener Einstieg (seit 04.11.2026, so gewünscht — nicht im Messmenü): am Han
 angezeigt in `laser.js` (Modul, three.js aus `vendor/three/`, laz-perf aus `vendor/copc/`). Einzelheiten
 und Messwerte in der README (*Laserpunkte in 3D*).
 
+- **NRW** (18.11.2026): `LASER_LAENDER` in `app.js` (by, nw) trägt je Land Adresse, Quellenvermerk, Klassen, Boden.
+  NRW-Kacheln (LAZ 1.2, Format 1, wie die BVV) und das LoD2 (1 km, `gebaeudeKachel(e, n, 'nw')`) kommen **direkt** von
+  opengeodata.nrw.de (CORS *, mit Content-Length), Luftbild/Kataster aus den NRW-WMS. Die **Klassen bedeuten dort etwas
+  anderes** (20 = letzte Echos ohne Boden, 26 aufgefüllter Boden, 18 Rauschen, keine Gebäudeklasse): `KLASSEN_NW` in
+  `laser.js`, Boden `[2, 9, 26]` geht als `boden` an laser-werk.js, laser.js (`info.boden`) und regen.js. Bäume in NRW aus
+  (`baumKlassen: []`), Rauschen startet aus. Land je Kachel nach `laender-grenzen.json` (`laserLandVon`) — NRW schickt für
+  Kacheln außerhalb ein 404 **ohne** CORS-Kopf, der Browser sähe nur einen Netzfehler. Neues Land: Eintrag in
+  `LASER_LAENDER`, Klassen nach der Produktbeschreibung prüfen, nicht raten.
 - **Kacheln der BVV sind keine COPC** (LAS 1.2, Format 1, Fluglinien-Reihenfolge): jeder Ausschnitt
   lädt die ganzen Kacheln. Nicht versuchen, per Bytebereich nur Teile zu holen — durch den Worker
   kommen weder Größe noch Bereiche an (der BVV-Server gzippt, sobald Cloudflare gzip anbietet;

@@ -19,7 +19,8 @@
 import * as THREE from './vendor/three/three.module.js';
 
 const G = 9.81;
-const BODEN = new Set([2, 9, 23, 24]);
+// Boden im Sinne der BVV; andere Länder (NRW) geben ihre Klassen über regenAnlegen({ boden }) mit
+let BODEN = new Set([2, 9, 23, 24]);
 const GEBAEUDE = 6;
 const TROCKEN = 0.003;          // m — darunter gilt eine Zelle als trocken (Rauschen der Punkte)
 const PFUETZE = 0.02;           // m — ab hier zählt Wasser als „steht“
@@ -280,7 +281,8 @@ function innen(px, py, ecken) {
  * Gibt null zurück, wenn die Grafikkarte nicht in Gleitkommazahlen zeichnen
  * kann oder kein Boden da ist.
  */
-export function regenAnlegen({ renderer, d, seite, tiefeUniforms, lichtRichtung, gebaeude = null }) {
+export function regenAnlegen({ renderer, d, seite, tiefeUniforms, lichtRichtung, gebaeude = null, boden = null }) {
+  if (boden) BODEN = new Set(boden);
   if (!renderer.extensions.get('EXT_color_buffer_float')) return { fehler: 'Die Grafikkarte kann hier nicht in Gleitkommazahlen rechnen.' };
   const r = rasterBauen(d, seite, gebaeude);
   if (!r) return { fehler: 'In diesem Ausschnitt gibt es keine Bodenpunkte.' };

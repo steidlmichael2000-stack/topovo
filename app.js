@@ -8156,12 +8156,75 @@ try { localStorage.removeItem(LASER_STUECKE_SCHLUESSEL); } catch (e) { /* egal *
 const laserStuecke = () => window.TopovoAndroid ? LASER_STUECKE_ZAHL : 0;
 const laserNativ = () => LASER_NATIV_DA;
 const LASER_RASTER_AB = 12;               // Kachelraster ab dieser Zoomstufe
-/* CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen: in der
- * Ansicht unten (LASER_QUELLE), auf der Karte in der Quellenangabe (LASER_ATTR). */
-const LASER_QUELLE = 'Bayerische Vermessungsverwaltung (CC BY 4.0), bearbeitet';
-// Am Handy in der Ansicht nur kurz, ein Tipp zeigt die ganze Angabe (laser.js, quellenNeu)
-const LASER_QUELLE_KURZ = '© BVV (CC BY 4.0), bearbeitet';
-const LASER_ATTR = landQuelle('Laserpunkte', ['by']);
+/* Länder mit offenen Laserpunkten (seit 18.11.2026 auch NRW). Beide liefern LAZ 1.2, Punktformat 1,
+ * 1 × 1 km mit Südwestecke in km als Namen (`356_5645`), UTM32 ohne Zonenziffer, DHHN2016 —
+ * nur die Punktklassen bedeuten etwas anderes (KLASSEN in laser.js, BODEN in laser-werk.js/regen.js).
+ *
+ * NRW (Geobasis NRW, 3D-Messdaten, dl-de/zero-2-0): opengeodata.nrw.de gibt CORS * und
+ * Content-Length frei — die Kacheln kommen direkt, nicht über den Worker. Klassen laut
+ * „Nutzerinformation 3D-Messdaten“ der Bezirksregierung Köln: 2 Boden, 26 aufgefüllter Boden,
+ * 9 aufgefüllte Gewässer (unter Brücken), 24 Keller, 17 Brücke, 20 letzte Echos ohne Boden
+ * (Gebäude, Autos …), 1 unklassifiziert (Zwischenechos der Vegetation), 18 Rauschen, 21 aufgefüllte
+ * Gebäude (bis 2019). Eine Gebäudeklasse gibt es nicht — „Bäume“ fallen deshalb weg (laser.js,
+ * baumKlassen leer), sonst stünden sie auf jedem Dach.
+ *
+ * Die Rahmen sind grob; was darin außerhalb des Landes liegt, meldet der Server mit 404
+ * (laserGroessen 0 = „gibt es nicht“). */
+const LASER_LAENDER = {
+  by: {
+    rahmen: HOEHEN_RAHMEN.by,
+    url: k => `${HOEHEN.proxy}/laser/${k}.laz`,
+    // CC BY 4.0 verlangt Urheber, Lizenz und einen Hinweis auf Änderungen
+    quelle: 'Bayerische Vermessungsverwaltung (CC BY 4.0), bearbeitet',
+    // Am Handy in der Ansicht nur kurz, ein Tipp zeigt die ganze Angabe (laser.js, quellenNeu)
+    quelleKurz: '© BVV (CC BY 4.0), bearbeitet',
+    lazName: 'der BVV',
+    luftbild: true, kataster: true, gebaeude: true
+  },
+  nw: {
+    rahmen: { s: 50.32, n: 52.53, w: 5.86, o: 9.46 },
+    url: k => `https://www.opengeodata.nrw.de/produkte/geobasis/hm/3dm_l_las/3dm_l_las/3dm_32_${k}_1_nw.laz`,
+    quelle: 'Geobasis NRW (dl-de/zero-2-0), bearbeitet',
+    quelleKurz: '© Geobasis NRW (dl-de/zero-2-0)',
+    lazName: 'von Geobasis NRW',
+    klassen: 'nw',
+    boden: [2, 9, 26],
+    baumKlassen: [],
+    luftbild: true, kataster: true, gebaeude: true
+  }
+};
+const LASER_ATTR = landQuelle('Laserpunkte', Object.keys(LASER_LAENDER));
+/* Welches Land: sobald die Landesgrenzen da sind (laenderGrenzenHolen, VG250 auf 100 m vereinfacht) nach
+ * der Grenze, bis dahin nach den groben Rahmen. Nötig, weil NRW für Kacheln außerhalb ein 404 ohne
+ * CORS-Kopf schickt — der Browser sieht nur einen Netzfehler, die Größe bliebe „unbekannt“. */
+let laserGrenzen = null;
+function laserImLand(land, e, n) {
+  const g = laserGrenzen && laserGrenzen[land];
+  if (!g || e < g.bb[0] || e > g.bb[2] || n < g.bb[1] || n > g.bb[3]) return false;
+  let drin = false;     // gerade/ungerade über alle Ringe (Löcher inbegriffen)
+  for (const { p, bb } of g.ringe) {
+    if (e < bb[0] || e > bb[2] || n < bb[1] || n > bb[3]) continue;
+    for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+      if ((p[i + 1] > n) !== (p[j + 1] > n) && e < (p[j] - p[i]) * (n - p[i + 1]) / (p[j + 1] - p[i + 1]) + p[i]) drin = !drin;
+    }
+  }
+  return drin;
+}
+/** Land an einer Stelle, oder null. Bayern zuerst (die groben Rahmen überlappen in Hessen). */
+const laserLandBei = (lat, lon) => {
+  if (laserGrenzen) { const [e, n] = utm32Hin(lat, lon); return Object.keys(LASER_LAENDER).find(l => laserImLand(l, e, n)) || null; }
+  return Object.keys(LASER_LAENDER).find(l => {
+    const r = LASER_LAENDER[l].rahmen;
+    return lat >= r.s && lat <= r.n && lon >= r.w && lon <= r.o;
+  }) || null;
+};
+/** Land einer Kachel (`ke_kn`): Mitte oder eine Ecke im Land (Randkacheln liegen nur zum Teil darin). */
+const laserLandVon = k => {
+  const [ke, kn] = k.split('_').map(Number), e = ke * 1000, n = kn * 1000;
+  if (!laserGrenzen) return laserLandBei(...utm32Zurueck(e + 500, n + 500));
+  const punkte = [[500, 500], [1, 1], [999, 1], [1, 999], [999, 999], [500, 1], [500, 999], [1, 500], [999, 500]];
+  return Object.keys(LASER_LAENDER).find(l => punkte.some(([de, dn]) => laserImLand(l, e + de, n + dn))) || null;
+};
 let laserAn = false;
 let laserStelle = null;      // { e, n } — Mitte des Rahmens in UTM32
 let laserZiel = null;        // { e, n, text } — gesuchte Stelle, im Viewer hervorgehoben
@@ -8237,6 +8300,12 @@ function laserStart() {
   if (messModus) messEnde();
   if (mappeOffen) { mappeOffen = false; mappeStand = ''; mappeFertig = null; }
   laserAn = true;
+  if (!laserGrenzen) laenderGrenzenHolen().then(g => {
+    laserGrenzen = g;
+    // Vorher gefragte Kacheln außerhalb (Netzfehler, −1) gelten jetzt als „gibt es nicht“
+    for (const [k, v] of laserGroessen) if (v === -1 && !laserLandVon(k)) laserGroessen.set(k, 0);
+    if (laserAn && !laserLaedt) laserNeuGewaehlt();
+  }).catch(() => {});
   laserStelle = null;
   laserZiel = null;
   laserFehler = '';
@@ -8354,15 +8423,19 @@ const laserSeiteText = () => laserGanzeKachel() ? 'Kachel' : `${laserSeite} m`;
  * gleich in UTM32 — CORS gibt der Dienst frei, auch für localhost (05.11.2026). */
 /* Kataster im Laserviewer (12.11.2026 gewünscht): die Parzellarkarte der BVV als Umring (schwarz auf
  * durchsichtig), EPSG:25832. Der Dienst liefert bis 6000 px und schickt CORS-Kopfzeilen. */
-function laserKatasterUrl(e0, n0, e1, n1, w, h) {
-  return 'https://geoservices.bayern.de/od/wms/alkis/v1/parzellarkarte?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
-    + '&LAYERS=by_alkis_parzellarkarte_umr_schwarz&STYLES=&CRS=EPSG:25832&FORMAT=image/png&TRANSPARENT=TRUE'
-    + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}`;
-}
+/* NRW (18.11.2026): ALKIS-WMS von Geobasis NRW, Ebene Flurstücke — schwarze Linien mit Nummern und
+ * Straßennamen auf durchsichtig, CORS frei, 6000 px gehen (2,9 MB je km²). */
+const LASER_KATASTER = {
+  by: 'https://geoservices.bayern.de/od/wms/alkis/v1/parzellarkarte?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
+    + '&LAYERS=by_alkis_parzellarkarte_umr_schwarz&STYLES=&CRS=EPSG:25832&FORMAT=image/png&TRANSPARENT=TRUE',
+  nw: 'https://www.wms.nrw.de/geobasis/wms_nw_alkis?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap'
+    + '&LAYERS=adv_alkis_flurstuecke&STYLES=&CRS=EPSG:25832&FORMAT=image/png&TRANSPARENT=TRUE'
+};
+const laserKatasterUrl = land => (e0, n0, e1, n1, w, h) => LASER_KATASTER[land] + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}`;
 
-function laserLuftbildUrl(e0, n0, e1, n1, w, h) {
-  return LAND_WMS.dop.by.replace('EPSG:3857', 'EPSG:25832') + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}&FORMAT=image/jpeg`;
-}
+// Luftbild: das DOP20 des Landes aus LAND_WMS, gleich in UTM32 (NRW gibt CORS ebenfalls frei)
+const laserLuftbildUrl = land => (e0, n0, e1, n1, w, h) =>
+  LAND_WMS.dop[land].replace('EPSG:3857', 'EPSG:25832') + `&BBOX=${e0},${n0},${e1},${n1}&WIDTH=${w}&HEIGHT=${h}&FORMAT=image/jpeg`;
 
 /* KOSTRA-DWD-2020 für den Regen in der Laseransicht: Niederschlagshöhe je
  * Dauerstufe und Jährlichkeit an der Stelle. Daten aus werkzeug/kostra-bauen.py
@@ -8418,16 +8491,17 @@ async function laserKostra(e, n) {
 }
 
 /** Gebäude aus dem LoD2 (gebaeude.js), deren Umring den Bereich berührt. */
-async function laserGebaeude(e0, n0, e1, n1) {
-  // Für den Export auch über mehrere Kacheln: jede 2-km-Kachel dazwischen
-  const kacheln = new Set();
-  for (let e = Math.floor(e0 / LOD2_KACHEL); e <= Math.floor(e1 / LOD2_KACHEL); e++)
-    for (let n = Math.floor(n0 / LOD2_KACHEL); n <= Math.floor(n1 / LOD2_KACHEL); n++) kacheln.add(`${e * 2}_${n * 2}`);
-  const listen = await Promise.all([...kacheln].map(k => gebaeudeKachel(...k.split('_').map(Number))));
+/* land 'by': 2-km-Kacheln der BVV, 'nw': 1-km-Kacheln von Geobasis NRW (gebaeudeKachel) */
+const laserGebaeude = (land = 'by') => async (e0, n0, e1, n1) => {
+  // Für den Export auch über mehrere Kacheln: jede Kachel dazwischen
+  const km = land === 'nw' ? 1 : LOD2_KACHEL / 1000, kacheln = new Set();
+  for (let e = Math.floor(e0 / 1000 / km); e <= Math.floor(e1 / 1000 / km); e++)
+    for (let n = Math.floor(n0 / 1000 / km); n <= Math.floor(n1 / 1000 / km); n++) kacheln.add(`${e * km}_${n * km}`);
+  const listen = await Promise.all([...kacheln].map(k => gebaeudeKachel(...k.split('_').map(Number), land)));
   const gesehen = new Set();
   return listen.flat().filter(b => b.bb[2] >= e0 && b.bb[0] <= e1 && b.bb[3] >= n0 && b.bb[1] <= n1
     && !gesehen.has(b.id) && gesehen.add(b.id));
-}
+};
 
 /** Rechteck in UTM32 → [Süd, West, Nord, Ost] in Grad, über alle vier Ecken. */
 function laserGrad(e0, n0, e1, n1) {
@@ -8748,7 +8822,8 @@ function laserZiehenBinden() {
 
 async function laserAdresse(kachel) {
   if (laserAdressen.has(kachel)) return laserAdressen.get(kachel);
-  let url = `${HOEHEN.proxy}/laser/${kachel}.laz`;
+  const land = LASER_LAENDER[laserLandVon(kachel)] || LASER_LAENDER.by;
+  let url = land.url(kachel);
   if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
     const lokal = `laser-probe/${kachel}.laz`;
     try { if ((await fetch(lokal, { method: 'HEAD' })).ok) url = lokal; } catch (e) { /* dann der Worker */ }
@@ -8761,6 +8836,7 @@ async function laserAdresse(kachel) {
 function laserGroessenHolen() {
   for (const k of laserKacheln()) {
     if (laserGroessen.has(k) || laserGeraet.has(k)) continue;
+    if (laserGrenzen && !laserLandVon(k)) { laserGroessen.set(k, 0); continue; }   // in keinem Land mit Laserpunkten
     laserGroessen.set(k, null);
     laserAdresse(k)
       .then(url => fetch(url, { method: 'HEAD' }))
@@ -8784,8 +8860,8 @@ function laserTipp(latlng) {
   if (laserLaedt || Date.now() - laserGezogen < 400) return;
   const { lat, lng } = L.latLng(latlng);
   if (laserUmrissArt()) { laserEckeTipp(L.latLng(latlng)); return; }
-  if (!inLandRahmen('by', lat, lng)) {
-    laserFehler = 'Laserpunkte gibt es offen nur in Bayern.';
+  if (!laserLandBei(lat, lng)) {
+    laserFehler = 'Laserpunkte gibt es offen nur in Bayern und NRW.';
     laserLeiste();
     return;
   }
@@ -8927,6 +9003,13 @@ async function laserLaden(auswahl = null) {
   const namen = (auswahl ? laserUmrissKacheln(auswahl.umriss).filter(k => laserKacheln().includes(k)) : laserKacheln())
     .filter(k => laserGroessen.get(k) !== 0 || laserGeraet.has(k));
   if (!namen.length || namen.length > LASER_KACHELN_MAX) return;
+  // Alle Kacheln aus einem Land (Bayern und NRW grenzen nicht aneinander; nur bei „Kacheln“ ließe sich mischen)
+  const landKey = laserLandVon(namen[0]) || 'by', land = LASER_LAENDER[landKey];
+  if (namen.some(k => (laserLandVon(k) || 'by') !== landKey)) {
+    laserFehler = 'Bitte nur Kacheln aus einem Land wählen.';
+    laserLeiste();
+    return;
+  }
   const kacheln = await Promise.all(namen.map(async kachel => {
     let url = await laserAdresse(kachel);
     // Nativ: die App greift den Download nur mit diesem Zeichen ab (die Weiterleitung achtet nur auf den Pfad)
@@ -8996,11 +9079,13 @@ async function laserLaden(auswahl = null) {
         laserGeladenUmriss = umriss;
         // Die alte Ansicht ersetzen, ohne den Eintrag der Zurück-Wache zurückzunehmen (die neue braucht ihn)
         if (laserSchliessen) { laserTausch = true; try { laserSchliessen(); } finally { laserTausch = false; } }
-        laserSchliessen = laserAnsicht(m, { kachel: da.join(', '), quelle: LASER_QUELLE, quelleKurz: LASER_QUELLE_KURZ, seite, nurBoden,
+        laserSchliessen = laserAnsicht(m, { kachel: da.join(', '), quelle: land.quelle, quelleKurz: land.quelleKurz, lazName: land.lazName, seite, nurBoden,
+          ...(land.klassen ? { klassen: land.klassen } : {}), ...(land.boden ? { boden: land.boden } : {}),
+          ...(land.baumKlassen ? { baumKlassen: land.baumKlassen } : {}),
           ...(unterzeile ? { unterzeile } : {}),
           dichter: a => laserLaden(a), ...(auswahl ? { ausBox: true, ganz: () => laserLaden(), kamera: auswahl.kamera } : {}),
-          utm: utm32Hin, luftbild: laserLuftbildUrl, gebaeude: laserGebaeude, kostra: laserKostra,
-          achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel, kataster: laserKatasterUrl, katasterFarbe: parzFarbe(),
+          utm: utm32Hin, luftbild: land.luftbild ? laserLuftbildUrl(landKey) : null, gebaeude: land.gebaeude ? laserGebaeude(landKey) : null, kostra: laserKostra,
+          achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel, kataster: land.kataster ? laserKatasterUrl(landKey) : null, katasterFarbe: parzFarbe(),
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, umriss, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); if (!laserTausch) wacheLaserZu(); } });
         wacheAuffuellen();
@@ -9013,7 +9098,8 @@ async function laserLaden(auswahl = null) {
     laserLeiste();
   };
   laserWerk.postMessage({ kacheln, bereich, umriss, max: LASER_MAX_PUNKTE, nurBoden, vorratMax: LASER_VORRAT, entpacktMax: LASER_ENTPACKT, parallel: LASER_PARALLEL,
-    gitterZellen: LASER_GITTER, zGrenze: auswahl ? auswahl.zGrenze : null, stuecke: laserStuecke(), nativ: laserNativ() });
+    gitterZellen: LASER_GITTER, zGrenze: auswahl ? auswahl.zGrenze : null, stuecke: laserStuecke(), nativ: laserNativ(),
+    ...(land.boden ? { boden: land.boden } : {}) });
 }
 
 /* Export aus der 3D-Ansicht: läuft im selben Worker, damit die Kacheln aus
@@ -12378,9 +12464,9 @@ function renderBottom() {
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.6" cy="18" r="2.2"/><path d="M7.8 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h9.2"/><path d="M15.6 3.4 18.2 6l-2.6 2.6"/></svg>
       </button>`;
 
-  /* Laserpunkte am Ergebnis (nur Bayern): öffnet den Viewer gleich dort,
+  /* Laserpunkte am Ergebnis (Bayern, NRW): öffnet den Viewer gleich dort,
    * die Stelle darin hervorgehoben (laserAufErgebnis). */
-  const laserKnopfBB = inLandRahmen('by', p.lat, p.lon)
+  const laserKnopfBB = laserLandBei(p.lat, p.lon)
     ? `<button type="button" id="laser3dBtn" class="bb-ikon lz-3d" aria-label="Laserpunkte in 3D" title="Laserpunkte in 3D">3D</button>`
     : '';
 
