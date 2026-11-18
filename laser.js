@@ -517,11 +517,11 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
            der Karte (.sheet-sec) — die Tafel wurde sonst zu lang. -->
       <!-- Stile (18.11.2026, seine drei Einstellungen vom Tablet, fest): ein Tipp stellt Darstellung,
            Färbung, Regler, Effekte, Klassen, Auflagen und Ansicht auf einmal um (STILE). -->
-      <p class="pal-label lz-stil-titel">Stil</p>
-      <div class="seg seg-drei lz-stil" role="group" aria-label="Stil">
+      <p class="pal-label lz-stil-titel">Preset</p>
+      <div class="seg seg-drei lz-stil" role="group" aria-label="Preset">
         <button type="button" class="seg-btn" data-stil="realismus" data-ik="foto" title="Gelände im Luftbild, Gebäude LoD2 mit Luftbild-Dächern">Realismus</button>
         <button type="button" class="seg-btn" data-stil="hoehe" data-ik="hoehe" title="Gelände nach Höhe, Höhenlinien, Schatten">Höhe</button>
-        <button type="button" class="seg-btn" data-stil="neigung" data-ik="neigung" title="Punkte nach Neigung, Höhenlinien, voller Schatten">Neigung</button>
+        <button type="button" class="seg-btn" data-stil="gelaende" data-ik="neigung" title="Geländeanalyse: nur der Boden, nach Neigung gefärbt, mit Höhenlinien">Neigung</button>
       </div>
       <!-- Punkte oder Gelände als Fläche (nur mit Bodenraster, d.gitter) -->
       <div class="seg seg-paar lz-darstellung" role="group" aria-label="Darstellung" hidden>
@@ -3678,7 +3678,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   /* ---------- Stile ----------
    * Drei feste Zusammenstellungen (18.11.2026: „mach diese 3 Presets mal fest“ — von seinem
    * Tablet abgelesen). Anders als einstAnwenden schalten sie auch aus. groesse in Metern;
-   * fehlt sie, bleibt die Punktgröße. klassenAus: diese Klassen aus, alle anderen an. */
+   * fehlt sie, bleibt die Punktgröße. klassenAus: diese Klassen aus, alle anderen an; nurBoden: nur BODEN an. */
   const STILE = {
     realismus: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'luftbild', licht: 0, edl: 0,
       effekte: { verdeckung: false, kugeln: true, linien: false }, klassenAus: [6],
@@ -3686,9 +3686,10 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     hoehe: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'hoehe', licht: 55, edl: 20,
       effekte: { verdeckung: true, kugeln: true, linien: true }, klassenAus: [6],
       geb: true, dach: 'grau', achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
-    neigung: { darstellung: 'punkte', faerbung: 'neigung', licht: 100, edl: 10,
-      effekte: { verdeckung: true, kugeln: true, linien: true }, klassenAus: [],
-      geb: false, achsen: true, strassen: true, kataster: false, kamera: 'perspektive', grund: 'verlauf' }
+    // Geländeanalyse (18.11.2026 statt „Neigung“ mit Bewuchs): nur Boden, als Fläche, wo es ein Bodenraster gibt
+    gelaende: { darstellung: 'gelaende', faerbung: 'neigung', licht: 100, edl: 10,
+      effekte: { verdeckung: false, kugeln: false, linien: true }, nurBoden: true,
+      geb: false, achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' }
   };
   const stilKnoepfe = wurzel.querySelectorAll('[data-stil]');
   let stilAktiv = null, stilWendet = false;
@@ -3711,7 +3712,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       reglerZeigen();
       for (const e of Object.keys(effekte)) if (!!g.effekte[e] !== effekte[e]) klick(`[data-effekt="${e}"]`);
       wurzel.querySelectorAll('.lz-klassenliste [data-klasse]').forEach(b => {
-        const soll = !g.klassenAus.includes(Number(b.dataset.klasse));
+        const k = Number(b.dataset.klasse), soll = g.nurBoden ? BODEN.has(k) : !g.klassenAus.includes(k);
         if (soll !== b.classList.contains('is-on')) b.click();
       });
       if (info.gebaeude) {

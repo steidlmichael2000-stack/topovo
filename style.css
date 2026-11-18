@@ -2308,8 +2308,13 @@ body { font-variant-numeric: tabular-nums; }
 .lz-aufl .lz-str-breite[hidden] { display: none; }
 /* Tafel: Punktgröße fest oben, darunter die Abschnitte zum Aufklappen */
 .lz-tafel .lz-oben { margin: 14px 0 16px; }
-/* Stile ganz oben (Realismus | Höhe | Neigung) */
+/* Stile ganz oben (Realismus | Höhe | Gelände) */
 .lz-tafel .lz-stil-titel { margin: 14px 0 6px; }
+/* Abgesetzt von Punkte | Gelände darunter (Linie wie zwischen den Abschnitten), Symbol über dem Wort —
+   nebeneinander passte „Realismus“ kaum in ein Drittel der Tafel */
+.lz-tafel .lz-stil { padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.lz-stil .seg-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 4px 8px; font-size: .78rem; line-height: 1.15; }
+.lz-stil [data-ik]::before, .lz-stil .seg-btn::before { width: 19px; height: 19px; margin: 0; }
 /* Punkte | Gelände ganz oben: Abstand zum Rand der Tafel wie seitlich */
 .lz-tafel .lz-darstellung { margin-top: 14px; }
 .lz-tafel .sheet-sec { padding: 10px 0; }
