@@ -8166,6 +8166,10 @@ let laserAn = false;
 let laserStelle = null;      // { e, n } — Mitte des Rahmens in UTM32
 let laserZiel = null;        // { e, n, text } — gesuchte Stelle, im Viewer hervorgehoben
 let laserSeite = 200;
+/* Radius des Kreises (18.11.2026): nachträglich am Regler verstellbar, die Mitte bleibt. Auch der „3D“-Knopf
+ * am Suchergebnis öffnet einen Kreis mit diesem Radius statt des Quadrats. */
+let laserRadius = 100;
+const LASER_RADIUS = { min: 25, max: 500, schritt: 5 };
 // Fest auf alle Punkte: die Wahl „Nur Boden“ ist am 11.11.2026 raus (man will immer alles);
 // Klassen blendet die 3D-Ansicht selbst aus. Der Werker kann es weiter, falls es zurückkommt.
 const laserNurBoden = false;
@@ -8191,9 +8195,10 @@ const laserKreisPunkte = (e, n, r) => Array.from({ length: LASER_KREIS_ECKEN }, 
   const w = i / LASER_KREIS_ECKEN * 2 * Math.PI;
   return [e + r * Math.cos(w), n + r * Math.sin(w)];
 });
-/** Radius eines Kreis-Umrisses (Mitte = Schwerpunkt der Ecken). */
+/** Mitte und Radius eines Kreis-Umrisses (Mitte = Schwerpunkt der Ecken). */
+const laserKreisMitte = u => [u.reduce((a, p) => a + p[0], 0) / u.length, u.reduce((a, p) => a + p[1], 0) / u.length];
 function laserKreisRadius(u) {
-  const ce = u.reduce((a, p) => a + p[0], 0) / u.length, cn = u.reduce((a, p) => a + p[1], 0) / u.length;
+  const [ce, cn] = laserKreisMitte(u);
   return Math.hypot(u[0][0] - ce, u[0][1] - cn);
 }
 /* Bis 12.11.2026 waren es 4 (alle zugleich im Speicher von laz-perf). Ab 5 schneidet
@@ -8626,12 +8631,14 @@ function laserAufErgebnis() {
   if (!p) return;
   const text = $('#bottom .bb-title') ? $('#bottom .bb-title').textContent : '';
   laserStart();
-  laserArt = 'rahmen';
+  // Ein Kreis um die gesuchte Stelle (18.11.2026 gewünscht, vorher das Quadrat des Rahmens)
+  laserArt = 'kreis';
   const [e, n] = utm32Hin(p.lat, p.lon);
   laserZiel = { e, n, text };
   laserStelle = { e, n };
+  laserUmriss = laserKreisPunkte(e, n, laserRadius);
   laserNeuGewaehlt();
-  const { e0, n0, e1, n1 } = laserBereich();
+  const { e0, n0, e1, n1 } = laserHuelle();
   kartePassen(L.latLngBounds(laserEcken(e0, n0, e1, n1)), { padding: [30, 30], maxZoom: 17 });
   laserLaden();
 }
@@ -8815,7 +8822,8 @@ function laserEckeTipp(ll) {
     if (!laserEntwurf.length) { laserEntwurf = [[e, n]]; laserEntwurfZeichnen(); laserLeiste(); return; }
     const [m] = laserEntwurf, r = Math.hypot(e - m[0], n - m[1]);
     if (r < 6) return;                                                   // zu klein, wohl ein Doppeltipp
-    laserUmrissSetzen(laserKreisPunkte(m[0], m[1], Math.round(r)));
+    laserRadius = Math.round(r);
+    laserUmrissSetzen(laserKreisPunkte(m[0], m[1], laserRadius));
     return;
   }
   // Polygon: nahe am ersten Punkt (auf dem Schirm) schließt
@@ -9392,7 +9400,7 @@ function laserHinweis() {
     : laserUmriss ? 'Rechteck am Rand ziehen zum Verschieben. Tipp in die Karte beginnt ein neues.'
     : 'Tippe zwei gegenüberliegende Ecken an.';
   if (laserArt === 'kreis') return laserEntwurf.length ? 'Jetzt den Rand antippen — der Abstand ist der Radius.'
-    : laserUmriss ? 'Kreis am Rand ziehen zum Verschieben. Tipp in die Karte beginnt einen neuen.'
+    : laserUmriss ? 'Kreis am Rand ziehen zum Verschieben, Radius am Regler. Tipp in die Karte beginnt einen neuen.'
     : 'Erst die Mitte antippen, dann den Rand.';
   if (laserArt === 'polygon') return laserEntwurf.length >= 3 ? `Weitere Ecken antippen — ${MAUS.matches ? 'Doppelklick, Rechtsklick oder ' : ''}Tipp auf den ersten Punkt schließt die Fläche.`
     : laserEntwurf.length ? 'Weitere Ecken antippen.'
@@ -9423,6 +9431,10 @@ function laserLeiste() {
     ${laserArt === 'rahmen' ? `<label class="slider-row" for="laserSeite" style="margin-top:6px">Größe
       <input id="laserSeite" type="range" min="${LASER_SEITE.min}" max="${LASER_SEITE.max}" step="${LASER_SEITE.schritt}" value="${laserSeite}"${aus}>
       <span id="laserSeiteWert" class="slider-val">${laserSeiteText()}</span>
+    </label>` : ''}
+    ${laserArt === 'kreis' && laserUmriss ? `<label class="slider-row" for="laserRadius" style="margin-top:6px">Radius
+      <input id="laserRadius" type="range" min="${LASER_RADIUS.min}" max="${Math.max(LASER_RADIUS.max, laserRadius)}" step="${LASER_RADIUS.schritt}" value="${laserRadius}"${aus}>
+      <span id="laserRadiusWert" class="slider-val">${laserRadius.toLocaleString('de-DE')} m</span>
     </label>` : ''}
     ${L_ ? `<div class="laser-lade${anteil == null ? ' unbestimmt' : ''}"><div class="laser-lade-balken" id="laserLadeBalken"${anteil == null ? '' : ` style="width:${Math.round(anteil * 100)}%"`}></div></div>
       <p class="bb-note plain" id="laserLadeText">${esc(stufe)}</p>` : ''}
@@ -9466,6 +9478,23 @@ function laserLeiste() {
       if (kosten) kosten.textContent = laserKosten();
     });
     regler.addEventListener('change', laserNeuGewaehlt);
+  }
+  // Radius des Kreises: beim Ziehen nur der Kreis, beim Loslassen prüfen (Kacheln) und die Leiste neu
+  const radiusRegler = $('#laserRadius');
+  if (radiusRegler) {
+    const kreisNeu = () => {
+      const [ce, cn] = laserKreisMitte(laserUmriss);
+      laserRadius = Number(radiusRegler.value);
+      laserUmriss = laserKreisPunkte(ce, cn, laserRadius);
+      $('#laserRadiusWert').textContent = `${laserRadius.toLocaleString('de-DE')} m`;
+    };
+    radiusRegler.addEventListener('input', () => {
+      kreisNeu();
+      laserRahmenZeichnen();
+      const kosten = $('#laserKosten');
+      if (kosten) kosten.textContent = laserKosten();
+    });
+    radiusRegler.addEventListener('change', () => { kreisNeu(); laserUmrissSetzen(laserUmriss); });
   }
   const laden = $('#laserLadenBtn');
   if (laden) laden.addEventListener('click', () => laserLaden());   // nicht direkt: das Klick-Ereignis landete sonst in auswahl
