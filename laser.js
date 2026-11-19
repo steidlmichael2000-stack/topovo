@@ -339,7 +339,12 @@ const GEB_FS = `
       if (all(lessThanEqual(abs(b), boxHalb)) == (boxModus == 2)) discard;
     }
     // Am Umriss der Auswahl (Rechteck, Polygon, Kreis) abgeschnitten wie die Punkte (umrissMaske in laser.js)
-    if (umrissAn > 0.5 && texture2D(umrissTex, vLokal.xy / umrissSeite + 0.5).a < 0.5) discard;
+    /* Außerhalb des Quadrats ebenfalls weg: Die Maske klemmt am Rand (ClampToEdge), und beim Kreis berührt er
+     * die Kante — ein langes Gebäude lief dort als Streifen weit über die Scheibe hinaus (19.11.2026, Köln Hbf). */
+    if (umrissAn > 0.5) {
+      vec2 uvU = vLokal.xy / umrissSeite + 0.5;
+      if (any(lessThan(uvU, vec2(0.0))) || any(greaterThan(uvU, vec2(1.0))) || texture2D(umrissTex, uvU).a < 0.5) discard;
+    }
     float t = texelFetch(tiefe, ivec2(gl_FragCoord.xy), 0).r;
     if (t < 1.0 && linear(gl_FragCoord.z) > linear(t) + 0.3) discard;
     #ifdef DACHBILD
@@ -559,29 +564,62 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         <button type="button" class="seg-btn" data-stil="gelaende" data-ik="neigung" title="Geländeanalyse: nur der Boden, nach Neigung gefärbt, mit Höhenlinien">Neigung</button>
         <button type="button" class="seg-btn" data-stil="modell" data-ik="haus" title="Weißes Massenmodell: Gelände, Gebäude und Bäume auf einem Sockel — mit der Auswahl „Kreis“ eine runde Scheibe">Modell</button>
       </div>
-      <!-- Punkte oder Gelände als Fläche (nur mit Bodenraster, d.gitter) -->
-      <div class="seg seg-paar lz-darstellung" role="group" aria-label="Darstellung" hidden>
-        <button type="button" class="seg-btn is-on" data-darstellung="punkte" data-ik="punkte">Punkte</button>
-        <button type="button" class="seg-btn" data-darstellung="gelaende" data-ik="berg">Gelände</button>
-      </div>
       <label class="slider-row lz-oben">Punktgröße
         <input type="range" class="lz-groesse" min="5" max="400" step="5" value="25">
         <span class="slider-val lz-groesse-wert"></span>
       </label>
-      <details class="sheet-sec" open>
-        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5s-6 6.5-6 10.5a6 6 0 0 0 12 0c0-4-6-10.5-6-10.5z"/></svg><h2>Färbung</h2></summary>
+      <!-- Abschnitte nach dem, was man sieht (19.11.2026 so umgebaut): Gelände, Punkte, Gebäude und
+           Bäume, Licht, auf dem Boden, Ansicht. Jedes Preset ist nur eine Stellung dieser Schalter (STILE). -->
+      <details class="sheet-sec" data-abschnitt="gelaende" open>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 19 8.5 9l4 6 3-4 6 8z"/></svg><h2>Gelände</h2></summary>
+        <!-- Punkte oder Gelände als Fläche (nur mit Bodenraster, d.gitter) -->
+        <div class="lz-darstellung" hidden>
+          <p class="pal-label">Boden als</p>
+          <div class="seg seg-paar" role="group" aria-label="Boden als">
+            <button type="button" class="seg-btn is-on" data-darstellung="punkte" data-ik="punkte">Punkte</button>
+            <button type="button" class="seg-btn" data-darstellung="gelaende" data-ik="berg">Fläche</button>
+          </div>
+        </div>
+        <p class="pal-label">Färbung</p>
         <div class="seg seg-paar lz-faerbung" role="group" aria-label="Färbung">
           <button type="button" class="seg-btn" data-faerbung="rgb" data-ik="farbe">Farbe</button>
           <button type="button" class="seg-btn is-on" data-faerbung="klasse" data-ik="klasse">Klasse</button>
           <button type="button" class="seg-btn" data-faerbung="hoehe" data-ik="hoehe">Höhe</button>
           <button type="button" class="seg-btn" data-faerbung="intensitaet" data-ik="intensitaet">Intensität</button>
           <button type="button" class="seg-btn" data-faerbung="normalen" data-ik="normalen">Normalen</button>
+          <button type="button" class="seg-btn" data-faerbung="weiss" data-ik="weiss" title="Weiß, die Form macht das Licht — wie ein Architekturmodell">Weiß</button>
           <button type="button" class="seg-btn" data-faerbung="neigung" data-ik="neigung">Neigung</button>
           <button type="button" class="seg-btn" data-faerbung="luftbild" data-ik="foto">Luftbild</button>
         </div>
+        <div class="lz-klassen lz-gel-extra">
+          <button type="button" class="seg-btn lz-klasse" data-effekt="linien" data-ik="linien" aria-pressed="false"><span class="lz-name">Höhenlinien</span><small></small></button>
+          <button type="button" class="seg-btn lz-klasse lz-sockel" data-ik="wuerfel" aria-pressed="false" title="Unterbau um den Umriss der Auswahl — beim Kreis eine runde Scheibe"><span class="lz-name">Sockel</span><small></small></button>
+        </div>
       </details>
-      <details class="sheet-sec">
-        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.2 5.6 5.8.4-4.5 3.7 1.5 5.8-5-3.2-5 3.2 1.5-5.8L4 9.5l5.8-.4z"/></svg><h2>Effekte</h2></summary>
+      <details class="sheet-sec" data-abschnitt="punkte" open>
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle class="voll" cx="6" cy="8" r="1.6"/><circle class="voll" cx="12" cy="6" r="1.6"/><circle class="voll" cx="18" cy="9" r="1.6"/><circle class="voll" cx="8" cy="14" r="1.6"/><circle class="voll" cx="15" cy="15" r="1.6"/><circle class="voll" cx="11" cy="19.5" r="1.6"/></svg><h2>Punkte</h2></summary>
+        <div class="lz-klassen">
+          <button type="button" class="seg-btn lz-klasse" data-effekt="kugeln" data-ik="kugeln" aria-pressed="false" title="Punkte als kleine Kugeln mit Tiefe statt flacher Scheiben"><span class="lz-name">Kugeln</span></button>
+        </div>
+        <p class="pal-label lz-klassen-titel">Klassen</p>
+        <div class="lz-klassen lz-klassenliste lz-klassen-titel"></div>
+      </details>
+      <details class="sheet-sec lz-geb-titel" data-abschnitt="gebaeude">
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20V10l5-4 5 4v10zM13.5 20v-7l3.5-3 3.5 3v7M2.5 20h19"/></svg><h2>Gebäude und Bäume</h2></summary>
+        <div class="lz-stapel">
+          <button type="button" class="seg-btn lz-klasse lz-geb" aria-pressed="false">
+            <span class="lz-feld" style="background:#e4e7ec"></span><span class="lz-name">3D-Gebäudemodell LoD2</span><small></small></button>
+          <div class="seg seg-drei lz-geb-dach" role="group" aria-label="Aussehen der Gebäude" hidden>
+            <button type="button" class="seg-btn is-on" data-dach="glas" data-ik="haus" title="Grau und halb durchsichtig — die Punkte dahinter bleiben sichtbar">Glas</button>
+            <button type="button" class="seg-btn" data-dach="weiss" data-ik="weiss" title="Weiß und deckend wie ein Architekturmodell">Weiß</button>
+            <button type="button" class="seg-btn" data-dach="luftbild" data-ik="foto" title="Dachflächen in den Farben des Luftbilds (DOP20), Wände bleiben grau">Luftbild</button>
+          </div>
+          <button type="button" class="seg-btn lz-klasse lz-baeume" aria-pressed="false" title="Einzelbäume aus den Laserpunkten über dem Boden erkannt">
+            <span class="lz-feld" style="background:${BAUM_FARBE}"></span><span class="lz-name">Bäume</span><small>aus</small></button>
+        </div>
+      </details>
+      <details class="sheet-sec" data-abschnitt="licht">
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><h2>Licht</h2></summary>
         <label class="slider-row">Schatten
           <input type="range" class="lz-licht" min="0" max="100" step="5" value="50">
           <span class="slider-val lz-licht-wert"></span>
@@ -590,25 +628,13 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <input type="range" class="lz-edl" min="0" max="100" step="5" value="40">
           <span class="slider-val lz-edl-wert"></span>
         </label>
-        <div class="lz-klassen lz-effekte">
-          <button type="button" class="seg-btn lz-klasse" data-effekt="verdeckung" data-ik="verdeckung" aria-pressed="false"><span class="lz-name">Verdeckung</span></button>
-          <button type="button" class="seg-btn lz-klasse" data-effekt="kugeln" data-ik="kugeln" aria-pressed="false"><span class="lz-name">Kugeln</span></button>
-          <button type="button" class="seg-btn lz-klasse" data-effekt="linien" data-ik="linien" aria-pressed="false"><span class="lz-name">Höhenlinien</span><small></small></button>
+        <div class="lz-klassen">
+          <button type="button" class="seg-btn lz-klasse" data-effekt="verdeckung" data-ik="verdeckung" aria-pressed="false" title="Dunkelt Ecken und Winkel ab (Umgebungsverdeckung)"><span class="lz-name">Verdeckung</span></button>
         </div>
       </details>
-      <details class="sheet-sec lz-klassen-titel" open>
-        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/></svg><h2>Klassen</h2></summary>
-        <div class="lz-klassen lz-klassenliste"></div>
-      </details>
-      <details class="sheet-sec lz-aufl-titel">
-        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9 4.5-9 4.5L3 8zM3 12l9 4.5 9-4.5M3 16l9 4.5 9-4.5"/></svg><h2>Auflagen</h2></summary>
+      <details class="sheet-sec lz-aufl-titel" data-abschnitt="boden">
+        <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9 4.5-9 4.5L3 8zM3 12l9 4.5 9-4.5M3 16l9 4.5 9-4.5"/></svg><h2>Auf dem Boden</h2></summary>
         <div class="lz-klassen lz-aufl">
-          <button type="button" class="seg-btn lz-klasse lz-geb" aria-pressed="false">
-            <span class="lz-feld" style="background:#e4e7ec"></span><span class="lz-name">3D-Gebäudemodell LoD2</span><small></small></button>
-          <div class="seg seg-paar lz-geb-dach" role="group" aria-label="Dächer" hidden>
-            <button type="button" class="seg-btn is-on" data-dach="grau" data-ik="haus">Dächer grau</button>
-            <button type="button" class="seg-btn" data-dach="luftbild" data-ik="foto" title="Dachflächen in den Farben des Luftbilds (DOP20), Wände bleiben grau">Dächer Luftbild</button>
-          </div>
           <button type="button" class="seg-btn lz-klasse lz-achsen" aria-pressed="false">
             <span class="lz-feld" style="background:${ACHS_FARBE}"></span><span class="lz-name">Streckenachsen</span><small></small></button>
           <button type="button" class="seg-btn lz-klasse lz-strassen" aria-pressed="false">
@@ -620,8 +646,6 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <button type="button" class="seg-btn lz-klasse lz-kataster" aria-pressed="false" title="Lange drücken oder Rechtsklick: Farbe">
             <span class="lz-feld" style="background:#ffd60a"></span><span class="lz-name">Kataster<svg class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg></span><small>aus</small></button>
           <div class="lz-wahl lz-kat-wahl" hidden></div>
-          <button type="button" class="seg-btn lz-klasse lz-baeume" aria-pressed="false" title="Einzelbäume aus den Laserpunkten über dem Boden erkannt">
-            <span class="lz-feld" style="background:${BAUM_FARBE}"></span><span class="lz-name">Bäume</span><small>aus</small></button>
           <button type="button" class="seg-btn lz-klasse lz-gipfel" aria-pressed="false" hidden>
             <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">Gipfel</span><small></small></button>
           <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden title="Lange drücken oder Rechtsklick: Symbol, Farbe, Namen">
@@ -633,7 +657,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           </label>
         </div>
       </details>
-      <details class="sheet-sec">
+      <details class="sheet-sec" data-abschnitt="ansicht">
         <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg><h2>Ansicht</h2></summary>
         <p class="pal-label">Kamera</p>
         <div class="seg seg-paar" role="group" aria-label="Kamera">
@@ -647,7 +671,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
           <button type="button" class="seg-btn" data-grund="weiss" data-ik="weiss">Weiß</button>
         </div>
       </details>
-      <details class="sheet-sec">
+      <details class="sheet-sec" data-abschnitt="ausschnitt">
         <summary><svg class="sec-ikon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.8v5.7"/><circle class="voll" cx="12" cy="7.8" r="1.1"/></svg><h2>Ausschnitt</h2></summary>
         <div class="lz-info"></div>
       </details>
@@ -706,12 +730,15 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   // Drohnenwolken ohne Klassen (alles Klasse 0): Farbe statt einer einzigen Klassenfarbe
   if (d.rgb && d.klassen.length < 2) weg('[data-faerbung="klasse"], .lz-klassen-titel');
   if (!info.luftbild) weg('[data-faerbung="luftbild"]');
-  if (!info.gebaeude) weg('.lz-geb');
-  if (!info.gebaeude || !info.luftbild) weg('.lz-geb-dach');
+  if (!info.gebaeude) weg('.lz-geb, .lz-geb-dach');
+  if (!info.luftbild) weg('[data-dach="luftbild"]');
   if (!info.achsen) weg('.lz-achsen');
   if (!info.strassen) weg('.lz-strassen');
   if (!info.kataster) weg('.lz-kataster');
   if (!d.klassen.some(([k]) => BAUM_KLASSEN.has(k)) || !d.klassen.some(([k]) => BODEN.has(k))) weg('.lz-baeume');
+  if (!info.gebaeude && $('.lz-baeume').hidden) weg('.lz-geb-titel');
+  // Sockel braucht Boden (Drohnenwolken ohne Klassen: keiner)
+  if (!d.klassen.some(([k]) => BODEN.has(k))) weg('.lz-sockel');
   if (!info.gebaeude && !info.achsen && !info.kml && !info.strassen && !info.gipfel && !info.kataster) weg('.lz-aufl-titel');
   if (!info.exportieren) weg('[data-lz="export"], [data-bereich="export"]');
   if (!info.utm) weg('.lz-ort');
@@ -936,7 +963,6 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * Siehe GEL_VS. Nur, wenn der Worker ein Bodenraster mitgeschickt hat (Topovo, nicht der PW-Viewer). */
   const G = d.gitter || null;
   let gelaende = null, darstellung = 'punkte';
-  let modellLook = false;     // Preset „Modell“: Gelände, Gebäude, Bäume weiß (modellSetzen)
   if (G) {
     const N = G.nx * G.ny, hd = new Float32Array(N * 2);
     for (let c = 0; c < N; c++) { hd[2 * c] = G.art[c] === 2 ? 0 : G.z[c]; hd[2 * c + 1] = G.art[c]; }
@@ -1001,7 +1027,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     } else if (faerbung === 'hoehe') u.modus.value = 1;
     else if (faerbung === 'klasse') { u.modus.value = 3; u.grundFarbe.value.copy(klassenFarben.get(2) || new THREE.Color(klasseFarbe(2))); }
     else if (faerbung === 'neigung') u.modus.value = 4;
-    else { u.modus.value = 0; const w = modellLook ? 0.94 : 0.82; u.grundFarbe.value.setRGB(w, w, w); }
+    else { u.modus.value = 0; const w = faerbung === 'weiss' ? 0.94 : 0.82; u.grundFarbe.value.setRGB(w, w, w); }
     neu = true;
   }
 
@@ -1025,6 +1051,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         const grad = Math.acos(Math.min(1, Math.abs(nz) / (Math.hypot(nx, ny, nz) || 1))) * 180 / Math.PI;
         const t = Math.min(1, grad / 45);
         c = t < 0.5 ? tmp.copy(NEIG[0]).lerp(NEIG[1], t * 2) : tmp.copy(NEIG[1]).lerp(NEIG[2], t * 2 - 1);
+      } else if (faerbung === 'weiss') {
+        c = tmp.setRGB(0.94, 0.94, 0.94);
       } else if (faerbung === 'normalen') {
         /* Grau, das Licht macht die Form — wie das Schräglicht der BVV. Die
          * Richtung als Farbe (CloudCompare) war fast überall lila: Fast alles
@@ -1587,7 +1615,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     gebKnopf.classList.toggle('is-on', an);
     gebKnopf.setAttribute('aria-pressed', String(an));
     if (geb) geb.gruppe.visible = an;
-    if (info.luftbild) $('.lz-geb-dach').hidden = !an;
+    $('.lz-geb-dach').hidden = !an;
     gebKnopf.querySelector('small').textContent = !an ? 'aus' : `${geb.anzahl.toLocaleString('de-DE')} Gebäude`;
     neu = true;
   }
@@ -1595,15 +1623,24 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * als Textur senkrecht von oben. Das DOP ist kein True-Ortho — hohe Dächer sind
    * etwas zur Seite versetzt, am Rand sieht man dann Hof oder Nachbardach. */
   let dachBild = false, dachTextur = null;
+  /* Aussehen der Gebäude (19.11.2026 als Wahl, vorher versteckt im Preset „Modell“):
+   * Glas = grau, halb durchsichtig; Weiß = deckend wie ein Architekturmodell; Luftbild = Dächer im DOP20. */
+  let gebArt = 'glas';
   async function dachSetzen(art) {
+    if (art === 'grau') art = 'glas';            // gemerkt vor dem 19.11.2026
     const knoepfe = wurzel.querySelectorAll('[data-dach]');
     if (art === 'luftbild' && !luftbildFlaeche) {
       const b = $('[data-dach="luftbild"]');
       if (luftbild && !luftbildLaeuft) luftbild = null;       // schon geholt, aber ohne Bild
       const ok = await luftbildLaden(b);
-      b.textContent = 'Dächer Luftbild';
+      b.textContent = 'Luftbild';
       if (!ok || !luftbildFlaeche || !laeuft) return;
     }
+    gebArt = art;
+    const weiss = art === 'weiss';
+    gebFlaecheMat.uniforms.farbe.value.setRGB(...(weiss ? [0.95, 0.95, 0.94] : [0.86, 0.88, 0.92]));
+    gebFlaecheMat.uniforms.deckung.value = weiss ? 1 : 0.5;
+    gebKanteMat.uniforms.deckung.value = weiss ? 0.35 : 0.9;
     dachBild = art === 'luftbild';
     knoepfe.forEach(x => x.classList.toggle('is-on', x.dataset.dach === art));
     if (dachBild && !dachTextur) {
@@ -1843,8 +1880,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   if (baumKnopf) baumKnopf.addEventListener('click', () => baeumeZeigen(!(baeume && baeume.gruppe.visible)));
 
   /* ---------- Modell (Preset) ----------
-   * Weißes Massenmodell wie ein Architekturmodell: Gelände, Gebäude und Bäume hell und deckend,
-   * dazu ein Sockel um den Umriss der Auswahl (beim Kreis eine runde Scheibe). */
+   * Weißes Massenmodell wie ein Architekturmodell: Färbung „Weiß“, Gebäude „Weiß“, Bäume, dazu der
+   * Sockel um den Umriss der Auswahl (beim Kreis eine runde Scheibe) — seit 19.11.2026 alles einzeln
+   * in der Tafel schaltbar, das Preset stellt nur diese Schalter. */
   const SOCKEL_FARBE = new THREE.Color(0.80, 0.80, 0.80);
   const sockelMat = new THREE.ShaderMaterial({ vertexShader: GEB_VS, fragmentShader: GEB_FS, depthWrite: true, side: THREE.DoubleSide,
     uniforms: { ...gebUniforms(), kante: { value: 0 }, deckung: { value: 1 }, farbe: { value: SOCKEL_FARBE } } });
@@ -1898,17 +1936,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     gebSzene.add(m);
     return m;
   }
-  function modellSetzen(an) {
-    if (an === modellLook) return;
-    modellLook = an;
-    gebFlaecheMat.uniforms.farbe.value.setRGB(...(an ? [0.95, 0.95, 0.94] : [0.86, 0.88, 0.92]));
-    gebFlaecheMat.uniforms.deckung.value = an ? 1 : 0.5;
-    gebKanteMat.uniforms.deckung.value = an ? 0.35 : 0.9;
+  const sockelKnopf = $('.lz-sockel');
+  function sockelSetzen(an) {
     if (an && !sockel) sockel = sockelBauen();
+    if (an && !sockel) { hinweis('Für einen Sockel fehlt am Rand der Boden.'); an = false; }
     if (sockel) sockel.visible = an;
-    gelFaerben();
+    sockelKnopf.classList.toggle('is-on', an);
+    sockelKnopf.setAttribute('aria-pressed', String(an));
     neu = true;
   }
+  sockelKnopf.addEventListener('click', () => sockelSetzen(!(sockel && sockel.visible)));
 
   /* ---------- Auflagen: Streckenachsen, KML, gesuchte Stelle ----------
    * Alles kommt zweidimensional aus app.js (laserAchsen, laserKml: UTM32) und
@@ -2237,7 +2274,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * Namen (Einstellung kmlNamen): „nah“ erst, wenn ein Bildpunkt höchstens KML_NAH_MPX Meter
    * deckt, und nie übereinander (bild). Das Glas der übrigen Schilder (backdrop-filter) ist bei
    * den Namen aus: Dutzende davon, je Bild neu verschoben, brachten das Handy ins Stocken. */
-  const KML_NAMEN_MAX = 2000, KML_SYM_PX = 14, KML_NAH_MPX = 0.25;
+  const KML_NAMEN_MAX = 2000, KML_SYM_PX = 11, KML_NAH_MPX = 0.25;
   let kmlNamen = ['aus', 'nah', 'immer'].includes(gemerkt.kmlNamen) ? gemerkt.kmlNamen : 'nah';
   const kmlSymTex = new Map();
   function kmlSymTextur(form, farbe) {
@@ -2677,6 +2714,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     faerbung = b.dataset.faerbung;
     // Ohne Licht wäre die Normalenansicht eine graue Fläche
     if (faerbung === 'normalen' && lichtRegler.value < 100) { lichtRegler.value = 100; reglerZeigen(); }
+    if (faerbung === 'weiss' && lichtRegler.value < 50) { lichtRegler.value = 80; reglerZeigen(); }
     // Die Intensität ist selbst ein Grauwert — Schatten darüber macht sie nur dunkler
     if (faerbung === 'intensitaet' && lichtRegler.value > 0) { lichtRegler.value = 0; reglerZeigen(); }
     wurzel.querySelectorAll('[data-faerbung]').forEach(x => x.classList.toggle('is-on', x === b));
@@ -2716,14 +2754,14 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   edlRegler.addEventListener('input', reglerZeigen);
   lichtRegler.addEventListener('input', reglerZeigen);
   if (!d.normalen && info.normalen) {
-    const normKnopf = $('[data-faerbung="normalen"]'), lichtWert = lichtRegler.value;
-    normKnopf.disabled = lichtRegler.disabled = true;
+    const normKnopf = $('[data-faerbung="normalen"]'), weissKnopf = $('[data-faerbung="weiss"]'), lichtWert = lichtRegler.value;
+    normKnopf.disabled = weissKnopf.disabled = lichtRegler.disabled = true;
     lichtRegler.value = 0;
     info.normalen.then(a => {
       if (!laeuft || !a) return;
       geo.attributes.normale.array.set(a);
       geo.attributes.normale.needsUpdate = true;
-      normKnopf.disabled = lichtRegler.disabled = false;
+      normKnopf.disabled = weissKnopf.disabled = lichtRegler.disabled = false;
       lichtRegler.value = lichtWert;
       reglerZeigen();
     }, err => console.warn(err));
@@ -4119,7 +4157,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       effekte: { ...effekte },
       // Klassen, die es hier nicht gibt, bleiben, wie sie zuletzt waren
       klassenAus: [...(gemerkt.klassenAus || []).filter(k => !hier.has(k)), ...klassenAus],
-      geb: geb ? geb.gruppe.visible : gebLaeuft || false, dach: dachBild ? 'luftbild' : 'grau',
+      geb: geb ? geb.gruppe.visible : gebLaeuft || false, dach: gebArt, sockel: !!(sockel && sockel.visible),
       achsen: achsen ? achsen.gruppe.visible : gemerkt.achsen,
       strassen: strassen ? strassen.gruppe.visible : strLaedt || false, strBreite: strBreite(),
       kataster: kataster ? kataster.gruppe.visible : katLaedt || false,
@@ -4130,7 +4168,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       kamera: kamera === orthoKamera ? 'ortho' : 'perspektive',
       darstellung: gelaende ? darstellung : gemerkt.darstellung,
       grund: wurzel.dataset.grund,
-      offen: [...tafel.querySelectorAll('details')].map(x => x.open),
+      // Nach Schlüssel (data-abschnitt), nicht nach Stelle — seit dem Umbau am 19.11.2026
+      offen: Object.fromEntries([...tafel.querySelectorAll('details[data-abschnitt]')].map(x => [x.dataset.abschnitt, x.open])),
       stil: typeof stilAktiv === 'string' ? stilAktiv : undefined
     };
   }
@@ -4149,13 +4188,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     for (const k of g.klassenAus || []) { const b = $(`[data-klasse="${k}"]`); if (b && b.classList.contains('is-on')) b.click(); }
     if (g.geb && info.gebaeude) gebKnopf.click();
     if (g.darstellung === 'gelaende') darstellungSetzen('gelaende');
-    if (g.dach === 'luftbild' && info.gebaeude && info.luftbild) dachSetzen('luftbild');
+    if (g.dach && g.dach !== 'grau' && g.dach !== 'glas' && info.gebaeude && (g.dach !== 'luftbild' || info.luftbild)) dachSetzen(g.dach);
+    if (g.sockel && !sockelKnopf.hidden) sockelSetzen(true);
     if (g.strassen && strKnopf && info.strassen) strKnopf.click();
     if (g.kataster && katKnopf && info.kataster) katKnopf.click();
     if (g.baeume && baumKnopf && !baumKnopf.hidden) baeumeZeigen(true);
     if (g.kamera === 'ortho') klick('[data-kamera="ortho"]');
     if (g.grund && g.grund !== wurzel.dataset.grund) klick(`.lz-tafel [data-grund="${g.grund}"]`);
-    if (Array.isArray(g.offen)) tafel.querySelectorAll('details').forEach((x, i) => { if (typeof g.offen[i] === 'boolean') x.open = g.offen[i]; });
+    if (g.offen && !Array.isArray(g.offen)) tafel.querySelectorAll('details[data-abschnitt]').forEach(x => {
+      if (typeof g.offen[x.dataset.abschnitt] === 'boolean') x.open = g.offen[x.dataset.abschnitt];
+    });
   }
   einstAnwenden(gemerkt);
 
@@ -4166,31 +4208,29 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   const STILE = {
     realismus: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'luftbild', licht: 0, edl: 0,
       effekte: { verdeckung: false, kugeln: true, linien: false }, klassenAus: [6, 18],
-      geb: true, dach: 'luftbild', achsen: true, strassen: true, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
+      geb: true, dach: 'luftbild', sockel: false, achsen: true, strassen: true, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
     hoehe: { darstellung: 'gelaende', groesse: 0.4, faerbung: 'hoehe', licht: 55, edl: 20,
       effekte: { verdeckung: true, kugeln: true, linien: true }, klassenAus: [6, 18],
-      geb: true, dach: 'grau', achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
+      geb: true, dach: 'glas', sockel: false, achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
     // Geländeanalyse (18.11.2026 statt „Neigung“ mit Bewuchs): nur Boden, als Fläche, wo es ein Bodenraster gibt
     gelaende: { darstellung: 'gelaende', faerbung: 'neigung', licht: 100, edl: 10,
       effekte: { verdeckung: false, kugeln: false, linien: true }, nurBoden: true,
-      geb: false, achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
+      geb: false, sockel: false, achsen: true, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' },
     // Modell (18.11.2026, nach dem Video zu STEP Topo): weißes Massenmodell, Bäume aus den Laserpunkten, Sockel
-    modell: { darstellung: 'gelaende', faerbung: 'normalen', licht: 80, edl: 35,
+    modell: { darstellung: 'gelaende', faerbung: 'weiss', licht: 80, edl: 35,
       effekte: { verdeckung: false, kugeln: false, linien: false }, nurBoden: true,
-      geb: true, dach: 'grau', baeume: true, achsen: false, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' }
+      geb: true, dach: 'weiss', sockel: true, baeume: true, achsen: false, strassen: false, kataster: false, kamera: 'perspektive', grund: 'verlauf' }
   };
   const stilKnoepfe = wurzel.querySelectorAll('[data-stil]');
   let stilAktiv = null, stilWendet = false;
   const stilMarkieren = art => {
     stilAktiv = art;
-    if (art) modellSetzen(art === 'modell');
     stilKnoepfe.forEach(b => b.classList.toggle('is-on', b.dataset.stil === art));
   };
   function stilAnwenden(art) {
     const g = STILE[art];
     if (!g) return;
     stilWendet = true;
-    modellSetzen(art === 'modell');
     try {
       const klick = sel => { const b = typeof sel === 'string' ? $(sel) : sel; if (b && !b.hidden && !b.disabled) b.click(); };
       if (g.darstellung && gelaende && g.darstellung !== darstellung) darstellungSetzen(g.darstellung);
@@ -4208,8 +4248,9 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       if (info.gebaeude) {
         const gebAn = geb ? geb.gruppe.visible : gebLaeuft;
         if (g.geb !== gebAn) klick(gebKnopf);
-        if (g.geb && g.dach && (g.dach === 'luftbild') !== dachBild && (g.dach !== 'luftbild' || info.luftbild)) dachSetzen(g.dach);
+        if (g.geb && g.dach && g.dach !== gebArt && (g.dach !== 'luftbild' || info.luftbild)) dachSetzen(g.dach);
       }
+      if (!sockelKnopf.hidden && !!g.sockel !== !!(sockel && sockel.visible)) sockelSetzen(!!g.sockel);
       if (baumKnopf && !baumKnopf.hidden && !!g.baeume !== !!(baeume && baeume.gruppe.visible)) baeumeZeigen(!!g.baeume);
       if (info.achsen) {
         if (achsen) { if (g.achsen !== achsen.gruppe.visible) klick(achsKnopf); }
@@ -4234,8 +4275,6 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (stilWendet || !stilAktiv || ev.target.closest('.lz-stil, summary')) return;
     if (!ev.target.closest('button, input')) return;
     stilMarkieren(null);
-    // Das weiße Modell bleibt beim Schalten der Auflagen und Regler, nur eine andere Färbung oder Darstellung beendet es
-    if (ev.target.closest('[data-faerbung], [data-darstellung]')) modellSetzen(false);
   };
   tafel.addEventListener('click', stilVerlassen);
   tafel.addEventListener('input', stilVerlassen);
