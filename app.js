@@ -5146,6 +5146,42 @@ function kmlSymbolSvg(form, farbe, gross) {
   return `<svg viewBox="0 0 16 16" width="${r}" height="${r}" aria-hidden="true">${koerper}</svg>`;
 }
 
+/** Dasselbe Symbol als Canvas (px Bildpunkte im Quadrat), für den Laserviewer: Dort ist es die
+ *  Textur einer Punktwolke, ein Bild aus SVG müsste erst asynchron laden. Path2D nimmt die
+ *  Pfade aus KML_FORMEN unverändert; Kreis und Rechteck werden nachgebaut. */
+function kmlSymbolBild(form, farbe, px = 64) {
+  if (!/^#[0-9a-f]{3,8}$/i.test(farbe || '')) farbe = '#888';
+  const c = document.createElement('canvas');
+  c.width = c.height = px;
+  const g = c.getContext('2d');
+  g.scale(px / 16, px / 16);
+  const f = KML_FORMEN[form] || KML_FORMEN.kreis;
+  const pfad = new Path2D();
+  for (const m of f.d.matchAll(/<(circle|rect|path)([^>]*)>/g)) {
+    const at = k => { const x = new RegExp(`${k}="([^"]*)"`).exec(m[2]); return x ? x[1] : ''; };
+    if (m[1] === 'circle') { const t = new Path2D(); t.arc(+at('cx'), +at('cy'), +at('r'), 0, Math.PI * 2); pfad.addPath(t); }
+    else if (m[1] === 'rect') { const t = new Path2D(); t.rect(+at('x'), +at('y'), +at('width'), +at('height')); pfad.addPath(t); }
+    else pfad.addPath(new Path2D(at('d')));
+  }
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  if (f.strich) {
+    g.strokeStyle = '#fff'; g.lineWidth = 4.4; g.stroke(pfad);
+    g.strokeStyle = farbe; g.lineWidth = 2.4; g.stroke(pfad);
+  } else {
+    g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(pfad);
+    g.fillStyle = farbe; g.fill(pfad);
+  }
+  return c;
+}
+
+/** Farbe und Form eines Punkts wie auf der Karte (kmlEbene, Laserviewer). */
+function kmlPunktStil(akte, o, autoKarte) {
+  const grund = akte.farbe || KML_FARBEN[0], s = o.stil || {};
+  const farbe = akte.farbeFest ? grund : (s.punkt || s.color || grund);
+  const form = akte.symbol || 'kreis';
+  return { farbe, form: form === 'auto' ? ((autoKarte && autoKarte.get(kmlWert(o, akte.autoFeld))) || 'kreis') : form };
+}
+
 /* -------- Merkmale der Objekte -------- */
 
 /** Wert eines Merkmals, etwa "Marker type" → "3". */
@@ -6150,8 +6186,7 @@ function kmlEbene(akte) {
 
     let l;
     if (o.art === 'p') {
-      const punktFarbe = akte.farbeFest ? grund : (s.punkt || farbe);
-      const punktForm = autoKarte ? (autoKarte.get(kmlWert(o, akte.autoFeld)) || 'kreis') : form;
+      const { farbe: punktFarbe, form: punktForm } = kmlPunktStil(akte, o, autoKarte);
       /* Auch der einfache Kreis läuft als Icon und nicht als circleMarker: So
        * liegen Punkt und Name in derselben Ebene ganz oben, und der Renderer,
        * der bei gedrehter Karte Ärger macht, ist für Punkte gar nicht im Spiel. */
@@ -6242,6 +6277,9 @@ function kmlLabels() {
   if (prefs.kmlNamen === false || map.getZoom() < KML_LABEL_ZOOM) return;
 
   const bild = map.getBounds().pad(0.08);
+  /* Keine Namen übereinander (19.11.2026, seine Messpunkte lagen 1–2 m auseinander und die Namen
+   * als Brei aufeinander): der erste gewinnt, die Breite grob aus der Zeichenzahl (.66rem, fett). */
+  const belegt = [], zeichen = 0.66 * parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.6;
   let n = 0;
   for (const a of kmlAkten) {
     if (!a.sichtbar) continue;
@@ -6251,6 +6289,10 @@ function kmlLabels() {
       if (!txt) continue;
       const wo = kmlAnker(o);
       if (!wo || !bild.contains(wo)) continue;
+      const q = map.latLngToContainerPoint(wo);
+      const k = { l: q.x + 8, r: q.x + 12 + txt.length * zeichen, o: q.y - 8, u: q.y + 6 };
+      if (belegt.some(g => k.l < g.r && k.r > g.l && k.o < g.u && k.u > g.o)) continue;
+      belegt.push(k);
       if (++n > KML_LABEL_MAX) return;      // Rest weglassen, statt alles zuzukleistern
       L.marker(wo, {
         pane: 'kmlIconPane', interactive: false, keyboard: false,
@@ -6301,6 +6343,17 @@ function kmlDateiFarben(a) {
     }
   }
   return farben;
+}
+
+/** Aussehen einer Datei ändern (Liste im Menü und Laserviewer): merken, Karte und Liste neu. */
+function kmlStilSetzen(i, aenderung) {
+  const a = kmlAkten[i];
+  if (!a) return;
+  Object.assign(a, aenderung);
+  kmlKopfMerken(a);
+  if (a.sichtbar) kmlZeigen(a, true);        // mit neuem Aussehen neu aufbauen
+  kmlLabels();
+  kmlListe();
 }
 
 function kmlListe() {
@@ -6418,13 +6471,7 @@ function kmlListe() {
   }
 
   const stilGesetzt = (i, aenderung) => {
-    const a = kmlAkten[i];
-    if (!a) return;
-    Object.assign(a, aenderung);
-    kmlKopfMerken(a);
-    if (a.sichtbar) kmlZeigen(a, true);      // mit neuem Aussehen neu aufbauen
-    kmlLabels();
-    kmlListe();
+    kmlStilSetzen(i, aenderung);
     kmlOffeneKlappe = i;                     // Klappe offen lassen, man probiert meist mehrere
     const feld = $('#kmlList').querySelector(`[data-kedit="${i}"]`);
     if (feld) feld.hidden = false;
@@ -8685,17 +8732,52 @@ function laserKml(e0, n0, e1, n1) {
   const raus = [];
   for (const [datei, a] of kmlAkten.entries()) {
     if (!a.sichtbar) continue;
+    const autoKarte = a.symbol === 'auto' ? kmlFormKarte(a) : null, grund = a.farbe || KML_FARBEN[0];
     for (const ob of a.objekte) {
       if (!kmlSichtbarObj(a, ob)) continue;
       const linie = ob.art === 'l' ? ob.koord : ob.art === 'a' ? [...ob.koord[0], ob.koord[0][0]] : null;
       if (ob.art === 'p' ? !drin(ob.koord) : !linie.some(drin)) continue;
       const mitHoehe = ob.art === 'p' && Number.isFinite(ob.hoehe);
-      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: a.farbe, hoehe: ob.hoehe, datei, band: !!a.gpx && ob.art === 'l',
+      // Farbe und Symbol wie auf der Karte (19.11.2026 gewünscht; vorher Kugel in der Dateifarbe)
+      const stil = ob.art === 'p' ? kmlPunktStil(a, ob, autoKarte)
+        : { farbe: a.farbeFest ? grund : ((ob.stil && ob.stil.color) || grund), form: null };
+      raus.push({ art: ob.art === 'p' ? 'p' : 'l', name: kmlLabelText(a, ob), farbe: stil.farbe, form: stil.form, hoehe: ob.hoehe, datei, band: !!a.gpx && ob.art === 'l',
         aufschlag: mitHoehe ? dbrefEllAufschlag(...ob.koord) : null,
         pts: (ob.art === 'p' ? [ob.koord] : linie).map(([la, lo]) => utm32Hin(la, lo)) });
     }
   }
   return raus;
+}
+
+/* Aussehen der KML im Laserviewer einstellen (langer Druck auf „KML/GPX“, 19.11.2026): dieselbe
+ * Wahl wie im Menü (Farbe, Symbol), geändert wird die Datei selbst — die Karte zieht mit. */
+const laserKmlStil = {
+  dateien: () => kmlAkten.map((a, i) => ({ a, i })).filter(({ a }) => a.sichtbar).map(({ a, i }) => {
+    const dateiFarben = kmlDateiFarben(a);
+    return { i, name: a.name, farbe: a.farbe, ausDatei: !!dateiFarben.length && !a.farbeFest, dateiFarben,
+      symbol: a.symbol || 'kreis', autoMoeglich: kmlAutoFeld(a) != null,
+      punkte: a.objekte.some(o => o.art === 'p') };
+  }),
+  setzen: (i, wahl) => {
+    const a = kmlAkten[i];
+    if (!a) return;
+    if (wahl.farbe === 'quelle') kmlStilSetzen(i, { farbeFest: false });
+    else if (wahl.farbe) kmlStilSetzen(i, { farbe: wahl.farbe, farbeFest: true });
+    else if (wahl.symbol === 'auto') kmlStilSetzen(i, a.autoFeld ? { symbol: 'auto' } : { symbol: 'auto', autoFeld: kmlAutoFeld(a) });
+    else if (wahl.symbol) kmlStilSetzen(i, { symbol: wahl.symbol });
+  },
+  farben: KML_FARBEN,
+  formen: Object.entries(KML_FORMEN).map(([k, f]) => ({ k, name: f.name })),
+  svg: kmlSymbolSvg,
+  bild: kmlSymbolBild
+};
+
+/* Parzellenfarbe aus dem Laserviewer (langer Druck auf „Kataster“): dieselbe Wahl wie auf der Karte. */
+function laserKatasterFarbe(wert) {
+  prefs.parzFarbe = wert;
+  parzFarbeAnpassen();
+  saveStore();
+  syncButtons();
 }
 
 /* Aus dem Ergebnis heraus (Knopf „3D“): Rahmen auf den gesuchten Ort, laden,
@@ -9085,7 +9167,8 @@ async function laserLaden(auswahl = null) {
           ...(unterzeile ? { unterzeile } : {}),
           dichter: a => laserLaden(a), ...(auswahl ? { ausBox: true, ganz: () => laserLaden(), kamera: auswahl.kamera } : {}),
           utm: utm32Hin, luftbild: land.luftbild ? laserLuftbildUrl(landKey) : null, gebaeude: land.gebaeude ? laserGebaeude(landKey) : null, kostra: laserKostra,
-          achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, ziel: laserZiel, kataster: land.kataster ? laserKatasterUrl(landKey) : null, katasterFarbe: parzFarbe(),
+          achsen: laserAchsen, strassen: laserStrassen, gipfel: laserGipfel, kml: laserKml, kmlStil: laserKmlStil, ziel: laserZiel, kataster: land.kataster ? laserKatasterUrl(landKey) : null, katasterFarbe: parzFarbe(),
+          katasterFarben: PARZ_FARBEN, katasterFarbeSetzen: laserKatasterFarbe,
           kacheln: kacheln.filter(k => da.includes(k.kachel)), bereich, umriss, exportieren: laserExportieren, exportAbbrechen: laserExportAbbrechen },
           { beimSchliessen: () => { if (laserExportMelden) laserExportAbbrechen(); if (!laserTausch) wacheLaserZu(); } });
         wacheAuffuellen();

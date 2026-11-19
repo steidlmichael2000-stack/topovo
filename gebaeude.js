@@ -86,6 +86,23 @@ function gebLesen(xml) {
     }
   }
   if (!daecher.length) return null;
+  /* Geländehöhe am Gebäude, wo HoeheGrund fehlt (NRW, 19.11.2026): tiefster Punkt der Grundflächen,
+   * sonst der Wände. measuredHeight taugt dafür nicht — beim Kölner Dom (88 Teile) steht dort die
+   * Höhe eines Teils (48 m), top − 48 m ergab 163 m statt 49 m Gelände. */
+  let gz = null;
+  for (const art of ['GroundSurface', 'WallSurface']) {
+    const re = new RegExp(`<bldg:${art}[\\s\\S]*?<\\/bldg:${art}>`, 'g');
+    let f;
+    while ((f = re.exec(xml))) {
+      const reP = /<gml:posList[^>]*>([^<]+)<\/gml:posList>/g;
+      let q;
+      while ((q = reP.exec(f[0]))) {
+        const z = q[1].trim().split(/\s+/).map(Number);
+        for (let i = 2; i < z.length; i += 3) if (gz == null || z[i] < gz) gz = z[i];
+      }
+    }
+    if (gz != null) break;
+  }
   let e0 = Infinity, n0 = Infinity, e1 = -Infinity, n1 = -Infinity;
   for (const d of daecher) for (let i = 0; i < d.p.length; i += 2) {
     e0 = Math.min(e0, d.p[i]); e1 = Math.max(e1, d.p[i]); n0 = Math.min(n0, d.p[i + 1]); n1 = Math.max(n1, d.p[i + 1]);
@@ -100,6 +117,7 @@ function gebLesen(xml) {
     fn: roh(/<bldg:function>([^<]+)</), dach: roh(/<bldg:roofType>([^<]+)</),
     h: parseFloat(roh(/<bldg:measuredHeight[^>]*>([^<]+)</)) || null,
     gr: parseFloat(attr('HoeheGrund')) || null,
+    gz: gz == null ? null : Math.round(gz * 100) / 100,
     adr: strasse ? `${strasse}${nummer ? ' ' + nummer : ''}` : '',
     bb: [e0, n0, e1, n1], d: daecher
   };
@@ -138,7 +156,11 @@ function gebaeudeKachel(e, n, land = 'by') {
   if (da) { gebKacheln.delete(s); gebKacheln.set(s, da); return da; }
   const laden = (async () => {
     const vorrat = await vorratLesen(`lod2/${s}`);
-    if (vorrat) return JSON.parse(new TextDecoder().decode(vorrat));
+    if (vorrat) {
+      const alt = JSON.parse(new TextDecoder().decode(vorrat));
+      // NRW-Kacheln von vor dem 19.11.2026 haben kein gz (Gelände) — dann neu holen
+      if (land !== 'nw' || !alt.length || 'gz' in alt[0]) return alt;
+    }
     let liste;
     if (land === 'bw') {
       const datei = await lglDatei('lod2', e, n);

@@ -617,14 +617,16 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
             <input type="range" class="lz-str-breite-regler" min="0" max="10" step="0.5" value="0">
             <span class="slider-val lz-str-breite-wert">Linie</span>
           </label>
-          <button type="button" class="seg-btn lz-klasse lz-kataster" aria-pressed="false">
-            <span class="lz-feld" style="background:#ffd60a"></span><span class="lz-name">Kataster</span><small>aus</small></button>
+          <button type="button" class="seg-btn lz-klasse lz-kataster" aria-pressed="false" title="Lange drücken oder Rechtsklick: Farbe">
+            <span class="lz-feld" style="background:#ffd60a"></span><span class="lz-name">Kataster<svg class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg></span><small>aus</small></button>
+          <div class="lz-wahl lz-kat-wahl" hidden></div>
           <button type="button" class="seg-btn lz-klasse lz-baeume" aria-pressed="false" title="Einzelbäume aus den Laserpunkten über dem Boden erkannt">
             <span class="lz-feld" style="background:${BAUM_FARBE}"></span><span class="lz-name">Bäume</span><small>aus</small></button>
           <button type="button" class="seg-btn lz-klasse lz-gipfel" aria-pressed="false" hidden>
             <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">Gipfel</span><small></small></button>
-          <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden>
-            <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">KML/GPX</span><small></small></button>
+          <button type="button" class="seg-btn lz-klasse lz-kml" aria-pressed="false" hidden title="Lange drücken oder Rechtsklick: Symbol, Farbe, Namen">
+            <span class="lz-feld" style="background:#ffffff"></span><span class="lz-name">KML/GPX<svg class="ifg-wahl-zeichen" viewBox="0 0 10 9" aria-hidden="true"><path d="M0 1.5h10M0 4.5h10M0 7.5h10"/></svg></span><small></small></button>
+          <div class="lz-wahl lz-kml-wahl" hidden></div>
           <label class="slider-row lz-str-breite lz-kml-breite" hidden>Breite
             <input type="range" class="lz-kml-breite-regler" min="0" max="10" step="0.5" value="0">
             <span class="slider-val lz-kml-breite-wert">Linie</span>
@@ -721,7 +723,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * ganze Breite. Nach den sichtbaren gezählt — :nth-child zählt ausgeblendete
    * mit, dann stand „Neigung“ allein und „Luftbild“ breit darunter. */
   const breitSetzen = () => wurzel.querySelectorAll('.lz-faerbung, .lz-klassen').forEach(g => {
-    const da = [...g.children].filter(el => !el.hidden && !el.classList.contains('lz-geb') && !el.classList.contains('lz-geb-dach'));
+    const da = [...g.children].filter(el => !el.hidden && !el.classList.contains('lz-geb') && !el.classList.contains('lz-geb-dach') && !el.classList.contains('lz-wahl'));
     g.querySelectorAll('.breit').forEach(el => el.classList.remove('breit'));
     if (da.length % 2) da[da.length - 1].classList.add('breit');
   });
@@ -1498,7 +1500,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   /* ---------- Gebäude (LoD2) ----------
    * Aus gebaeude.js über app.js (laserGebaeude), dort samt Vorrat auf dem
    * Gerät. Gelesen sind nur die Dachflächen: Wände entstehen unter jeder
-   * Dachkante, die kein zweites Dach teilt, bis HoeheGrund hinunter. Gebäude
+   * Dachkante, die kein zweites Dach teilt, bis HoeheGrund hinunter (NRW: tiefster Punkt der
+   * Grund- bzw. Wandflächen, gz). Gebäude
    * am Rand des Ausschnitts bleiben ganz. */
   let geb = null, gebLaeuft = false;
   const gebKnopf = $('.lz-geb');
@@ -1554,7 +1557,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
   }
   /** Höhe des Geländes am Gebäude: aus dem LoD2, sonst vom Laserboden (nur im Ausschnitt). */
   function grundVon(b, top) {
-    const grund = b.gr ?? (b.h ? top - b.h : null);
+    const grund = b.gr ?? b.gz ?? (b.h ? top - b.h : null);
     if (grund != null) return grund;
     const x = (b.bb[0] + b.bb[2]) / 2 - d.mitte[0], y = (b.bb[1] + b.bb[3]) / 2 - d.mitte[1];
     const bh = Math.abs(x) <= halb && Math.abs(y) <= halb ? bodenHoehe(x, y) : null;
@@ -1952,6 +1955,19 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     l.renderOrder = 5;
     return l;
   }
+  /** Tippen schaltet, langer Druck (500 ms) oder Rechtsklick ruft lang() — wie die Auflagen der Karte. */
+  function langDruck(knopf, lang) {
+    let timer = 0, war = false;
+    knopf.addEventListener('pointerdown', ev => {
+      war = false;
+      clearTimeout(timer);
+      if (ev.button === 0) timer = setTimeout(() => { war = true; lang(); }, 500);
+    });
+    for (const t of ['pointerup', 'pointerleave', 'pointercancel']) knopf.addEventListener(t, () => clearTimeout(timer));
+    knopf.addEventListener('contextmenu', ev => { ev.preventDefault(); clearTimeout(timer); war = true; lang(); });
+    // Der Klick nach einem langen Druck schaltet nicht
+    knopf.addEventListener('click', ev => { if (war) { war = false; ev.stopImmediatePropagation(); } }, true);
+  }
   function auflZeigen(a, knopf, an, text) {
     knopf.classList.toggle('is-on', an);
     knopf.setAttribute('aria-pressed', String(an));
@@ -2123,7 +2139,29 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
    * unsichtbar). Seit 17.11.2026 färbt es die Punkte und das Gelände selbst (Shader, katTex) wie das
    * Luftbild — vorher eine eigene Fläche darüber, die über Bäumen und Häusern schwebte. Erst beim ersten
    * Einschalten geholt. */
-  const katKnopf = $('.lz-kataster');
+  const katKnopf = $('.lz-kataster'), katWahl = $('.lz-kat-wahl');
+  /* Farbe: die der Karte; Schwarz nur, wenn hier bewusst gewählt — von der Karte kommt es meist
+   * als „auto“ auf dem Stadtplan und verschwände auf dem dunklen Grund. */
+  let katFarbe = /^#[0-9a-f]{6}$/i.test(info.katasterFarbe || '') && info.katasterFarbe !== '#000000' ? info.katasterFarbe : '#ffd60a';
+  function katFarbeSetzen(f) {
+    katFarbe = f;
+    katKnopf.querySelector('.lz-feld').style.background = f;
+    if (kataster) { material.uniforms.katFarbe.value.set(f); neu = true; }
+    if (info.katasterFarbeSetzen) info.katasterFarbeSetzen(f);
+    katWahlBauen();
+    if (!kataster) { if (!katLaedt) katasterLaden(); }
+    else if (!kataster.gruppe.visible) katZeigen(true);
+  }
+  function katWahlBauen() {
+    katWahl.innerHTML = `<div class="kml-wahl">${(info.katasterFarben || []).map(c =>
+      `<button type="button" class="kml-farbe${c.wert === katFarbe ? ' is-on' : ''}" data-katfarbe="${c.wert}"
+        style="background:${c.wert}" aria-label="${c.name}" title="${c.name}"></button>`).join('')}</div>`;
+    katWahl.querySelectorAll('[data-katfarbe]').forEach(b => b.addEventListener('click', () => katFarbeSetzen(b.dataset.katfarbe)));
+  }
+  if (katKnopf && info.katasterFarben) {
+    katKnopf.querySelector('.lz-feld').style.background = katFarbe;
+    langDruck(katKnopf, () => { katWahl.hidden = !katWahl.hidden; if (!katWahl.hidden) katWahlBauen(); });
+  } else if (katKnopf) katKnopf.querySelector('.ifg-wahl-zeichen').remove();
   function katZeigen(an) {
     auflZeigen(kataster, katKnopf, an, 'an');
     material.uniforms.katAn.value = an ? 1 : 0;
@@ -2160,7 +2198,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         bild.close();
       }
       // Umfärben: die Zeichnung als Maske, gefüllt mit der Farbe
-      const f = /^#[0-9a-f]{6}$/i.test(info.katasterFarbe || '') && info.katasterFarbe !== '#000000' ? info.katasterFarbe : '#ffd60a';
+      const f = katFarbe;
       g.globalCompositeOperation = 'source-in';
       g.fillStyle = f;
       g.fillRect(0, 0, px, px);
@@ -2193,9 +2231,32 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     quellenNeu();
   });
 
-  /* KML: Punkte als Kugel in der Farbe der Datei, Linien und Flächenränder auf
-   * dem Boden. Namen nur bis KML_NAMEN_MAX — sonst deckt Text die Wolke zu. */
-  const KML_NAMEN_MAX = 150;
+  /* KML: Punkte mit dem Symbol und der Farbe der Karte (19.11.2026, vorher Kugeln), Linien und
+   * Flächenränder auf dem Boden. Die Symbole sind je Form und Farbe eine THREE.Points mit dem
+   * Symbol als Textur, fest KML_SYM_PX groß — ein Zeichenaufruf statt einer Kugel je Punkt.
+   * Namen (Einstellung kmlNamen): „nah“ erst, wenn ein Bildpunkt höchstens KML_NAH_MPX Meter
+   * deckt, und nie übereinander (bild). Das Glas der übrigen Schilder (backdrop-filter) ist bei
+   * den Namen aus: Dutzende davon, je Bild neu verschoben, brachten das Handy ins Stocken. */
+  const KML_NAMEN_MAX = 2000, KML_SYM_PX = 14, KML_NAH_MPX = 0.25;
+  let kmlNamen = ['aus', 'nah', 'immer'].includes(gemerkt.kmlNamen) ? gemerkt.kmlNamen : 'nah';
+  const kmlSymTex = new Map();
+  function kmlSymTextur(form, farbe) {
+    const k = form + farbe;
+    if (!kmlSymTex.has(k)) {
+      let c;
+      if (info.kmlStil) c = info.kmlStil.bild(form, farbe, 64);
+      else {
+        c = document.createElement('canvas'); c.width = c.height = 64;
+        const g = c.getContext('2d');
+        g.beginPath(); g.arc(32, 32, 20, 0, Math.PI * 2);
+        g.fillStyle = farbe; g.strokeStyle = '#fff'; g.lineWidth = 8; g.stroke(); g.fill();
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      kmlSymTex.set(k, t);
+    }
+    return kmlSymTex.get(k);
+  }
   const kmlMats = new Map();
   const kmlMat = (farbe, art) => {
     const k = art + farbe;
@@ -2205,7 +2266,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       : new THREE.LineBasicMaterial({ color: farbe, depthTest: false }));
     return kmlMats.get(k);
   };
-  function kmlBauen() {
+  function kmlBauen(still = false) {
     const liste = info.kml ? info.kml(d.mitte[0] - halb, d.mitte[1] - halb, d.mitte[0] + halb, d.mitte[1] + halb) : [];
     const gruppe = new THREE.Group(), schilder = [], linien = [], linienGruppe = new THREE.Group();
     let punkte = 0;
@@ -2226,9 +2287,10 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       if (Math.abs(r[r.length >> 1]) <= 3) berichtigt.set(datei, liste.find(o => o.datei === datei && o.aufschlag != null).aufschlag);
     }
     for (const o of liste) if (berichtigt.has(o.datei) && o.aufschlag != null) o.hoehe -= o.aufschlag;
-    if (berichtigt.size) {
+    if (berichtigt.size && !still) {
       hinweis(`KML-Höhen um ${zahl([...berichtigt.values()][0], 1)} m gesenkt: im Export als Ellipsoidhöhe auf Bessel (DB_REF) behandelt.`);
     }
+    const symbole = new Map();          // Form + Farbe → Lagen
     for (const o of liste) {
       if (o.art === 'p') {
         const x = o.pts[0][0] - d.mitte[0], y = o.pts[0][1] - d.mitte[1];
@@ -2237,34 +2299,91 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         const b = Number.isFinite(o.hoehe) ? null : bodenHoehe(x, y);
         const p = new THREE.Vector3(x, y, Number.isFinite(o.hoehe) ? o.hoehe - d.zMin : (b ? b.z : zLo) + ANHEBEN);
         if (Number.isFinite(o.hoehe)) kugelWolke.union(new THREE.Sphere(p.clone(), 0.5));
-        const k = new THREE.Mesh(kugelGeo, kmlMat(o.farbe, 'p'));
-        k.position.copy(p);
-        k.renderOrder = 6;
-        k.userData.faktor = 0.7;
-        gruppe.add(k);
-        auflKugeln.push(k);
+        const k = (o.form || 'kreis') + '|' + o.farbe;
+        if (!symbole.has(k)) symbole.set(k, []);
+        symbole.get(k).push(p.x, p.y, p.z);
         punkte++;
-        if (o.name) schilder.push(schild(p, esc(o.name), 'kml', 'rechts'));
+        if (o.name && schilder.length < KML_NAMEN_MAX) schilder.push(schild(p, esc(o.name), 'kml', 'rechts'));
       } else {
         for (const st of aufBoden(o.pts)) linien.push({ st, farbe: o.farbe, band: !!o.band });
       }
     }
-    if (schilder.length > KML_NAMEN_MAX) { for (const s of schilder) s.el.remove(); schilder.length = 0; }
+    const symGruppe = new THREE.Group();
+    for (const [k, lagen] of symbole) {
+      const [form, farbe] = k.split('|');
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(lagen, 3));
+      const mat = new THREE.PointsMaterial({ map: kmlSymTextur(form, farbe), size: KML_SYM_PX * renderer.getPixelRatio(),
+        sizeAttenuation: false, transparent: true, alphaTest: 0.05, depthTest: false, depthWrite: false });
+      const pk = new THREE.Points(geo, mat);
+      pk.renderOrder = 6;
+      pk.frustumCulled = false;
+      symGruppe.add(pk);
+    }
+    gruppe.add(symGruppe);
     gruppe.add(linienGruppe);
     auflSzene.add(gruppe);
-    kmlAufl = { gruppe, schilder, anzahl: liste.length, punkte, linien, linienGruppe };
+    kmlAufl = { gruppe, schilder, anzahl: liste.length, punkte, linien, linienGruppe, symGruppe };
     /* Breite wie bei den Straßen (12.11.2026 gewünscht): 0 = Linie, sonst Band in Metern. Ohne
      * gemerkten Wert wie bisher: GPX-Tracks als Band (knapp 3 m bei einer Kachel, bei vier knapp 6 m —
      * die 1-px-Linie war am Handy kaum zu sehen), reine KML als Linie. */
-    if (Number.isFinite(gemerkt.kmlBreite)) kmlBreiteRegler.value = String(gemerkt.kmlBreite);
+    if (still) { /* Breite bleibt, wie sie gerade steht */ }
+    else if (Number.isFinite(gemerkt.kmlBreite)) kmlBreiteRegler.value = String(gemerkt.kmlBreite);
     else kmlBreiteRegler.value = linien.some(l => l.band) ? String(Math.round(Math.max(2, info.seite / 350) * 2) / 2) : '0';
     kmlBreiteWert.textContent = kmlBreiteText();
     kmlZeichnen();
     if (!liste.length) return;
     kmlKnopf.hidden = false;
     breitSetzen();
-    kmlZeigen(gemerkt.kml !== false);
+    kmlZeigen(still || gemerkt.kml !== false);
   }
+  /** Nach einer Änderung am Aussehen (Wahl unten): die Auflage aus den neuen Angaben neu bauen. */
+  function kmlNeuBauen() {
+    if (kmlAufl) {
+      auflSzene.remove(kmlAufl.gruppe);
+      for (const s of kmlAufl.schilder) s.el.remove();
+      kmlAufl.gruppe.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.isPoints) o.material.dispose(); });
+    }
+    kmlBauen(true);
+    neu = true;
+  }
+  /* Wahl unter „KML/GPX“ (langer Druck): Namen für alle, Farbe und Symbol je Datei. Geändert wird
+   * die Datei selbst (info.kmlStil.setzen → app.js), die Karte zieht also mit. */
+  const kmlWahl = $('.lz-kml-wahl');
+  function kmlWahlBauen() {
+    const st = info.kmlStil, dateien = st.dateien();
+    const knopf = (attr, wert, an, inhalt, extra = '') => `<button type="button" class="${extra || 'kml-form'}${an ? ' is-on' : ''}" ${attr}="${wert}"${inhalt.titel ? ` title="${inhalt.titel}" aria-label="${inhalt.titel}"` : ''}${inhalt.stil ? ` style="${inhalt.stil}"` : ''}>${inhalt.html || ''}</button>`;
+    kmlWahl.innerHTML = `<p class="pal-label">Namen</p>
+      <div class="seg" role="group" aria-label="Namen">${[['aus', 'Aus'], ['nah', 'Nah'], ['immer', 'Immer']].map(([k, t]) =>
+        `<button type="button" class="seg-btn${kmlNamen === k ? ' is-on' : ''}" data-kmlnamen="${k}">${t}</button>`).join('')}</div>` +
+      dateien.map(f => {
+        const zeige = f.ausDatei ? f.dateiFarben[0] : f.farbe;
+        const quelle = f.dateiFarben.length === 1 ? f.dateiFarben[0]
+          : `conic-gradient(${f.dateiFarben.map((c, k) => `${c} ${k / f.dateiFarben.length * 360}deg ${(k + 1) / f.dateiFarben.length * 360}deg`).join(', ')})`;
+        return `<p class="pal-label lz-wahl-datei">${esc(f.name)}</p>
+          <div class="kml-wahl">${f.dateiFarben.length ? knopf('data-kmlfarbe', f.i + '|quelle', f.ausDatei,
+            { html: `<span style="background:${quelle}"></span>wie Datei` }, 'kml-form kml-auto kml-quelle') : ''}${st.farben.map(c =>
+            knopf('data-kmlfarbe', f.i + '|' + c, !f.ausDatei && c === f.farbe, { titel: 'Farbe ' + c, stil: 'background:' + c }, 'kml-farbe')).join('')}</div>
+          ${f.punkte ? `<div class="kml-wahl">${f.autoMoeglich ? knopf('data-kmlform', f.i + '|auto', f.symbol === 'auto', { html: 'automatisch' }, 'kml-form kml-auto') : ''}${st.formen.map(({ k, name }) =>
+            knopf('data-kmlform', f.i + '|' + k, f.symbol === k, { titel: name, html: st.svg(k, zeige, true) })).join('')}</div>` : ''}`;
+      }).join('');
+    kmlWahl.querySelectorAll('[data-kmlnamen]').forEach(b => b.addEventListener('click', () => {
+      kmlNamen = b.dataset.kmlnamen;
+      if (kmlAufl) for (const s of kmlAufl.schilder) s.el.hidden = true;
+      neu = true;
+      kmlWahlBauen();
+    }));
+    const setzen = (wert, art) => {
+      const [i, w] = wert.split('|');
+      st.setzen(Number(i), { [art]: w });
+      kmlNeuBauen();
+      kmlWahlBauen();
+    };
+    kmlWahl.querySelectorAll('[data-kmlfarbe]').forEach(b => b.addEventListener('click', () => setzen(b.dataset.kmlfarbe, 'farbe')));
+    kmlWahl.querySelectorAll('[data-kmlform]').forEach(b => b.addEventListener('click', () => setzen(b.dataset.kmlform, 'symbol')));
+  }
+  if (info.kmlStil) langDruck(kmlKnopf, () => { kmlWahl.hidden = !kmlWahl.hidden; if (!kmlWahl.hidden) kmlWahlBauen(); });
+  else kmlKnopf.querySelector('.ifg-wahl-zeichen').remove();
   const kmlBreiteZeile = $('.lz-kml-breite'), kmlBreiteRegler = $('.lz-kml-breite-regler'), kmlBreiteWert = $('.lz-kml-breite-wert');
   const kmlBreite = () => Number(kmlBreiteRegler.value);
   const kmlBreiteText = () => kmlBreite() ? `${zahl(kmlBreite(), kmlBreite() % 1 ? 1 : 0)} m` : 'Linie';
@@ -3852,7 +3971,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     const mitOrt = ortSchild && ortGruppe.visible ? [{ schilder: [ortSchild] }] : [];
     const aufl = [achsen, strassen, kmlAufl, gipfelAufl, zielAufl, linienAufl].filter(a => a && a.gruppe.visible);
     const auflSet = new Set(aufl);
-    for (const m of [...aufl.filter(a => a !== strassen), regenAufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
+    for (const m of [...aufl.filter(a => a !== strassen && a !== kmlAufl), regenAufl, ...messungen, ...(offen ? [offen] : []), ...mitOrt]) {
       // Schilder der Auflagen schneidet die Limitbox mit, Messungen nicht
       const geschnitten = box.an && auflSet.has(m);
       for (const sch of m.schilder) {
@@ -3865,6 +3984,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         if (sicht) sch.el.style.transform = `translate(${(v.x + 1) / 2 * r.width}px, ${(1 - v.y) / 2 * r.height}px) ${sch.lage}`;
       }
     }
+    if (kmlAufl && auflSet.has(kmlAufl)) kmlNamenSetzen(r, gelTiefe);
     /* Bei schmalen Flächen lagen die Seitenlängen unter der Fläche in der Mitte:
      * Ein kleines Schild, das ein großes (Fläche, Σ, Δh, gesuchte Stelle) berührt,
      * tritt zurück — über alle Messungen und Auflagen hinweg. */
@@ -3900,6 +4020,33 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
         const k = sch.el.getBoundingClientRect();
         if (gross.some(g => k.left < g.right && k.right > g.left && k.top < g.bottom && k.bottom > g.top)) sch.el.hidden = true;
       }
+    }
+  }
+
+  /** KML-Namen: je nach kmlNamen aus, nur nah oder immer — nie übereinander (der erste gewinnt).
+   *  Die Größe jedes Schilds wird einmal gemessen; danach kein getBoundingClientRect je Bild. */
+  function kmlNamenSetzen(r, gelTiefe) {
+    const frei = [], ortho = kamera === orthoKamera;
+    const mProPxOrtho = ortho ? (orthoKamera.top - orthoKamera.bottom) / orthoKamera.zoom / r.height : 0;
+    const tanH = ortho ? 0 : 2 * Math.tan(kamera.fov * Math.PI / 360) / r.height;
+    for (const sch of kmlAufl.schilder) {
+      sch.el.hidden = true;
+      if (kmlNamen === 'aus') continue;
+      v.copy(sch.p);
+      v.z *= ueber;
+      if (kmlNamen === 'nah' && (ortho ? mProPxOrtho : kamera.position.distanceTo(v) * tanH) > KML_NAH_MPX) continue;
+      v.project(kamera);
+      if (!(v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2)) continue;
+      if (box.an && !boxZeigt(sch.p.x, sch.p.y, sch.p.z)) continue;
+      if (gelTiefe && hinterHang(sch.p)) continue;
+      if (!sch.w) { sch.el.hidden = false; sch.w = sch.el.offsetWidth; sch.h = sch.el.offsetHeight; sch.el.hidden = true; }
+      const x = (v.x + 1) / 2 * r.width, y = (1 - v.y) / 2 * r.height;
+      // Lage „rechts“: translate(12px, -50%)
+      const k = { left: x + 10, right: x + 14 + sch.w, top: y - sch.h / 2 - 1, bottom: y + sch.h / 2 + 1 };
+      if (frei.some(g => k.left < g.right && k.right > g.left && k.top < g.bottom && k.bottom > g.top)) continue;
+      frei.push(k);
+      sch.el.hidden = false;
+      sch.el.style.transform = `translate(${x}px, ${y}px) ${sch.lage}`;
     }
   }
 
@@ -3978,7 +4125,7 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
       kataster: kataster ? kataster.gruppe.visible : katLaedt || false,
       baeume: !!(baeume && baeume.gruppe.visible),
       kmlBreite: kmlAufl && kmlAufl.linien.length ? kmlBreite() : gemerkt.kmlBreite,
-      kml: kmlAufl && kmlAufl.anzahl ? kmlAufl.gruppe.visible : gemerkt.kml,
+      kml: kmlAufl && kmlAufl.anzahl ? kmlAufl.gruppe.visible : gemerkt.kml, kmlNamen,
       gipfel: gipfelAufl ? gipfelAufl.gruppe.visible : gemerkt.gipfel,
       kamera: kamera === orthoKamera ? 'ortho' : 'perspektive',
       darstellung: gelaende ? darstellung : gemerkt.darstellung,
@@ -4119,7 +4266,8 @@ export function laserAnsicht(d, info, { beimSchliessen } = {}) {
     if (geb) geb.gruppe.children.forEach(c => c.geometry.dispose());
     auflSzene.traverse(o => { if (o.geometry && o.geometry !== kugelGeo) o.geometry.dispose(); });
     strMats.forEach(m => m.dispose());
-    achsMat.dispose(); zielMat.dispose(); zielLinieMat.dispose(); kmlMats.forEach(m => m.dispose());
+    achsMat.dispose(); zielMat.dispose(); zielLinieMat.dispose(); kmlMats.forEach(m => m.dispose()); kmlSymTex.forEach(t => t.dispose());
+    if (kmlAufl) kmlAufl.symGruppe.traverse(o => { if (o.isPoints) { o.geometry.dispose(); o.material.dispose(); } });
     gebFlaecheMat.dispose(); gebKanteMat.dispose(); if (dachTextur) dachTextur.dispose(); linienMat.dispose(); linienHauptMat.dispose();
     linienSzene.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     if (regen) regen.entsorgen();
