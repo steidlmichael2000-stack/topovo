@@ -269,7 +269,7 @@
           <button class="seg-btn" type="button" data-relief="farbe">Höhenfarben</button>
         </div>
         <p class="fine wahl-hinweis">Höhenfarben färben einen Ausschnitt nach der Geländehöhe aus dem DGM1 —
-        nur in Bayern und Baden-Württemberg, auf Knopfdruck in der Leiste unten.</p>
+        nur in Bayern, Baden-Württemberg, NRW und Tschechien, auf Knopfdruck in der Leiste unten.</p>
       </div>
       <p class="pal-label">Auflagen</p>
       <div class="seg seg-zwei" role="group" aria-label="Auflagen">
@@ -371,14 +371,16 @@
       Bodenauflösung. Es kommt von den
       Vermessungsverwaltungen aller 16 Länder; an den Landesgrenzen setzt die App die Bilder
       zusammen. Weil jedes Land in einem anderen Jahr und zu einer anderen Jahreszeit befliegt,
-      wechseln dort Farbe und Belaubung. Außerhalb Deutschlands bleibt der Grund leer.
+      wechseln dort Farbe und Belaubung. In Tschechien kommt das Ortofoto des ČÚZK dazu.
+      Im übrigen Ausland bleibt der Grund leer.
       <strong>Relief</strong> ist das Schräglicht aus dem
       Geländemodell — darauf sind Dämme, Einschnitte und alte Trassen deutlich zu sehen. Das
-      Relief gibt es nur für Bayern und Baden-Württemberg. In Baden-Württemberg ist es die
-      Schummerung des LGL, etwas dunkler und flacher; an der Grenze wechselt das Aussehen.
-      Außerhalb beider Länder bleibt der Grund weiß.</p>
+      Relief gibt es für Bayern, Baden-Württemberg und Tschechien. In Baden-Württemberg ist es die
+      Schummerung des LGL, etwas dunkler und flacher, in Tschechien die Schummerung aus dem DMR 5G
+      des ČÚZK; an den Grenzen wechselt das Aussehen. Anderswo bleibt der Grund weiß.</p>
       <p class="fine"><strong>Parzellen</strong> legt die Flurstücksgrenzen aus ALKIS darüber, in
-      Bayern und Baden-Württemberg.
+      Bayern und Baden-Württemberg; in Tschechien die Katastralkarte des ČÚZK samt Gebäuden.
+      Tippt man dort auf einen Punkt, steht die Höhe aus dem DMR 5G in Bpv statt NHN da.
       <strong>Lange drücken oder Rechtsklick</strong> auf den Knopf öffnet die Farbwahl:
       <em>Auto</em> zeichnet sie gelb über Luftbildern und schwarz über der Karte, jede andere
       Farbe gilt überall, das <em>+</em> öffnet eine freie Farbwahl. Der Dienst zeichnet sie erst unterhalb
@@ -411,7 +413,7 @@
       <p class="fine"><strong>Luftdruck und Temperatur</strong> sind die Eingaben für die
       atmosphärische Korrektur (ppm) am Tachymeter. Gilt für den eigenen Standort, sonst für die
       Kartenmitte. Der Druck ist der <em>absolute</em> Druck auf Geländehöhe — die Höhe kommt in
-      Bayern und Baden-Württemberg aus dem DGM1, sonst aus dem Höhenmodell des Wetterdienstes —, nicht der auf Meereshöhe
+      Bayern, Baden-Württemberg und NRW aus dem DGM1, in Tschechien aus dem DMR 5G, sonst aus dem Höhenmodell des Wetterdienstes —, nicht der auf Meereshöhe
       reduzierte aus dem Wetterbericht. Die Werte sind ein Wettermodell (Open-Meteo, in Deutschland
       ICON des DWD), viertelstündlich, keine Messung vor Ort: rund ±1 hPa und ±1–2 °C. Das macht
       etwa ±2 ppm, also 2 mm auf 1 km. Für mehr ein eigenes Barometer und Thermometer am Instrument.
@@ -536,7 +538,8 @@
       Kilometersteine und KML-Punkte werden gefangen. Gerechnet wird auf dem Ellipsoid.</p>
       <p class="fine"><strong>Profil.</strong> Der Messknopf rechts unten öffnet ein kleines Menü;
       unter <em>Profil</em> Punkte antippen — ab zwei Punkten steht der Geländeschnitt aus dem DGM1
-      (1&nbsp;m Gitter) unten, in Bayern und Baden-Württemberg. Ein Finger auf dem Diagramm zeigt die Stelle auf der Karte.
+      (1&nbsp;m Gitter) unten, in Bayern, Baden-Württemberg und NRW; in Tschechien aus dem DMR 5G
+      des ČÚZK, dort in Bpv statt NHN. Ein Finger auf dem Diagramm zeigt die Stelle auf der Karte.
       Gezeichnet wird unüberhöht; der Regler <em>Überhöht</em> streckt die Höhen, bis das Bild die
       Leiste füllt.
       <em>Oberfläche DOM20</em> legt Gebäude und Bewuchs als gestrichelte Linie dazu; der Knopf
@@ -591,8 +594,10 @@
       GeoBasis-DE / LVermGeo LSA (dl-de/by-2-0), GeoBasis-DE/LGB (dl-de/by-2-0), Geoportal Berlin
       (dl-de/zero-2-0), © GeoBasis-DE/M-V 2026, © GeoBasis-DE/LVermGeo SH/CC BY 4.0, Landesamt
       GeoInformation Bremen (CC BY 4.0), FHH, LGV (dl-de/by-2-0); an den Landesgrenzen
-      zusammengesetzt, also bearbeitet · Landesgrenzen: GeoBasis-DE / BKG,
-      VG250 (dl-de/by-2-0), vereinfacht · Regenradar und Regenvorhersage (ICON-EU): Datenbasis
+      zusammengesetzt, also bearbeitet · DGM1 in NRW (Profil, Höhe, Höhenfarben): Geobasis NRW
+      (dl-de/zero-2-0) · Tschechien: Ortofoto, Schummerung und Höhen aus dem DMR 5G,
+      Katastralkarte, Geländeprofil (DMR 5G) und Staatsgrenze (RÚIAN): ČÚZK – www.cuzk.gov.cz (CC BY 4.0), bearbeitet ·
+      Landesgrenzen: GeoBasis-DE / BKG, VG250 (dl-de/by-2-0), vereinfacht · Regenradar und Regenvorhersage (ICON-EU): Datenbasis
       Deutscher Wetterdienst (CC BY 4.0), Rasterdaten bildlich wiedergegeben und zeitlich
       interpoliert · Starkregen KOSTRA-DWD-2020: Datenbasis Deutscher Wetterdienst (CC BY 4.0),
       Einzelwerte umgerechnet · Wetterdaten:

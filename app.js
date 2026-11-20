@@ -2172,6 +2172,9 @@ const BVV_QUELLE = `Parzellen: <a href="https://www.geodaten.bayern.de/">Bayeris
  * die Länder, die gerade im Bild sind (dopQuelleErneuern), das Relief kommt
  * immer aus Bayern und BW. */
 const JAHR = new Date().getFullYear();
+// Grober Rahmen Tschechiens, für Parzellen und Höhe (die Grenze selbst in laender-grenzen.json)
+const CZ_RAHMEN = { s: 48.55, n: 51.06, w: 12.09, o: 18.86 };
+const inCzRahmen = (lat, lon) => lat >= CZ_RAHMEN.s && lat <= CZ_RAHMEN.n && lon >= CZ_RAHMEN.w && lon <= CZ_RAHMEN.o;
 const LAND_URHEBER = {
   by: `<a href="https://www.geodaten.bayern.de/">Bayerische Vermessungsverwaltung</a> (${CC_BY})`,
   bw: `<a href="https://www.lgl-bw.de/">LGL-BW</a> (${JAHR}, ${DL_BY})`,
@@ -2188,13 +2191,15 @@ const LAND_URHEBER = {
   mv: `© GeoBasis-DE/M-V ${JAHR}`,
   sh: `© GeoBasis-DE/LVermGeo SH/${CC_BY}`,
   hb: `Landesamt GeoInformation Bremen (${CC_BY})`,
-  hh: `FHH, LGV (${DL_BY})`
+  hh: `FHH, LGV (${DL_BY})`,
+  // Tschechien (20.11.2026): der ČÚZK gibt seine offenen Daten unter CC BY 4.0
+  cz: `<a href="https://www.cuzk.gov.cz/">ČÚZK</a> (${CC_BY})`
 };
 /* bearbeitet: an Landesgrenzen setzt die App die Bilder je Bildpunkt aus
  * mehreren Diensten zusammen (dopMaske) — dann ist es eine Bearbeitung. */
 const landQuelle = (was, laender, bearbeitet = false) =>
   `${was}: ${laender.map(l => LAND_URHEBER[l]).join(', ')}${bearbeitet ? ', bearbeitet' : ''}`;
-const RELIEF_QUELLE = landQuelle('Relief', ['by', 'bw'], true);
+const RELIEF_QUELLE = landQuelle('Relief', ['by', 'bw', 'cz'], true);
 
 /* Die Bilder für MapLibre — dieselben Dienste und Grenzen wie die Leaflet-
  * Ebenen in initMap. DOP20 und Relief kommen über das Protokoll land:// aus
@@ -2692,6 +2697,16 @@ function initMap() {
       layers: 'BU.Building', format: 'image/png', transparent: true, tileSize: 1024, zoomOffset: -2,
       version: '1.3.0', maxZoom: 22, minZoom: 17, crossOrigin: 'anonymous', bounds: rahmen(HOEHEN_RAHMEN.bw),
       farbe: hexRgb(parzFarbe()), punkte: true, nurBayern: false, fuellungWeg: true
+    }),
+    /* Tschechien (20.11.2026): Katastrální mapa des ČÚZK, Ebene KN mit Durchsicht —
+     * schwarze Parzellengrenzen, Gebäude als Umriss und Parzellennummern, also wie
+     * die bayerische Parzellarkarte zum Umfärben. Der Dienst stempelt in jedes Bild
+     * ein „© ČÚZK“ — mit 1024er-Kacheln steht es 16-mal seltener da als mit 256ern. */
+    new ParzWms('https://services.cuzk.gov.cz/wms/wms.asp', {
+      layers: 'KN', format: 'image/png', transparent: true, tileSize: 1024, zoomOffset: -2,
+      version: '1.3.0', maxZoom: 22, minZoom: 17, crossOrigin: 'anonymous', bounds: rahmen(CZ_RAHMEN),
+      attribution: `Katastr nemovitostí: ${LAND_URHEBER.cz}`,
+      farbe: hexRgb(parzFarbe()), punkte: true, nurBayern: false
     })
   ]);
 
@@ -2990,11 +3005,19 @@ const LAND_WMS = {
     mv: 'https://www.geodaten-mv.de/dienste/adv_dop' + LAND_WMS_TEIL + 'mv_dop',
     sh: 'https://dienste.gdi-sh.de/WMS_SH_DOP20col_OpenGBD' + LAND_WMS_TEIL + 'sh_dop20_rgb',
     hb: 'https://geodienste.bremen.de/wms_dop20_2023' + LAND_WMS_TEIL + 'DOP20_2023_HB,DOP20_2023_BHV',
-    hh: 'https://geodienste.hamburg.de/wms_dop_zeitreihe_unbelaubt' + LAND_WMS_TEIL + 'dop_zeitreihe_unbelaubt'
+    hh: 'https://geodienste.hamburg.de/wms_dop_zeitreihe_unbelaubt' + LAND_WMS_TEIL + 'dop_zeitreihe_unbelaubt',
+    /* Tschechien: Ortofoto ČR des ČÚZK (12,5–25 cm), CORS für jede Herkunft, zeichnet
+     * in jedem Maßstab (gemessen 20.11.2026 bis Zoomstufe 5), außerhalb weiß. */
+    cz: 'https://ags.cuzk.gov.cz/arcgis1/services/ORTOFOTO/MapServer/WMSServer' + LAND_WMS_TEIL + '0'
   },
   relief: {
     by: 'https://geoservices.bayern.de/od/wms/dgm/v1/relief' + LAND_WMS_TEIL + 'by_relief_schraeglicht',
-    bw: 'https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DGM_025_Schummerung' + LAND_WMS_TEIL + 'Schummerung_DGM_025_BW'
+    bw: 'https://owsproxy.lgl-bw.de/owsproxy/ows/WMS_LGL-BW_ATKIS_DGM_025_Schummerung' + LAND_WMS_TEIL + 'Schummerung_DGM_025_BW',
+    /* Tschechien: Schummerung aus dem DMR 5G. Als JPEG füllt der Dienst außerhalb
+     * schwarz (BGCOLOR übergeht er), das hielte dopKachel für Bild — deshalb PNG
+     * mit Durchsicht, dopPixel legt es auf Weiß. */
+    cz: 'https://ags.cuzk.gov.cz/arcgis2/services/dmr5g/ImageServer/WMSServer' + LAND_WMS_TEIL +
+      'dmr5g:GrayscaleHillshade&FORMAT=image/png&TRANSPARENT=TRUE'
   }
 };
 let laenderGrenzen = null;   // Promise: Land → { ringe: [{ p: UTM e,n,…, g: lat,lon,…, bb }], bb (UTM), gb (lat, lon) }
@@ -3095,6 +3118,7 @@ const dopGeteilt = (land, z, y) => dopFaktor(land, z, y) > LAND_GROESSE_MAX;
 async function dopLandPixel(art, land, z, x, y, signal) {
   if (!dopGeteilt(land, z, y)) return dopPixel(await dopBild(dopUrl(art, land, z, x, y), signal));
   const c = new OffscreenCanvas(256, 256), g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 256, 256);   // durchsichtige PNG (Relief CZ) gelten als leer
   for (const dy of [0, 1]) {
     await Promise.all([0, 1].map(async dx => {
       const blob = await dopBild(dopUrl(art, land, z + 1, 2 * x + dx, 2 * y + dy), signal);
@@ -3109,7 +3133,8 @@ async function dopLandPixel(art, land, z, x, y, signal) {
 function dopUrl(art, land, z, x, y) {
   const R = 20037508.342789244, s = 2 * R / 2 ** z, px = dopGroesse(land, z, y);
   const bbox = [x * s - R, R - (y + 1) * s, (x + 1) * s - R, R - y * s].map(v => v.toFixed(3)).join(',');
-  return `${LAND_WMS[art][land]}&WIDTH=${px}&HEIGHT=${px}&FORMAT=image/jpeg&BBOX=${bbox}`;
+  const dienst = LAND_WMS[art][land], format = dienst.includes('&FORMAT=') ? '' : '&FORMAT=image/jpeg';
+  return `${dienst}&WIDTH=${px}&HEIGHT=${px}${format}&BBOX=${bbox}`;
 }
 
 /* Ein WMS meldet Fehler mit Status 200 und XML statt Bild. Sachsen-Anhalt
@@ -3164,6 +3189,8 @@ async function dopBitmap(blob, kante) {
 async function dopPixel(blob) {
   const bild = await dopBitmap(blob, 256);
   const c = new OffscreenCanvas(256, 256), g = c.getContext('2d', { willReadFrequently: true });
+  // Weiß darunter: Durchsichtiges (Relief CZ außerhalb) gilt dann wie bei den anderen Diensten als leer
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 256, 256);
   g.drawImage(bild, 0, 0, 256, 256);
   bild.close();
   return g.getImageData(0, 0, 256, 256);
@@ -3634,11 +3661,11 @@ function setBase(which, still = false) {
 
   // Die Rahmen sind grob; wo sie nicht greifen, bleibt der Grund sicher leer
   const c = map.getCenter();
-  if (!still && which === 'relief' && ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng)) {
-    toast('Das Relief gibt es für Bayern und Baden-Württemberg — hier bleibt der Grund weiß.');
+  if (!still && which === 'relief' && ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng) && !inCzRahmen(c.lat, c.lng)) {
+    toast('Das Relief gibt es für Bayern, Baden-Württemberg und Tschechien — hier bleibt der Grund weiß.');
   }
-  if (!still && which === 'dop' && !(c.lat >= DEUTSCHLAND.s && c.lat <= DEUTSCHLAND.n && c.lng >= DEUTSCHLAND.w && c.lng <= DEUTSCHLAND.o)) {
-    toast('Das DOP20 kommt von den Vermessungsämtern der Länder und gibt es nur für Deutschland.');
+  if (!still && which === 'dop' && !(c.lat >= DEUTSCHLAND.s && c.lat <= DEUTSCHLAND.n && c.lng >= DEUTSCHLAND.w && c.lng <= DEUTSCHLAND.o) && !inCzRahmen(c.lat, c.lng)) {
+    toast('Das Luftbild kommt von den Vermessungsämtern der Länder und gibt es für Deutschland und Tschechien.');
   }
 
   parzFarbeAnpassen();
@@ -3731,7 +3758,7 @@ function applyBildRegler() {
  * Blau, das höchste Rot. Im Flachland trennen so schon Dezimeter die Farben. */
 const DGM_ZOOM = 16;
 const DGM_KEIN = -32768;                 // „keine Höhe" — in Terrarium alle Kanäle 0
-const DGM_QUELLE = landQuelle('Höhen DGM1', ['by', 'bw']);
+const DGM_QUELLE = landQuelle('Höhen DGM1', ['by', 'bw', 'nw']);
 /* Von Tief nach Hoch, dieselben Töne wie .hoehen-balken. Bewusst ohne Weiß und
  * Schwarz am Ende: Parzellen, Bahn-Layer und Pins müssen auf beiden noch stehen. */
 const HOEHEN_RAMPE = ['#2c3e94', '#2a7dc4', '#33b2b0', '#7ccc6c', '#e6dd55', '#f19a3c', '#c8382f'];
@@ -3778,7 +3805,7 @@ async function dgmKachel(z, x, y, signal) {
   const lon = x / n * 360 - 180, lonO = (x + 1) / n * 360 - 180;
   const lat = v => Math.atan(Math.sinh(Math.PI * (1 - 2 * v / n))) * 180 / Math.PI;
   const latN = lat(y), latS = lat(y + 1);
-  const drin = ['by', 'bw'].some(l => {
+  const drin = ['by', 'bw', 'nw', 'cz'].some(l => {
     const r = HOEHEN_RAHMEN[l];
     return latS <= r.n && latN >= r.s && lon <= r.o && lonO >= r.w;
   });
@@ -3951,7 +3978,7 @@ function toggleOverlay(kennung) {
 
   if (an && kennung === 'parz') {
     const c = map.getCenter();
-    if (ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng)) toast('Flurstücke gibt es für Bayern und Baden-Württemberg.');
+    if (ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng) && !inCzRahmen(c.lat, c.lng)) toast('Flurstücke gibt es für Bayern, Baden-Württemberg und Tschechien.');
     else if (map.getZoom() < 17) toast('Parzellen zeichnet der Dienst erst ab Zoomstufe 17 (1:5000).');
   }
   if (an && kennung === 'ifg' && map.getZoom() < IFG_AB) {
@@ -8246,16 +8273,7 @@ const LASER_ATTR = landQuelle('Laserpunkte', Object.keys(LASER_LAENDER));
  * CORS-Kopf schickt — der Browser sieht nur einen Netzfehler, die Größe bliebe „unbekannt“. */
 let laserGrenzen = null;
 function laserImLand(land, e, n) {
-  const g = laserGrenzen && laserGrenzen[land];
-  if (!g || e < g.bb[0] || e > g.bb[2] || n < g.bb[1] || n > g.bb[3]) return false;
-  let drin = false;     // gerade/ungerade über alle Ringe (Löcher inbegriffen)
-  for (const { p, bb } of g.ringe) {
-    if (e < bb[0] || e > bb[2] || n < bb[1] || n > bb[3]) continue;
-    for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
-      if ((p[i + 1] > n) !== (p[j + 1] > n) && e < (p[j] - p[i]) * (n - p[i + 1]) / (p[j + 1] - p[i + 1]) + p[i]) drin = !drin;
-    }
-  }
-  return drin;
+  return landEnthaelt(laserGrenzen && laserGrenzen[land], e, n);
 }
 /** Land an einer Stelle, oder null. Bayern zuerst (die groben Rahmen überlappen in Hessen). */
 const laserLandBei = (lat, lon) => {
@@ -9689,12 +9707,56 @@ function laserLeiste() {
 const HOEHE_MERK_MAX = 200;
 const hoeheMerk = new Map();             // "lat,lon" → Versprechen der Höhe
 
+/* Tschechien (20.11.2026): Die Höhe kommt nicht aus Kacheln, sondern als einzelner Wert
+ * vom ImageServer des ČÚZK (identify auf dem DMR 5G, CORS für jede Herkunft, ~0,2 s).
+ * Sie ist in Bpv (Höhensystem Ostsee/Kronstadt), nicht NHN. Ob der Punkt in Tschechien
+ * liegt, entscheidet die Grenze — der grobe Rahmen Bayerns reicht bis Cheb. */
+const CZ_HOEHE_URL = 'https://ags.cuzk.gov.cz/arcgis2/rest/services/dmr5g/ImageServer/identify';
+const CZ_HOEHE_QUELLE = `Höhen DMR 5G: ${LAND_URHEBER.cz}`;
+
+/** Liegt (e, n) in UTM 32 innerhalb der Fläche g aus laenderGrenzenHolen? Gerade/ungerade über alle Ringe. */
+function landEnthaelt(g, e, n) {
+  if (!g || e < g.bb[0] || e > g.bb[2] || n < g.bb[1] || n > g.bb[3]) return false;
+  let drin = false;
+  for (const { p, bb } of g.ringe) {
+    if (e < bb[0] || e > bb[2] || n < bb[1] || n > bb[3]) continue;
+    for (let i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+      if ((p[i + 1] > n) !== (p[j + 1] > n) && e < (p[j] - p[i]) * (n - p[i + 1]) / (p[j + 1] - p[i + 1]) + p[i]) drin = !drin;
+    }
+  }
+  return drin;
+}
+
+async function inTschechien(lat, lon) {
+  if (!inCzRahmen(lat, lon)) return false;
+  const g = await laenderGrenzenHolen();
+  const [e, n] = utm32Hin(lat, lon);
+  return landEnthaelt(g.cz, e, n);
+}
+
+async function czHoehe(lat, lon) {
+  const q = new URLSearchParams({
+    geometry: JSON.stringify({ x: +lon.toFixed(7), y: +lat.toFixed(7), spatialReference: { wkid: 4326 } }),
+    geometryType: 'esriGeometryPoint', returnGeometry: 'false', returnCatalogItems: 'false', f: 'json'
+  });
+  const r = await fetch(`${CZ_HOEHE_URL}?${q}`, { signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`Höhe CZ: HTTP ${r.status}`);
+  const h = parseFloat((await r.json()).value);   // „NoData“ außerhalb → NaN
+  return h;
+}
+
+/** Höhe am Punkt samt Herkunft: { h, land } mit land 'cz' oder 'de'. */
+async function hoeheMitLand(lat, lon) {
+  if (await inTschechien(lat, lon).catch(() => false)) return { h: await czHoehe(lat, lon), land: 'cz' };
+  return { h: await hoehenPunkt(lat, lon), land: 'de' };
+}
+
 function hoeheHolen(lat, lon) {
   const s = `${lat.toFixed(6)},${lon.toFixed(6)}`;
   let p = hoeheMerk.get(s);
   if (!p) {
     // Ein Netzfehler wird nicht gemerkt: beim nächsten Mal neu versuchen
-    p = hoehenPunkt(lat, lon).catch(() => { hoeheMerk.delete(s); return NaN; });
+    p = hoeheMitLand(lat, lon).catch(() => { hoeheMerk.delete(s); return { h: NaN, land: '' }; });
     hoeheMerk.set(s, p);
     while (hoeheMerk.size > HOEHE_MERK_MAX) hoeheMerk.delete(hoeheMerk.keys().next().value);
   }
@@ -9703,10 +9765,10 @@ function hoeheHolen(lat, lon) {
 
 /** Platzhalter für die Höhe; leer, wo es keine geben kann. */
 function hoeheZeile(lat, lon) {
-  if (!inHoehenRahmen(lat, lon)) return '';
+  if (!inHoehenRahmen(lat, lon) && !inCzRahmen(lat, lon)) return '';
   return `<span class="hoehe" data-hoehe="${lat},${lon}" title="Geländehöhe in Metern über Normalhöhennull ` +
     `aus dem DGM1 — Bayern: Bayerische Vermessungsverwaltung, CC BY 4.0; Baden-Württemberg: LGL-BW, ` +
-    `Datenlizenz Deutschland – Namensnennung 2.0">Höhe … m ü. NHN</span>`;
+    `Datenlizenz Deutschland – Namensnennung 2.0; NRW: Geobasis NRW, dl-de/zero-2-0">Höhe … m</span>`;
 }
 
 /** Füllt die Platzhalter in el, sobald die Werte da sind. */
@@ -9714,10 +9776,14 @@ function hoeheFuellen(el) {
   if (!el) return;
   el.querySelectorAll('[data-hoehe]').forEach(z => {
     const [lat, lon] = z.dataset.hoehe.split(',').map(Number);
-    hoeheHolen(lat, lon).then(h => {
+    hoeheHolen(lat, lon).then(({ h, land }) => {
       if (!z.isConnected) return;
       const imBalken = z.closest('#bottom, #ziel');
-      if (Number.isFinite(h)) { z.innerHTML = `Höhe <b>${nfH.format(h)} m</b> ü. NHN · DGM1`; quelleDauerhaft(DGM_QUELLE); }
+      if (Number.isFinite(h) && land === 'cz') {
+        z.innerHTML = `Höhe <b>${nfH.format(h)} m</b> Bpv · DMR 5G`;
+        z.title = 'Geländehöhe in Metern im Höhensystem Bpv (Ostsee, Kronstadt) aus dem DMR 5G — ČÚZK, CC BY 4.0';
+        quelleDauerhaft(CZ_HOEHE_QUELLE);
+      } else if (Number.isFinite(h)) { z.innerHTML = `Höhe <b>${nfH.format(h)} m</b> ü. NHN · DGM1`; quelleDauerhaft(DGM_QUELLE); }
       else z.remove();
       if (imBalken) updateBH();
     });
@@ -9768,7 +9834,10 @@ const PROF_QUELLEN = {
   by: () => 'der <a href="https://www.geodaten.bayern.de/" target="_blank" rel="noopener">' +
     `Bayerischen Vermessungsverwaltung</a>, ${CC_BY}`,
   bw: () => `des <a href="https://www.lgl-bw.de/" target="_blank" rel="noopener">LGL-BW</a> ` +
-    `(${new Date().getFullYear()}), ${DL_BY}`
+    `(${new Date().getFullYear()}), ${DL_BY}`,
+  nw: () => `von <a href="https://www.bezreg-koeln.nrw.de/geobasis-nrw" target="_blank" rel="noopener">Geobasis NRW</a>, ${DL_ZERO}`,
+  // Tschechien: DMR 5G, Höhen in Bpv — an der Grenze stoßen zwei Höhensysteme aneinander
+  cz: () => `des <a href="https://www.cuzk.gov.cz/" target="_blank" rel="noopener">ČÚZK</a> (DMR 5G, Höhen Bpv), ${CC_BY}`
 };
 
 function profQuelle(dgm) {
@@ -10076,7 +10145,7 @@ async function profRechnen({ behalten = false } = {}) {
     profDgm = dgm;
     profDom = profDomDgm = profGeb = null; // gehörten zur vorigen Linie, kommen unten neu
     if (!dgm.hoehe.some(Number.isFinite)) {
-      profFehler = 'Hier gibt es keine Höhendaten — das Gelände gibt es bisher für Bayern und Baden-Württemberg.';
+      profFehler = 'Hier gibt es keine Höhendaten — das Gelände gibt es für Bayern, Baden-Württemberg, NRW und Tschechien.';
       profNochmal = false;
     }
   } catch (err) {
@@ -10183,10 +10252,23 @@ function profKennwerte(dgm = profDgm, dom = profDom, domDgm = profDomDgm) {
   return { min, max, dh: letzt - erst, obj };
 }
 
+/** Höhensystem eines Profils: „Bpv“, wo die Höhen nur aus Tschechien stammen, sonst „NHN“. */
+function hoehenSystem(p) {
+  const q = p && p.quellen;
+  return q && q.length && q.every(l => l === 'cz') ? 'Bpv' : 'NHN';
+}
+
+/** Name des Geländemodells: „DGM1“, in Tschechien „DMR 5G“, über die Grenze beides. */
+function gelaendeName(p) {
+  const q = (p && p.quellen) || [];
+  if (!q.includes('cz')) return 'DGM1';
+  return q.length === 1 ? 'DMR 5G' : 'DGM1/DMR 5G';
+}
+
 /** In welchen Ländern liegt das Geländeprofil? Ohne Angabe: Bayern. */
 function profLaender(p = profDgm) {
   const q = p && p.quellen && p.quellen.length ? p.quellen : ['by'];
-  return { by: q.includes('by'), bw: q.includes('bw') };
+  return { by: q.includes('by'), bw: q.includes('bw'), nw: q.includes('nw'), cz: q.includes('cz') };
 }
 
 /** Name der Oberfläche samt Befliegung, wo bekannt: „DOM20", „DOM1 2016". */
@@ -10283,7 +10365,7 @@ function profLeiste() {
       '<output class="prof-wert" id="profUeberWert" for="profUeber"></output>' +
       '</div>');
     if (profDgm.hoehe.some(z => !Number.isFinite(z))) {
-      teile.push('<p class="bb-note">Teilweise außerhalb von Bayern und BW — dort fehlen die Höhen.</p>');
+      teile.push('<p class="bb-note">Teilweise ohne Höhendaten (außerhalb von Bayern, BW, NRW und Tschechien).</p>');
     }
   }
 
@@ -10298,7 +10380,7 @@ function profLeiste() {
   } else {
     const v = `${profVersatz > 0 ? '+' : '−'}${nfM.format(Math.abs(profVersatz))} m`;
     kopf = '<p class="bb-title">Profil</p>' +
-      `<span class="tag warn">${profDom ? `DGM1 · ${domName(profDom)}` : 'Gelände DGM1'}</span>` +
+      `<span class="tag warn">${profDom ? `${gelaendeName(profDgm)} · ${domName(profDom)}` : `Gelände ${gelaendeName(profDgm)}`}</span>` +
       // Der Versatz ist zugleich sein Rücksetzer — antippen holt die getippte Linie zurück
       (profVersatz ? `<button type="button" class="tag prof-versatz" id="profVersatz" ` +
         `title="Parallel verschoben, plus nach links von A→B — antippen: zurück auf die getippte Linie">${v}</button>` : '');
@@ -10877,18 +10959,18 @@ function pdfAngaben(z) {
   const hm = v => Number.isFinite(v) ? `${nfH.format(v)} m` : '–';
   if (g && g.art === 'quer') {
     const q = pdfQuerWerte(dgm);
-    raus.push(['Höhe am Gleis', `${hm(q.h)} ü. NHN`, 'Gelände in der Gleisachse (DGM1)'],
+    raus.push(['Höhe am Gleis', `${hm(q.h)} ü. ${hoehenSystem(dgm)}`, 'Gelände in der Gleisachse (DGM1)'],
       ...(z.geb ? [['Gebäude ab Gleis', gebWand(z.geb, dgm.laenge, z.breite) || 'keine im Schnitt',
         'waagrecht von der Gleisachse bis zur nächsten Wand']] : []),
       ['Breite', `je ${nfM.format(z.breite)} m`, 'links und rechts mit Blick in Richtung steigender km']);
   } else if (g) {
-    raus.push(['Höhe am Gleis', `${hm(profWertBei(dgm, dgm.ecken[g.mitteIndex]))} ü. NHN`, 'Gelände in der Gleisachse am gesuchten km']);
+    raus.push(['Höhe am Gleis', `${hm(profWertBei(dgm, dgm.ecken[g.mitteIndex]))} ü. ${hoehenSystem(dgm)}`, 'Gelände in der Gleisachse am gesuchten km']);
     const ng = profNeigung(dgm);
     if (Number.isFinite(ng)) raus.push(['Neigung', `${profVz(ng)} ‰`, 'Ausgleichsgerade über den Schnitt; plus: steigt mit km']);
     raus.push(['Höhenunterschied', `${profVz(kw.dh)} m`, 'Gelände am Ende minus am Anfang'], ['Gleislänge', messText(dgm.laenge)]);
   } else {
     raus.push(['Länge', messText(dgm.laenge)], ['Höhenunterschied', `${profVz(kw.dh)} m`, 'Gelände bei B minus bei A'],
-      ['Tiefster / höchster', `${hm(kw.min)} / ${hm(kw.max)}`, 'Gelände im ganzen Schnitt, ü. NHN']);
+      ['Tiefster / höchster', `${hm(kw.min)} / ${hm(kw.max)}`, `Gelände im ganzen Schnitt, ü. ${hoehenSystem(dgm)}`]);
     if (z.versatz) raus.push(['Versetzt', `${z.versatz > 0 ? '+' : '−'}${nfM.format(Math.abs(z.versatz))} m`, 'parallel, plus: links von A→B']);
   }
   if (kw.obj) raus.push([`Objekte (${domName(z.dom, false)})`, `bis ${nfH.format(kw.obj.hoehe)} m`, 'höchster Punkt der Oberfläche über dem Gelände']);
@@ -10908,8 +10990,10 @@ function pdfGenauigkeit(s, x, y, quellen) {
     ['Gleislage, km', `InfraGO ±${String(IFG_ERR.typical).replace('.', ',')}–${Math.round(IFG_ERR.worst)} m, ` +
       `sonst OSM ±${Math.round(IFG_ERR.osmTypical)}–${IFG_ERR.osmWorst} m`],
     ['Koordinaten', 'so genau wie die Lage, aus der sie stammen'],
-    quellen.by !== false && [quellen.bw ? 'DGM1 Bayern' : 'Gelände DGM1', 'Höhe ±0,2 m, Lage ±0,5 m (freies Gelände)'],
+    quellen.by !== false && [quellen.bw || quellen.nw || quellen.cz ? 'DGM1 Bayern' : 'Gelände DGM1', 'Höhe ±0,2 m, Lage ±0,5 m (freies Gelände)'],
     quellen.bw && ['DGM1 BW', 'Genauigkeit 0,15 m laut Kachelangaben des LGL'],
+    quellen.nw && ['DGM1 NRW', 'ohne Angabe in der App'],
+    quellen.cz && ['DMR 5G Tschechien', 'Höhen in Bpv, nicht NHN; ohne Angabe in der App'],
     quellen.dom && (quellen.domBy || !quellen.domBw) && ['Oberfläche DOM20', 'regional verschieden, ohne feste Angabe'],
     quellen.domBw && ['Oberfläche DOM1', `1 m Raster, 0,15 m laut Kachelangaben${quellen.domStand ? `, Befliegung ${quellen.domStand}` : ''}`],
     quellen.geb && (quellen.gebBy || !quellen.gebBw) && [quellen.gebBw ? 'LoD2 Bayern' : 'Gebäude LoD2', 'Dachhöhe typ. ±0,2–0,3 m, bis über 1 m'],
@@ -10981,7 +11065,7 @@ async function pdfSchnittSeite(dok, z, { titel, nr = 1, gesamt = 1, serie = null
   // Die Kennwerte stehen mit Erklärung rechts unter dem Luftbild; hier nur, was der Schnitt zeigt
   s.text(PDF_RAND, 74, pdfSchnittText(z), { groesse: 9, farbe: F.fein });
   pdfProfil(s, box, z, achse, f);
-  const leg = [['Gelände DGM1', F.gelLinie, null]];
+  const leg = [[`Gelände ${gelaendeName(z.dgm)}`, F.gelLinie, null]];
   if (z.dom) leg.push([`Oberfläche ${domName(z.dom)}`, F.dom, [2.5, 2]]);
   if (z.geb) leg.push(['Gebäude LoD2', F.gebLinie, 'block']);
   let lx = box.x + 34;
@@ -11034,7 +11118,7 @@ function gebLaender(listen) {
 function pdfLaender(dgms) {
   const l = new Set(dgms.flatMap(d => (d && d.quellen) || []));
   if (!l.size) l.add('by');
-  return { by: l.has('by'), bw: l.has('bw') };
+  return { by: l.has('by'), bw: l.has('bw'), nw: l.has('nw'), cz: l.has('cz') };
 }
 
 /** quellen: was im PDF vorkommt — { dom, geb, dop, osm, by, bw } */
@@ -11051,13 +11135,16 @@ function pdfFuss(s, nr, gesamt, quellen) {
   const teile = [
     bvv && `${bvv}: Bayerische Vermessungsverwaltung – www.geodaten.bayern.de, CC BY 4.0, bearbeitet.`,
     lgl && `${lgl} in BW: LGL-BW (${new Date().getFullYear()}), dl-de/by-2-0, www.lgl-bw.de, bearbeitet.`,
+    quellen.nw && 'Gelände DGM1 in NRW: Geobasis NRW, dl-de/zero-2-0, www.opengeodata.nrw.de.',
+    quellen.cz && 'Gelände in Tschechien: DMR 5G (Höhen Bpv), ČÚZK – www.cuzk.gov.cz, CC BY 4.0, bearbeitet.',
     quellen.osm && 'Kilometrierung und Gleislage: DB InfraGO, Infrastrukturdaten (Mobilithek), CC BY 4.0, bearbeitet; ' +
       'wo InfraGO die Strecke nicht führt: © OpenStreetMap-Mitwirkende, ODbL.'
   ].filter(Boolean);
   /* Ein Papier hat keinen Link: die Lizenztexte als Adresse (CC BY 4.0, Abschnitt 3(a)(1)(C)) */
   const lizenzen = [
-    (bvv || quellen.osm) && 'CC BY 4.0: creativecommons.org/licenses/by/4.0/deed.de',
+    (bvv || quellen.osm || quellen.cz) && 'CC BY 4.0: creativecommons.org/licenses/by/4.0/deed.de',
     lgl && 'dl-de/by-2-0: www.govdata.de/dl-de/by-2-0',
+    quellen.nw && 'dl-de/zero-2-0: www.govdata.de/dl-de/zero-2-0',
     quellen.osm && 'ODbL: www.openstreetmap.org/copyright'
   ].filter(Boolean);
   if (lizenzen.length) teile.push(`Lizenztexte: ${lizenzen.join(' · ')}.`);
@@ -11144,7 +11231,7 @@ async function profPdfErstellen(art) {
           sp.text(x, y + 10, `km ${fmtKm(q.km)}${aktuell ? '  (aktuell)' : ''}`, { groesse: 10, fett: true, farbe: aktuell ? F.lapis : F.text });
           // Ohne den Höhenversatz am Rand — der sagte im Plan nichts
           const gw = q.geb && gebWand(q.geb, q.dgm.laenge, z.breite);
-          sp.text(x + zw, y + 10, `Gleis ${Number.isFinite(qw.h) ? nfH.format(qw.h) : '–'} m ü. NHN` +
+          sp.text(x + zw, y + 10, `Gleis ${Number.isFinite(qw.h) ? nfH.format(qw.h) : '–'} m ü. ${hoehenSystem(q.dgm)}` +
             (gw ? ` · Gebäude ab Gleis ${gw}` : ''), { groesse: 7.5, farbe: F.fein, anker: 'end' });
           pdfProfil(sp, { x, y: y + 16, w: zw }, q, profAchse(q.dgm.laenge, { g, dgm: q.dgm, breite: z.breite }), fs);
         });
@@ -11393,7 +11480,7 @@ async function mappePdf() {
         const q = await gpQuerPunkte(ref, km, W);
         if (!q) { fehlt.push(`${name} (kein Gleisverlauf)`); continue; }
         const dgm = await hoehenProfil(q.punkte, 'dgm1');
-        if (!dgm.hoehe.some(Number.isFinite)) { fehlt.push(`${name} (keine Höhen, außerhalb von Bayern und BW?)`); continue; }
+        if (!dgm.hoehe.some(Number.isFinite)) { fehlt.push(`${name} (keine Höhen, außerhalb von Bayern, BW, NRW und Tschechien?)`); continue; }
         let dom = null, domDgm = null;
         if (mitDom) {
           dom = await hoehenProfil(q.punkte, 'dom20', { maxPunkte: 6000 });
@@ -15237,7 +15324,7 @@ async function wetterHolen() {
   ort.textContent = 'wird geholt …';
   try {
     let hoehe = NaN;
-    try { hoehe = await hoehenPunkt(lat, lon); } catch { /* ohne DGM nimmt der Dienst seine eigene Höhe */ }
+    try { hoehe = (await hoeheHolen(lat, lon)).h; } catch { /* ohne DGM nimmt der Dienst seine eigene Höhe */ }
     const q = new URLSearchParams({ latitude: lat.toFixed(3), longitude: lon.toFixed(3), timezone: 'Europe/Berlin',
       current: 'temperature_2m,relative_humidity_2m,surface_pressure' });
     if (Number.isFinite(hoehe)) q.set('elevation', hoehe.toFixed(1));

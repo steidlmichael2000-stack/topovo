@@ -139,6 +139,25 @@ ist, steht die dunkle Karte unverändert.
   „erst Netz", weil sie auf den wöchentlich neuen Datenstand zeigen; Kacheln, Schriften und
   Symbole „erst Cache".
 
+## Tschechien (`cz`, 20.11.2026)
+
+Tschechien läuft als 17. „Land“ durch dieselbe Mechanik: Grenze aus RÚIAN (ČÚZK, Ebene Stat) in
+`laender-grenzen.json` (`werkzeug/laender-grenzen-bauen.mjs` holt sie mit), `LAND_WMS.dop.cz` (Ortofoto,
+zeichnet in jedem Maßstab), `LAND_WMS.relief.cz` (Schummerung DMR 5G), Parzellen als vierte `ParzWms`
+(Katastrální mapa, Ebene `KN`, 1024er-Kacheln wegen des eingestempelten „© ČÚZK“). Alle Dienste mit CORS.
+- **Relief CZ als PNG mit Durchsicht:** als JPEG füllt der ImageServer außerhalb schwarz und übergeht
+  `BGCOLOR` — `dopUrl` nimmt ein `&FORMAT=` aus dem Dienst, `dopPixel`/`dopLandPixel` legen auf Weiß.
+- **Höhe am Punkt** (`hoeheMitLand`): in Tschechien (`inTschechien`, nach der Grenze — der grobe
+  Bayern-Rahmen reicht bis Cheb) per `identify` auf dem DMR 5G, angezeigt als „m Bpv · DMR 5G“, sonst
+  DGM1.
+- **Profil, Höhenfarben, PDF** (20.11.2026): Art `dgm1-cz` am Ende der Kette `dgm1 → dgm1-bw → dgm1-nw → dgm1-cz`
+  (`hoehen.js`). Der ImageServer gibt je Kilometer per `exportImage` ein GeoTIFF **schon in UTM 32** heraus
+  (Float32, LZW, 128er-Blöcke, Ecke auf dem km, 3,4 MB, ~1,8 s) — liest sich wie die BVV-Kacheln. `offen` = ohne
+  Worker, `nurGanz` = keine Teilabfrage (erzeugt, nicht abgelegt). Höhen **Bpv**: `hoehenSystem`/`gelaendeName`
+  benennen das in Leiste und PDF. DOM und LoD2 gibt es für Tschechien nicht.
+- Offen: Laserpunkte (DMR 5G/DMP 1G als LAZ in ZIP unter `openzu.cuzk.gov.cz/opendata/…/epsg-5514/`,
+  kein CORS, nur S-JTSK/Krovak), Festpunkte (KN-WMS hat Ebenen `bp…`).
+
 ## Abstecken, Parzellenfarbe, Regenradar (Oktober 2026)
 
 - **Abstecken** (`ab…` in `app.js`): Die Zeile oben zeigt beim Standort **kein** KML-Objekt
@@ -211,7 +230,11 @@ Messwerte stehen in der README, hier nur, was beim Weiterbauen nicht übersehen 
   Wer den Leser vereinfacht, prüft mindestens 636_5528 und 778_5292.
 - **Baden-Württemberg** (seit 13.10.2026): Art `dgm1-bw` springt über `HOEHEN_ARTEN.dgm1.weiter` ein,
   wo Bayern NaN liefert; Bayern hat Vorrang. Daten als ZIP des LGL über den Worker (`/bw/…`), App liest
-  Verzeichnis + einen Eintrag per Range und entpackt mit `DecompressionStream`. Wer neue Länder anhängt:
+  Verzeichnis + einen Eintrag per Range und entpackt mit `DecompressionStream`.
+  **NRW** (20.11.2026, `dgm1-nw`): GeoTIFF direkt von opengeodata.nrw.de (CORS *, Range geht, Aufbau wie BVV). Das
+  Jahr steht im Dateinamen → `dgm-nw-jahre.json` (ein Zeichen je km, `node werkzeug/dgm-nw-jahre-bauen.mjs`, neu bauen,
+  wenn NRW neu befliegt — eine falsche Adresse kommt als 404 ohne CORS, also als Netzfehler). Arten mit `adresse`
+  (async, null = keine Kachel) statt Worker-Pfad. Wer neue Länder anhängt:
   eigene Art mit `land`, Rahmen in `HOEHEN_RAHMEN`, Quellenvermerk in `PROF_QUELLEN` und `pdfFuss`.
   `hoehenProfil` liefert `quellen` (`['by']`, `['bw']` oder beide) — Leiste und PDF richten den Vermerk
   danach. Das LGL verlangt das Jahr des Datenbezugs in Klammern.

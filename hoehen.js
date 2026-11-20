@@ -57,7 +57,21 @@ const HOEHEN_ARTEN = {
     direkt: (e, n) => `${BVV_DOWNLOAD}/dgm/dgm1/${e}_${n}.tif` },
   dom20: { aufloesung: 0.2, pixel: 5000, ganz: false, land: 'by', weiter: 'dom1-bw',
     direkt: (e, n) => `${BVV_DOWNLOAD}/dom20/DOM/32${e}_${n}_20_DOM.tif` },
-  'dgm1-bw': { aufloesung: 1, pixel: 1000, ganz: true, land: 'bw', lgl: 'dgm1' },
+  'dgm1-bw': { aufloesung: 1, pixel: 1000, ganz: true, land: 'bw', lgl: 'dgm1', weiter: 'dgm1-nw' },
+  /* NRW (20.11.2026): DGM1 von Geobasis NRW, dl-de/zero-2-0, direkt von opengeodata.nrw.de
+   * (CORS *, Teilabfragen gehen) — 1000 × 1000 Float32, LZW, Streifen zu 2 Zeilen, Pixel als
+   * Fläche mit Ecke auf dem Kilometer, also wie die BVV. Das Jahr im Dateinamen steht in
+   * dgm-nw-jahre.json (nwJahr); offen: ohne Worker. */
+  'dgm1-nw': { aufloesung: 1, pixel: 1000, ganz: true, land: 'nw', offen: true, weiter: 'dgm1-cz',
+    adresse: async (e, n) => { const j = await nwJahr(e, n); return j ? `${NW_DOWNLOAD}/dgm1_32_${e}_${n}_1_nw_${j}.tif` : null; } },
+  /* Tschechien (20.11.2026): DMR 5G des ČÚZK, CC BY 4.0. Der ImageServer rechnet jeden
+   * Kilometer auf Wunsch in UTM 32 um und gibt ihn als GeoTIFF heraus (Float32, LZW,
+   * 128er-Blöcke, Ecke auf dem Kilometer, NoData −9999; gemessen 3,4 MB in 1,8 s, CORS
+   * für jede Herkunft). Höhen in Bpv, nicht NHN. Erzeugt, nicht abgelegt: Teilabfragen
+   * gehen nicht (nurGanz), die Datei liegt danach im Vorrat. */
+  'dgm1-cz': { aufloesung: 1, pixel: 1000, ganz: true, land: 'cz', offen: true, nurGanz: true,
+    adresse: async (e, n) => `${CZ_DMR5G}/exportImage?bbox=${e * 1000},${n * 1000},${e * 1000 + 1000},${n * 1000 + 1000}` +
+      '&bboxSR=25832&imageSR=25832&size=1000,1000&format=tiff&pixelType=F32&interpolation=RSP_BilinearInterpolation&noData=-9999&f=image' },
   'dom1-bw': { aufloesung: 1, pixel: 1000, ganz: true, land: 'bw', lgl: 'dom1' }
 };
 
@@ -80,6 +94,22 @@ const HOEHEN_ARTEN = {
  * Teilabfragen an: Erst das Verzeichnis am Dateiende (64 kB), dann nur die eine
  * Datei, die gebraucht wird. Entpackt wird im Browser (DecompressionStream). */
 const LGL_DOWNLOAD = 'https://opengeodata.lgl-bw.de/data';
+const NW_DOWNLOAD = 'https://www.opengeodata.nrw.de/produkte/geobasis/hm/dgm1_tiff/dgm1_tiff';
+const CZ_DMR5G = 'https://ags.cuzk.gov.cz/arcgis2/rest/services/dmr5g/ImageServer';
+
+/* Das Jahr im Dateinamen des DGM1 NRW, aus der Tabelle von werkzeug/dgm-nw-jahre-bauen.mjs
+ * (ein Zeichen je Kilometer). null, wo es keine Kachel gibt. Geladen beim ersten Bedarf. */
+let nwJahre = null;
+async function nwJahr(e, n) {
+  if (!nwJahre) {
+    nwJahre = fetch('dgm-nw-jahre.json').then(r => { if (!r.ok) throw new Error(`DGM NRW: HTTP ${r.status}`); return r.json(); });
+    nwJahre.catch(() => { nwJahre = null; });
+  }
+  const t = await nwJahre, x = e - t.e0, y = n - t.n0;
+  if (x < 0 || y < 0 || x >= t.breite || y >= t.hoehe) return null;
+  const c = t.zellen.charCodeAt(y * t.breite + x) - 49;
+  return c >= 0 ? t.jahre[c] : null;
+}
 const LGL_PRODUKTE = {
   dgm1: { ordner: 'dgm', datei: 'dgm1', endung: 'xyz' },
   dom1: { ordner: 'dom1', datei: 'dom1', endung: 'tif' },
@@ -323,8 +353,11 @@ let hoehenBloeckeByte = 0;
  * den Server der BVV. */
 const hoehenFehlen = new Set();
 
-function hoehenAdresse(art, e, n) {
-  return HOEHEN.direkt ? HOEHEN_ARTEN[art].direkt(e, n) : `${HOEHEN.proxy}/${art}/${e}_${n}.tif`;
+/** Adresse einer Kachel; null, wo es keine gibt (NRW kennt seine Kacheln aus der Tabelle). */
+async function hoehenAdresse(art, e, n) {
+  const def = HOEHEN_ARTEN[art];
+  if (def.adresse) return def.adresse(e, n);
+  return HOEHEN.direkt ? def.direkt(e, n) : `${HOEHEN.proxy}/${art}/${e}_${n}.tif`;
 }
 
 /** Liest die Antwort und zählt dabei mit — in Stücken, damit eine Anzeige
@@ -645,7 +678,7 @@ function hoehenKachel(art, e, n, teil = false) {
   const def = HOEHEN_ARTEN[art];
   const voll = `${art}/${e}_${n}`;
   // Aus einem gepackten Archiv geht kein Stück, nur die ganze Datei
-  if (def.lgl || (teil && hoehenKacheln.has(voll))) teil = false;
+  if (def.lgl || def.nurGanz || (teil && hoehenKacheln.has(voll))) teil = false;
   const schluessel = teil ? `${art}-teil/${e}_${n}` : voll;
   if (hoehenFehlen.has(voll)) return Promise.resolve(null);
   const bekannt = hoehenKacheln.get(schluessel);
@@ -672,15 +705,16 @@ function hoehenKachel(art, e, n, teil = false) {
       lies = async (von, laenge) => imVorrat.subarray(von, Math.min(von + laenge, imVorrat.byteLength));
     } else if (def.ganz && !teil) {
       // DOM1 aus BW: das GeoTIFF aus dem Archiv, sonst die Datei der BVV
-      const geholt = def.lgl ? await lglDatei(def.lgl, e, n) : await hoehenHolen(hoehenAdresse(art, e, n));
+      const adresse = def.lgl ? null : await hoehenAdresse(art, e, n);
+      const geholt = def.lgl ? await lglDatei(def.lgl, e, n) : adresse && await hoehenHolen(adresse);
       if (!geholt) { hoehenFehlen.add(voll); return null; }   // keine Kachel: außerhalb des Landes
       const datei = def.lgl ? geholt.daten : geholt;
       if (def.lgl) stand = geholt.stand;
       vorratSchreiben(voll, datei, stand);   // im Hintergrund
       lies = async (von, laenge) => datei.subarray(von, Math.min(von + laenge, datei.byteLength));
     } else {
-      const url = hoehenAdresse(art, e, n);
-      anfang = await hoehenHolen(url, 0, 16384);
+      const url = await hoehenAdresse(art, e, n);
+      anfang = url && await hoehenHolen(url, 0, 16384);
       if (!anfang) { hoehenFehlen.add(voll); return null; }
       lies = async (von, laenge) => {
         const b = await hoehenHolen(url, von, laenge);
@@ -927,7 +961,9 @@ async function hoehenWerteArt(art, ost, nord, verfahren, teil, staende = null) {
  * Klar außerhalb beider Länder wird gar nicht erst gefragt. */
 const HOEHEN_RAHMEN = {
   by: { s: 47.26, n: 50.57, w: 8.97, o: 13.84 },
-  bw: { s: 47.52, n: 49.80, w: 7.50, o: 10.50 }
+  bw: { s: 47.52, n: 49.80, w: 7.50, o: 10.50 },
+  nw: { s: 50.32, n: 52.54, w: 5.86, o: 9.47 },
+  cz: { s: 48.55, n: 51.06, w: 12.09, o: 18.86 }
 };
 
 function inLandRahmen(land, lat, lon) {

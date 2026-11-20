@@ -18,7 +18,11 @@
  * je Ring als eine flache Zahlenreihe in Zehntausendstel Grad (rund 10 m): der
  * erste Punkt ganz (lat, lon), jeder weitere als Abstand zum vorigen. Das
  * drückt die Datei von 487 auf 198 kB (gepackt 77 kB); app.js packt sie aus
- * (laenderGrenzenHolen). */
+ * (laenderGrenzenHolen).
+ *
+ * Seit 20.11.2026 dazu Tschechien als Land `cz`: die Staatsgrenze aus RÚIAN
+ * (ČÚZK, Ebene Stat des Prohlížecí služba, CC BY 4.0), genauso vereinfacht. Sie
+ * passt nicht punktgenau zur VG250 — der Saum in dopKachel deckt das ab. */
 
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
@@ -27,12 +31,14 @@ const require = createRequire(import.meta.url);
 const H = require('../hoehen.js');
 const QUELLE = 'https://sgx.geodatenzentrum.de/wfs_vg250?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0' +
   '&TYPENAMES=vg250:vg250_lan&OUTPUTFORMAT=application/json&SRSNAME=EPSG:4326';
+const QUELLE_CZ = 'https://ags.cuzk.gov.cz/arcgis/rest/services/RUIAN/Prohlizeci_sluzba_nad_daty_RUIAN/MapServer/19/query' +
+  '?where=1%3D1&outFields=kod&outSR=4326&f=geojson';
 const TOLERANZ = 100;  // m; mit 50 waren es 774 kB statt 487 (vor dem Packen)
 const MIN_FLAECHE = 20000;   // m²; kleinere Inseln und Splitter fallen weg
 
 // Regionalschlüssel des Landes → Kürzel wie in LAND_WMS (app.js)
 const KUERZEL = { '01': 'sh', '02': 'hh', '03': 'ni', '04': 'hb', '05': 'nw', '06': 'he', '07': 'rp', '08': 'bw',
-  '09': 'by', '10': 'sl', '11': 'be', '12': 'bb', '13': 'mv', '14': 'sn', '15': 'st', '16': 'th' };
+  '09': 'by', '10': 'sl', '11': 'be', '12': 'bb', '13': 'mv', '14': 'sn', '15': 'st', '16': 'th', cz: 'cz' };
 
 function dp(punkte, tol) {
   if (punkte.length < 3) return punkte;
@@ -62,9 +68,15 @@ function flaeche(utm) {
   return Math.abs(a / 2);
 }
 
-const r = await fetch(QUELLE);
-if (!r.ok) throw new Error(`HTTP ${r.status}`);
-const fc = await r.json();
+async function holen(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status} bei ${url}`);
+  return r.json();
+}
+const fc = await holen(QUELLE);
+const fcCz = await holen(QUELLE_CZ);
+if (fcCz.features.length !== 1) throw new Error(`RÚIAN: ${fcCz.features.length} Staaten statt 1`);
+fc.features.push({ properties: { gf: 4, sn_l: 'cz' }, geometry: fcCz.features[0].geometry });
 
 const laender = {};
 let vorher = 0, nachher = 0;
@@ -89,7 +101,7 @@ for (const f of fc.features) {
 const fehlt = Object.values(KUERZEL).filter(k => !laender[k]);
 if (fehlt.length) throw new Error(`Ohne Grenze: ${fehlt.join(', ')}`);
 
-const aus = { quelle: 'GeoBasis-DE / BKG, VG250 (WFS), dl-de/by-2-0',
+const aus = { quelle: 'GeoBasis-DE / BKG, VG250 (WFS), dl-de/by-2-0; cz: ČÚZK, RÚIAN, CC BY 4.0',
   stand: new Date().toISOString().slice(0, 10), toleranz_m: TOLERANZ, einheit: 1e-4, laender };
 const ziel = new URL('../laender-grenzen.json', import.meta.url);
 fs.writeFileSync(ziel, JSON.stringify(aus));
