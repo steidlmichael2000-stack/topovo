@@ -2597,14 +2597,66 @@ const GlGrund = L.Layer.extend({
   }
 });
 
+/* ---- Ausschnitt und Menü merken (20.11.2026) ----
+ * Wer zu Windy, Google Maps oder einer anderen App wechselt, kam oft in eine neu
+ * geladene Seite zurück (Android und iOS werfen Seiten im Hintergrund weg, die
+ * Android-App baut den WebView nach Speichermangel neu) — und sah wieder ganz
+ * Deutschland. Der Ausschnitt bleibt deshalb immer gemerkt; das offene Menü samt
+ * Abschnitt nur, wenn man innerhalb von SICHT_ZURUECK_MS zurückkommt — beim
+ * normalen Start bleibt das Menü zu. Gespeichert beim Verschieben und beim
+ * Verlassen der Seite (visibilitychange, pagehide). */
+const SICHT_KEY = 'topovo.sicht';
+const SICHT_ZURUECK_MS = 30 * 60000;
+let sichtUhr = 0;
+
+function sichtLesen() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SICHT_KEY) || 'null');
+    if (s && Number.isFinite(s.lat) && Number.isFinite(s.lon) && Number.isFinite(s.z)) return s;
+  } catch { /* privates Fenster oder kaputter Eintrag: dann Deutschland */ }
+  return null;
+}
+
+function sichtMerken() {
+  if (!map) return;
+  clearTimeout(sichtUhr);
+  const c = map.getCenter(), sh = $('#sheet');
+  const offen = sh && !sh.hidden;
+  const sec = offen ? (sh.dataset.nur || (document.querySelector('#sheet details[data-sec][open]') || {}).dataset?.sec || '') : '';
+  try {
+    localStorage.setItem(SICHT_KEY, JSON.stringify({
+      lat: +c.lat.toFixed(6), lon: +c.lng.toFixed(6), z: map.getZoom(),
+      b: typeof map.getBearing === 'function' ? Math.round(map.getBearing() * 10) / 10 : 0,
+      t: Date.now(), menue: !!offen, sec, zu: document.body.classList.contains('leiste-zu')
+    }));
+  } catch { /* ohne Speicher eben nicht */ }
+}
+
+/** Menü und Abschnitt wie beim Verlassen, wenn man gleich wiederkommt. */
+function sichtMenueWieder() {
+  const s = sichtLesen();
+  if (!s || !s.menue || Date.now() - s.t > SICHT_ZURUECK_MS) return;
+  if (SEITENLEISTE.matches && s.sec) schieneWaehlen(s.sec);
+  else {
+    openSheet();
+    const d = s.sec && document.querySelector(`#sheet details[data-sec="${CSS.escape(s.sec)}"]`);
+    if (d) d.open = true;
+  }
+  if (s.zu) leisteZu(true);
+}
+
 function initMap() {
   drehSchwelleEinbauen();
+  const sicht = sichtLesen();
   map = L.map('map', {
     zoomControl: false, attributionControl: true, tap: true,
     // Drehung über leaflet-rotate; eigener Nordknopf statt des mitgelieferten
     rotate: true, rotateControl: false, touchRotate: true,
-    bearing: 0
-  }).setView([51.1, 10.3], 6);
+    bearing: sicht && Number.isFinite(sicht.b) ? sicht.b : 0
+  }).setView(sicht ? [sicht.lat, sicht.lon] : [51.1, 10.3], sicht ? sicht.z : 6);
+  map.on('moveend', () => { clearTimeout(sichtUhr); sichtUhr = setTimeout(sichtMerken, 600); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) sichtMerken(); });
+  window.addEventListener('pagehide', sichtMerken);
 
   /* Eigene Ebene nur für Punktsymbole und Namen, und die hängt unter
    * norotatePane — dort, wo Leaflet selbst seine Marker führt. Eine Pane direkt
@@ -2731,7 +2783,7 @@ function initMap() {
   $('#quellenMass').appendChild(massstab.getContainer());
   quellenEinrichten();
 
-  overlayLayers = { orm: ormLayer, parz: parzLayer, ifg: ifgAuflageAnlegen(), fp: fpAuflageAnlegen() };
+  overlayLayers = { orm: ormLayer, parz: parzLayer, ifg: ifgAuflageAnlegen(), fp: fpAuflageAnlegen(), cam: camAuflageAnlegen() };
   for (const k of Object.keys(overlayLayers)) auflageSetzen(k);
   auflageSetzen('radar');
   setBase(prefs.base || 'osm', true);     // setzt auch Straßen und Ortsnamen (grundAnwenden)
@@ -3953,7 +4005,7 @@ function hoehenSkalaZeigen() {
  * nicht gezeichnet, und beim Wechsel erscheinen sie. */
 const NUR_UEBER_BILD = new Set(['str', 'ort', 'gipfel']);
 let fpBayernGesagt = false;     // Hinweis „in Bayern nur HFP und TP“ einmal je Sitzung
-const AUFLAGEN = ['orm', 'parz', 'ifg', 'fp', 'str', 'ort', 'gipfel', 'radar'];
+const AUFLAGEN = ['orm', 'parz', 'ifg', 'fp', 'str', 'ort', 'gipfel', 'radar', 'cam'];
 
 /** Ist die Auflage gewählt? Der Bahn-Layer ist von Haus aus an, die übrigen aus. */
 function auflageGewaehlt(kennung) {
@@ -3980,6 +4032,9 @@ function toggleOverlay(kennung) {
     const c = map.getCenter();
     if (ausserhalbBayerns() && !inLandRahmen('bw', c.lat, c.lng) && !inCzRahmen(c.lat, c.lng)) toast('Flurstücke gibt es für Bayern, Baden-Württemberg und Tschechien.');
     else if (map.getZoom() < 17) toast('Parzellen zeichnet der Dienst erst ab Zoomstufe 17 (1:5000).');
+  }
+  if (an && kennung === 'cam' && map.getZoom() < CAM_AB) {
+    toast(`Webcams erscheinen ab Zoomstufe ${CAM_AB} — näher heranzoomen.`);
   }
   if (an && kennung === 'ifg' && map.getZoom() < IFG_AB) {
     toast(`Das DB-Netz erscheint ab Zoomstufe ${IFG_AB} — näher heranzoomen.`);
@@ -6249,7 +6304,7 @@ function kmlEbene(akte) {
       const wo = o.art === 'p' ? o.koord : [ev.latlng.lat, ev.latlng.lng];
       const blase = L.popup({
         className: 'kml-pop', maxWidth: 300,
-        autoPanPaddingTopLeft: L.point(14, 86), autoPanPaddingBottomRight: L.point(14, 24)
+        autoPanPaddingTopLeft: L.point(14 + seitenBreite(), 86), autoPanPaddingBottomRight: L.point(14, 24)
       }).setLatLng(wo).setContent(html).openOn(map);
 
       const el = blase.getElement();
@@ -7310,7 +7365,7 @@ function fpTipp(ev, pt) {
   zeilen.push(routeKnopf(pt.lat, pt.lon, 'Festpunkt'));
   const blase = L.popup({
     className: 'kml-pop', maxWidth: 300,
-    autoPanPaddingTopLeft: L.point(14, 86), autoPanPaddingBottomRight: L.point(14, 24)
+    autoPanPaddingTopLeft: L.point(14 + seitenBreite(), 86), autoPanPaddingBottomRight: L.point(14, 24)
   }).setLatLng([pt.lat, pt.lon]).setContent(zeilen.join('')).openOn(map);
   const knopf = blase.getElement() && blase.getElement().querySelector('[data-fpkm]');
   if (knopf) knopf.addEventListener('click', () => {
@@ -7486,7 +7541,7 @@ function merkPunkt(lat, lon) {
 
   const blase = L.popup({
     className: 'kml-pop', maxWidth: 300,
-    autoPanPaddingTopLeft: L.point(14, 86), autoPanPaddingBottomRight: L.point(14, 24)
+    autoPanPaddingTopLeft: L.point(14 + seitenBreite(), 86), autoPanPaddingBottomRight: L.point(14, 24)
   }).setLatLng(wo).setContent(
     `<b>Gesetzter Punkt</b>` +
     // UTM statt Grad: so, wie es Tachymeter und Koordinatenlisten führen (wie bei den Festpunkten)
@@ -10223,6 +10278,8 @@ function profGebKnopf() {
    * 2 km × 2 km, BW 2–5,4 MB je Kilometer. Nur die Länder, in denen das Gelände
    * liegt — der Rahmen um Bayern reicht weit nach Württemberg hinein. */
   const l = profLaender(), kacheln = gebKachelnFuer(profLinie()).filter(([, , land]) => l[land]);
+  // Ohne LoD2 im Profil (NRW, Tschechien) kein Knopf, der nur „keine Gebäude“ melden könnte
+  if (!kacheln.length && !profGebAn) return '';
   const nBy = kacheln.filter(k => k[2] === 'by').length, nBw = kacheln.length - nBy;
   const mb = Math.max(1, Math.round(nBy + nBw * PROF_LOD2_BW_MB));
   const art = [nBy && `${nBy} Kachel${nBy > 1 ? 'n' : ''} zu 2 km in Bayern, gepackt meist unter 1 MB`,
@@ -10283,6 +10340,8 @@ function profDomKnopf() {
   /* „+0,8 MB": dazuladen, und was es kostet — kurz, damit die Legende einzeilig
    * bleibt. Bayern in Blöcken des DOM20, BW je berührtem Kilometer DOM1 */
   const l = profLaender(), linie = profLinie();
+  // Ein DOM gibt es nur in Bayern und BW — in NRW und Tschechien kein Knopf
+  if (!l.by && !l.bw && !profDomAn) return '';
   const byte = (l.by ? profZellen(linie, 51.2) * PROF_DOM_BLOCK_KB * 1024 : 0) +
     (l.bw ? profZellen(linie, 1000) * PROF_DOM1_MB * 2 ** 20 : 0);
   const mb = profMB(byte), quelle = l.by && l.bw ? 'DOM20 und DOM1' : l.bw ? 'DOM1' : 'DOM20';
@@ -10357,7 +10416,7 @@ function profLeiste() {
     teile.push('<div class="prof-bild" id="profBild"></div>',
       '<div class="prof-regler">' +
       // Ohne Namen davor: Die beiden Knöpfe sagen selbst, was sie sind, und brauchen die Breite
-      `<span class="prof-ebenen">${profGebKnopf()}${profDomKnopf()}</span>` +
+      (ebenen => ebenen ? `<span class="prof-ebenen">${ebenen}</span>` : '')(profGebKnopf() + profDomKnopf()) +
       (g ? gpWeiteRegler() : '') +
       '<label class="prof-rname" for="profUeber">Überhöht</label>' +
       '<span class="prof-weite"><span class="prof-striche" id="profUeberStriche" aria-hidden="true"></span>' +
@@ -15322,6 +15381,7 @@ async function wetterHolen() {
   const standort = ortAn() && !!ortLetzt;
   const lat = standort ? ortLetzt.lat : map.getCenter().lat, lon = standort ? ortLetzt.lon : map.getCenter().lng;
   ort.textContent = 'wird geholt …';
+  webcamsHolen(lat, lon);   // nebenher, dieselbe Stelle
   try {
     let hoehe = NaN;
     try { hoehe = (await hoeheHolen(lat, lon)).h; } catch { /* ohne DGM nimmt der Dienst seine eigene Höhe */ }
@@ -15349,6 +15409,179 @@ async function wetterHolen() {
     ort.textContent = navigator.onLine === false ? 'Ohne Netz gibt es keine Wetterwerte.' : `Nicht erreichbar (${err.message}).`;
   }
   wetterLaeuft = false;
+}
+
+/* ============================ Webcams ============================
+ *
+ * Kameras von Windy.com um dieselbe Stelle wie das Wetter, über den eigenen Worker
+ * (HOEHEN.proxy + /webcams): Der API-Schlüssel liegt dort als Geheimnis, Windy
+ * verbietet, ihn zu veröffentlichen. Was Windy verlangt (Bedingungen, 20.11.2026):
+ * jedes Bild verlinkt zu Windy, darunter „Webcams provided by windy.com — add a
+ * webcam“, Bilder nie größer als geliefert, nichts weitergeben. Die Bildadressen
+ * laufen im kostenlosen Zugang nach 10–15 Minuten ab — deshalb bei jedem Aufklappen
+ * nach mehr als 5 Minuten neu fragen und nichts ablegen. */
+const WEBCAM_KM = 25;
+const WEBCAM_ANZAHL = 12;
+let webcamsLaeuft = false;
+
+/** Die Liste aus der Antwort von Windy (API v3), vorsichtig gelesen; die nächsten zuerst. */
+function webcamsLesen(j, lat, lon, anzahl = WEBCAM_ANZAHL) {
+  const liste = (j && (j.webcams || (j.result && j.result.webcams))) || [];
+  return liste.map(w => {
+    const ort = w.location || {}, bild = (w.images && w.images.current) || {};
+    const wlat = Number(ort.latitude), wlon = Number(ort.longitude);
+    const km = Number.isFinite(wlat) && Number.isFinite(wlon) ? ellipsoidAbstand([lat, lon], [wlat, wlon]) / 1000 : NaN;
+    const stand = Date.parse(w.lastUpdatedOn || '') || (Number(w.lastUpdatedOn) > 1e9 ? Number(w.lastUpdatedOn) * (w.lastUpdatedOn > 1e12 ? 1 : 1000) : NaN);
+    return { id: w.webcamId || w.id, titel: w.title || (ort.city || 'Webcam'), stadt: ort.city || '',
+      lat: wlat, lon: wlon, geholt: Date.now(), spieler: (w.player && w.player.day) || '',
+      bild: bild.preview || bild.thumbnail || '', km, stand, aktiv: !w.status || w.status === 'active',
+      link: (w.urls && w.urls.detail) || (w.webcamId ? `https://www.windy.com/webcams/${w.webcamId}` : 'https://www.windy.com/webcams') };
+  }).filter(c => c.bild && c.aktiv).sort((a, b) => (a.km || 0) - (b.km || 0)).slice(0, anzahl);
+}
+
+/** Webcams um eine Stelle über den Worker; wirft bei Netz- oder Dienstfehlern. */
+async function webcamsAbfragen(lat, lon, km, anzahl) {
+  const r = await fetch(`${HOEHEN.proxy}/webcams?lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}&km=${km}`,
+    { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return webcamsLesen(await r.json(), lat, lon, anzahl);
+}
+
+/* Der Player von Windy zeigt die Kamera samt Zeitraffer des Tages. urls.detail führte nur
+ * auf die Wetterkarte von Windy (20.11.2026 so beim Nutzer) — deshalb eingebettet. Ohne
+ * Player-Adresse bleibt der Link zu Windy. */
+function camSpielerAuf(c) {
+  if (!c.spieler) { window.open(c.link, '_blank', 'noopener'); return; }
+  $('#camSpielerTitel').textContent = c.titel;
+  $('#camSpielerAlter').textContent = webcamAlter(c.stand) ? `Bild ${webcamAlter(c.stand)}` : '';
+  $('#camSpielerFrame').src = c.spieler;
+  $('#camSpieler').hidden = false;
+  $('#camSpielerZu').focus();
+}
+
+function camSpielerZu() {
+  const f = $('#camSpielerFrame');
+  if (!f || $('#camSpieler').hidden) return;
+  $('#camSpieler').hidden = true;
+  f.src = 'about:blank';          // Video anhalten, nichts lädt im Hintergrund weiter
+}
+
+function webcamAlter(ms) {
+  if (!Number.isFinite(ms)) return '';
+  const min = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (min < 60) return `vor ${min} min`;
+  if (min < 48 * 60) return `vor ${Math.round(min / 60)} h`;
+  return `vor ${Math.round(min / 1440)} Tagen`;
+}
+
+async function webcamsHolen(lat, lon) {
+  const box = $('#webcams'), quelle = $('#webcamQuelle');
+  if (!box || webcamsLaeuft) return;
+  webcamsLaeuft = true;
+  const hinweis = text => { box.innerHTML = `<p class="cams-hinweis">${esc(text)}</p>`; };
+  if (!box.querySelector('.cam')) hinweis('wird geholt …');
+  try {
+    const cams = await webcamsAbfragen(lat, lon, WEBCAM_KM);
+    if (!cams.length) { hinweis(`Keine Webcam im Umkreis von ${WEBCAM_KM} km.`); quelle.hidden = true; return; }
+    box.innerHTML = cams.map(c => {
+      const weg = !Number.isFinite(c.km) ? '' : c.km < 1 ? `${Math.round(c.km * 10) * 100} m`
+        : `${c.km.toLocaleString('de-DE', { maximumFractionDigits: c.km < 10 ? 1 : 0 })} km`;
+      const unten = [weg,
+        webcamAlter(c.stand)].filter(Boolean).join(' · ');
+      return `<a class="cam" href="${esc(c.spieler || c.link)}" target="_blank" rel="noopener" title="${esc(c.titel)} — Zeitraffer ansehen">` +
+        `<img src="${esc(c.bild)}" alt="${esc(c.titel)}" loading="lazy" decoding="async" referrerpolicy="no-referrer">` +
+        `<span class="cam-text"><b>${esc(c.titel)}</b><small>${esc(unten)}</small></span></a>`;
+    }).join('');
+    box.querySelectorAll('.cam').forEach((a, i) => a.addEventListener('click', ev => {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return;     // neuer Tab wie gewohnt
+      ev.preventDefault();
+      camSpielerAuf(cams[i]);
+    }));
+    box.scrollLeft = 0;
+    quelle.hidden = false;
+  } catch (err) {
+    hinweis(navigator.onLine === false ? 'Ohne Netz gibt es keine Webcams.' : 'Webcams gerade nicht erreichbar.');
+    quelle.hidden = true;
+  } finally {
+    webcamsLaeuft = false;
+  }
+}
+
+/* ---- Webcams als Kartenauflage (`cam`) ----
+ * Ab Zoomstufe CAM_AB fragt jede Ansicht den Worker um ihre Mitte, Umkreis die halbe
+ * Diagonale (höchstens 50 km, mehr lässt der Worker nicht zu; Windy gibt je Abfrage
+ * die 30 nächsten). Was schon da ist, bleibt stehen — beim Verschieben kommen
+ * weitere dazu. Eine Ansicht, die eine frühere Abfrage der letzten Minuten schon
+ * abdeckt, fragt nicht neu. Ein Tipp aufs Symbol öffnet die Sprechblase mit dem Bild;
+ * ist die Abfrage älter als CAM_FRISCH_MS, holt sie die Bildadresse vorher neu (die
+ * Zeichen darin laufen nach 10–15 min ab). */
+const CAM_AB = 9;
+const CAM_FRISCH_MS = 8 * 60000;
+const CAM_QUELLE = 'Webcams provided by <a href="https://www.windy.com/" target="_blank" rel="noopener">windy.com</a> — ' +
+  '<a href="https://www.windy.com/webcams/add" target="_blank" rel="noopener">add a webcam</a>';
+const camMarken = new Map();     // id → { marke, cam }
+let camAbfragen = [];            // { lat, lon, km, t }
+let camGruppe = null;
+
+function camAuflageAnlegen() {
+  camGruppe = L.layerGroup([], { attribution: CAM_QUELLE });
+  camGruppe.on('add', () => { map.on('moveend', camNachladen); camNachladen(); });
+  camGruppe.on('remove', () => map.off('moveend', camNachladen));
+  return camGruppe;
+}
+
+async function camNachladen() {
+  if (!camGruppe || !map.hasLayer(camGruppe) || map.getZoom() < CAM_AB) return;
+  const c = map.getCenter(), b = map.getBounds();
+  const halb = ellipsoidAbstand([b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]) / 2000;
+  const km = Math.min(50, Math.max(2, Math.ceil(halb)));
+  const jetzt = Date.now();
+  camAbfragen = camAbfragen.filter(q => jetzt - q.t < CAM_FRISCH_MS);
+  if (camAbfragen.some(q => ellipsoidAbstand([c.lat, c.lng], [q.lat, q.lon]) / 1000 + halb <= q.km)) return;
+  const abfrage = { lat: c.lat, lon: c.lng, km, t: jetzt };
+  camAbfragen.push(abfrage);
+  let cams;
+  try { cams = await webcamsAbfragen(c.lat, c.lng, km, 50); }
+  catch { camAbfragen = camAbfragen.filter(q => q !== abfrage); return; }
+  if (!map.hasLayer(camGruppe)) return;
+  for (const cam of cams) {
+    if (!Number.isFinite(cam.lat) || !Number.isFinite(cam.lon)) continue;
+    const da = camMarken.get(cam.id);
+    if (da) { da.cam = cam; continue; }       // frische Bildadresse
+    const marke = L.marker([cam.lat, cam.lon], {
+      icon: L.divIcon({ className: 'cam-marke', html: '<i data-ik="kamera"></i>', iconSize: [26, 26] }),
+      title: cam.titel, keyboard: true
+    });
+    const eintrag = { marke, cam };
+    marke.on('click', () => camBlase(eintrag));
+    camMarken.set(cam.id, eintrag);
+    camGruppe.addLayer(marke);
+  }
+}
+
+async function camBlase(eintrag) {
+  let c = eintrag.cam;
+  if (Date.now() - c.geholt > CAM_FRISCH_MS) {
+    try {
+      const neu = (await webcamsAbfragen(c.lat, c.lon, 1, 50)).find(x => x.id === c.id);
+      if (neu) c = eintrag.cam = neu;
+    } catch { /* dann mit der alten Adresse — im schlimmsten Fall fehlt das Bild */ }
+  }
+  const alter = webcamAlter(c.stand);
+  const inhalt = `<b>${esc(c.titel)}</b>` +
+    `<a class="cam-pop-bild" data-spieler href="${esc(c.spieler || c.link)}" target="_blank" rel="noopener" title="Zeitraffer ansehen">` +
+    `<img src="${esc(c.bild)}" alt="${esc(c.titel)}" referrerpolicy="no-referrer"></a>` +
+    `<span>${alter ? `Bild ${esc(alter)} · ` : ''}<a data-spieler href="${esc(c.spieler || c.link)}" target="_blank" rel="noopener">Zeitraffer ansehen</a></span>` +
+    `<small>${CAM_QUELLE}</small>`;
+  const blase = L.popup({ className: 'kml-pop', maxWidth: 280,
+    autoPanPaddingTopLeft: L.point(14 + seitenBreite(), 86), autoPanPaddingBottomRight: L.point(14, 24) })
+    .setLatLng([c.lat, c.lon]).setContent(inhalt).openOn(map);
+  const el = blase.getElement();
+  if (el) el.querySelectorAll('[data-spieler]').forEach(a => a.addEventListener('click', ev => {
+    if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+    ev.preventDefault();
+    camSpielerAuf(c);
+  }));
 }
 
 function bind() {
@@ -15477,6 +15710,7 @@ function bind() {
   on('#ortBtn', 'click', () => toggleOverlay('ort'));
   on('#gipfelBtn', 'click', () => toggleOverlay('gipfel'));
   on('#radarBtn', 'click', () => toggleOverlay('radar'));
+  on('#camBtn', 'click', () => toggleOverlay('cam'));
   radarBinden();
   document.querySelectorAll('[data-theme]').forEach(b => b.addEventListener('click', () => {
     prefs.theme = b.dataset.theme;
@@ -15654,8 +15888,12 @@ function bind() {
   });
 
   document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && !$('#camSpieler').hidden) { camSpielerZu(); return; }
     if (ev.key === 'Escape') { closeSheet(); closeSuggest(); }
   });
+  on('#camSpielerZu', 'click', camSpielerZu);
+  // Tipp neben den Kasten schließt wie das ×
+  on('#camSpieler', 'click', ev => { if (ev.target === ev.currentTarget) camSpielerZu(); });
 
   bindSheetSections();
   window.addEventListener('resize', updateBH);
@@ -15681,6 +15919,7 @@ function boot() {
    * stand hier die zuletzt gesuchte Strecke — das las sich wie eine Eingabe, die
    * man erst löschen muss. Der Verlauf liegt weiter unter der Zeile. */
   if (readHash()) search();
+  else sichtMenueWieder();
   felderAufQ();
   suchBeispieleStarten();
 

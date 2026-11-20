@@ -155,8 +155,36 @@ zeichnet in jedem Maßstab), `LAND_WMS.relief.cz` (Schummerung DMR 5G), Parzelle
   (Float32, LZW, 128er-Blöcke, Ecke auf dem km, 3,4 MB, ~1,8 s) — liest sich wie die BVV-Kacheln. `offen` = ohne
   Worker, `nurGanz` = keine Teilabfrage (erzeugt, nicht abgelegt). Höhen **Bpv**: `hoehenSystem`/`gelaendeName`
   benennen das in Leiste und PDF. DOM und LoD2 gibt es für Tschechien nicht.
+- Profil ohne Gebäude/Oberfläche-Knöpfe, wo es kein LoD2 bzw. DOM gibt (NRW, Tschechien; `profGebKnopf`/`profDomKnopf`).
 - Offen: Laserpunkte (DMR 5G/DMP 1G als LAZ in ZIP unter `openzu.cuzk.gov.cz/opendata/…/epsg-5514/`,
   kein CORS, nur S-JTSK/Krovak), Festpunkte (KN-WMS hat Ebenen `bp…`).
+
+## Webcams im Wetterbereich (`webcams…`, 20.11.2026)
+
+Kameras von Windy.com (API v3, kostenloser Zugang) unter den Wetterwerten, geholt mit `wetterHolen` an derselben
+Stelle, über den Worker: `GET /webcams?lat&lon&km` in `werkzeug/proxy/worker.js`, Schlüssel als **Secret
+`WINDY_KEY`** am Worker — nie in die App (Windy verbietet das Veröffentlichen). Der Worker rundet auf 2 Stellen
+und lässt Cloudflare 5 min zwischenspeichern; die Antwort geht unverändert durch, gelesen wird sie vorsichtig in
+`webcamsLesen` (Form hier ändern, nicht im Worker — der muss sonst neu ins Dashboard).
+Pflichten aus Windys Bedingungen: jedes Bild verlinkt zur Kamera bei Windy, darunter „Webcams provided by
+windy.com — add a webcam“, Bilder nie größer als geliefert (Vorschau 400 × 224, gezeigt 176 × 99), nichts
+weitergeben oder ablegen (der Service Worker lässt Windy durch), Bildadressen laufen nach 10–15 min ab. Die
+Bezahlstufe (9.990 €/Jahr) kommt nicht in Frage.
+**Als Kartenauflage** `cam` (Knopf `#camBtn` neben Regenradar, in `AUFLAGEN`): ab Zoomstufe `CAM_AB` (9) fragt
+`camNachladen` bei `moveend` um die Kartenmitte (Umkreis halbe Diagonale, höchstens 50 km; Windy gibt je Abfrage die
+30 nächsten), Symbole bleiben stehen und sammeln sich beim Verschieben; abgedeckte Ansichten fragen nicht neu.
+`camBlase` holt die Bildadresse neu, wenn die Abfrage älter als `CAM_FRISCH_MS` ist. Windy-Vermerk als Attribution
+der Gruppe. Sprechblasen halten seit 20.11.2026 links `seitenBreite()` frei (vorher öffneten sie am Desktop unter der Leiste).
+**Player in der App** (`camSpielerAuf`, `#camSpieler`): Tipp auf Bild oder „Zeitraffer ansehen“ bettet `player.day`
+von webcams.windy.com ein (CSP `frame-src https://webcams.windy.com`). `urls.detail` führte nur auf Windys Wetterkarte.
+In der Android-App ungetestet, ob der WebView das iframe nicht über `shouldOverrideUrlLoading` nach außen schickt.
+
+## Ausschnitt und Menü merken (`sicht…`, 20.11.2026)
+
+Nach dem Wechsel zu einer anderen App kam man oft in eine neu geladene Seite zurück (ganz Deutschland). Jetzt:
+Ausschnitt samt Drehung immer in `localStorage` (`topovo.sicht`, bei `moveend`, `visibilitychange`, `pagehide`);
+offenes Menü und Abschnitt nur bei Rückkehr innerhalb `SICHT_ZURUECK_MS` (30 min, `sichtMenueWieder`) — sonst
+startet das Menü wie bisher zu. Mit einem Link (`#r=…`) gewinnt die Suche.
 
 ## Abstecken, Parzellenfarbe, Regenradar (Oktober 2026)
 

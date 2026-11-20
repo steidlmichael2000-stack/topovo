@@ -34,6 +34,17 @@
  * Seit November 2026 auch die Laserpunkte der BVV (LAZ, 1 × 1 km, CC BY 4.0,
  * 58 MB bis 1 GB je Kachel) für die 3D-Ansicht. Ebenfalls ohne CORS.
  *
+ * Seit 20.11.2026 auch Webcams von Windy für den Wetterbereich der App:
+ *
+ *   GET /webcams?lat=49.89&lon=10.89&km=25  →  api.windy.com/webcams/api/v3/webcams?nearby=…
+ *
+ * Der API-Schlüssel liegt als geheime Variable WINDY_KEY am Worker (Dashboard →
+ * Settings → Variables and Secrets → Add → Type „Secret“), nie in der App — Windy
+ * verbietet, ihn zu veröffentlichen. Weitergereicht werden nur Breite, Länge und
+ * Umkreis, auf zwei Stellen gerundet (rund 1 km), damit Cloudflare Abfragen aus
+ * derselben Gegend fünf Minuten lang aus dem Zwischenspeicher bedient. Länger
+ * nicht: Die Bildadressen tragen ein Zeichen, das nach 10–15 Minuten abläuft.
+ *
  * Einrichten über das Dashboard: Worker öffnen → „Edit code" → diese Datei
  * hineinkopieren → „Deploy". Die Adresse (…workers.dev) gehört danach in
  * HOEHEN.proxy in hoehen.js. Kostenloser Plan: 100.000 Abfragen am Tag,
@@ -86,6 +97,27 @@ function zuViel(gruppe, ip, jetzt) {
   z.n++;
   return z.n > g.anzahl ? Math.ceil((z.bis - jetzt) / 1000) : 0;
 }
+const WINDY = 'https://api.windy.com/webcams/api/v3/webcams';
+const WEBCAM_KM_MAX = 50;
+
+/** Webcams um einen Punkt, als JSON von Windy unverändert durchgereicht. */
+async function webcams(url, env, cors) {
+  const json = (status, text) => new Response(text, { status, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8' } });
+  if (!env || !env.WINDY_KEY) return json(503, '{"fehler":"WINDY_KEY fehlt am Worker"}');
+  const lat = Number(url.searchParams.get('lat')), lon = Number(url.searchParams.get('lon'));
+  const km = Math.round(Number(url.searchParams.get('km') || 25));
+  if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) || !(km >= 1 && km <= WEBCAM_KM_MAX)) {
+    return json(400, '{"fehler":"lat, lon oder km ungültig"}');
+  }
+  const ziel = `${WINDY}?nearby=${lat.toFixed(2)},${lon.toFixed(2)},${km}&include=images,location,urls,player&limit=30&lang=de`;
+  const quelle = await fetch(ziel, {
+    headers: { 'x-windy-api-key': env.WINDY_KEY },
+    cf: { cacheTtl: 300, cacheEverything: true }
+  });
+  return new Response(quelle.body, { status: quelle.status, headers: {
+    ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=300' } });
+}
+
 const LOKAL = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 const DURCHREICHEN = ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified'];
@@ -119,7 +151,15 @@ export default {
       return new Response(null, { status: 405, headers: { ...cors, Allow: 'GET, HEAD, OPTIONS' } });
     }
 
-    const t = PFAD.exec(new URL(request.url).pathname);
+    const adresse = new URL(request.url);
+    if (adresse.pathname === '/webcams') {
+      if (request.method !== 'GET') return new Response(null, { status: 405, headers: { ...cors, Allow: 'GET, OPTIONS' } });
+      const warte = zuViel('sonst', request.headers.get('CF-Connecting-IP') || 'lokal', Date.now());
+      if (warte) return new Response('Zu viele Abfragen — bitte später noch einmal.', { status: 429, headers: { ...cors, 'Retry-After': String(warte) } });
+      return webcams(adresse, env, cors);
+    }
+
+    const t = PFAD.exec(adresse.pathname);
     if (!t) return new Response('Unbekannter Pfad', { status: 404, headers: cors });
     // [Pfad, Art, Ost, Nord]
     const treffer = t[1] ? t : t[4] ? [t[0], t[4], t[5], t[6]] : t[10] ? [t[0], t[10], t[11], t[12]]

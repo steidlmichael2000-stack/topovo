@@ -6,7 +6,7 @@
 <!-- Nur eigene Skripte. Bilder und Abfragen dürfen an jede https-Adresse, weil der
      eigene WMS frei eintragbar ist. Alle Apps teilen sich diese Herkunft und damit
      Speicher und Caches, deshalb gilt die CSP als zweite Verteidigungslinie hinter esc(). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src https://webcams.windy.com">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Topovo</title>
 <meta name="description" content="Kartenwerkzeug für den Außendienst: Streckenkilometer verorten, Gelände- und Querprofile mit PDF, Messen, Abstecken, KML-Dateien, amtliche Luftbilder und Regenradar.">
@@ -404,9 +404,18 @@
       <div class="seg">
         <button id="wetterHolen" class="seg-btn" type="button" data-ik="neu">Aktualisieren</button>
       </div>
+      <!-- Webcams von Windy um dieselbe Stelle (webcamsHolen in app.js). Ein Tipp aufs Bild
+           öffnet die Kamera bei Windy — so verlangen es deren Bedingungen. -->
+      <p class="pal-label">Webcams in der Nähe</p>
+      <div class="cams" id="webcams" aria-live="polite"></div>
+      <p class="cams-quelle" id="webcamQuelle" hidden>Webcams provided by
+        <a href="https://www.windy.com/" target="_blank" rel="noopener">windy.com</a> —
+        <a href="https://www.windy.com/webcams/add" target="_blank" rel="noopener">add a webcam</a></p>
       <p class="pal-label">Auf der Karte</p>
       <div class="seg" role="group" aria-label="Wetter auf der Karte">
         <button class="seg-btn" type="button" id="radarBtn" data-ik="radar">Regenradar</button>
+        <!-- Webcams von Windy als Symbole auf der Karte, ab Zoomstufe 9 (camAuflage in app.js) -->
+        <button class="seg-btn" type="button" id="camBtn" data-ik="kamera">Webcams</button>
       </div>
       <button type="button" class="erkl-knopf" aria-expanded="false" aria-controls="erklWetter">Erklärung</button>
       <div class="erkl" id="erklWetter" hidden>
@@ -418,6 +427,12 @@
       ICON des DWD), viertelstündlich, keine Messung vor Ort: rund ±1 hPa und ±1–2 °C. Das macht
       etwa ±2 ppm, also 2 mm auf 1 km. Für mehr ein eigenes Barometer und Thermometer am Instrument.
       An Open-Meteo geht dafür die Lage auf rund 100 m gerundet.</p>
+      <p class="fine"><strong>Webcams</strong> sind die Kameras von Windy.com im Umkreis von 25 km um
+      dieselbe Stelle, die nächsten zuerst, mit Entfernung und Alter des Bilds. Ein Tipp öffnet die
+      Kamera bei Windy mit Zeitraffer des Tages. <em>Webcams</em> unter „Auf der Karte“ zeigt sie
+      als Symbole, ab Zoomstufe 9 und beim Verschieben nachgeladen; ein Tipp aufs Symbol zeigt das
+      Bild. Die Bilder gibt Windy nur als kleine Vorschau und nur für ein paar Minuten heraus;
+      abgelegt wird davon nichts.</p>
       <p class="fine"><strong>Regenradar</strong> ist das Niederschlagsradar des Deutschen
       Wetterdienstes, alle 5 Minuten neu, in 1 km Auflösung. Die Leiste oben geht eine Stunde zurück
       und zwei Stunden voraus — rechts der Marke ist es Vorhersage, keine Messung. ▶ spielt den
@@ -602,6 +617,7 @@
       interpoliert · Starkregen KOSTRA-DWD-2020: Datenbasis Deutscher Wetterdienst (CC BY 4.0),
       Einzelwerte umgerechnet · Wetterdaten:
       <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0) ·
+      Webcams provided by <a href="https://www.windy.com/" target="_blank" rel="noopener">windy.com</a> ·
       Schriftzug Topovo aus Comfortaa (The Comfortaa Project Authors,
       SIL Open Font License 1.1)</p>
       <p class="fine">Lizenztexte:
@@ -716,6 +732,22 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+<!-- Webcam von Windy im eingebetteten Player (Zeitraffer der letzten 24 h), damit man dafür
+     die App nicht verlassen muss. Windy erlaubt das Einbetten des Players ausdrücklich. -->
+<div class="cam-spieler" id="camSpieler" hidden role="dialog" aria-modal="true" aria-labelledby="camSpielerTitel">
+  <div class="cam-spieler-kasten">
+    <div class="cam-spieler-kopf">
+      <b id="camSpielerTitel"></b>
+      <button type="button" class="bb-close" id="camSpielerZu" aria-label="Webcam schließen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="cam-spieler-bild"><iframe id="camSpielerFrame" title="Webcam-Player von Windy" allow="fullscreen" referrerpolicy="no-referrer"></iframe></div>
+    <p class="cams-quelle"><span id="camSpielerAlter"></span>Webcams provided by
+      <a href="https://www.windy.com/" target="_blank" rel="noopener">windy.com</a> —
+      <a href="https://www.windy.com/webcams/add" target="_blank" rel="noopener">add a webcam</a></p>
+  </div>
+</div>
 
 <script src="vendor/leaflet.js"></script>
 <!-- Kartendrehung: Leaflet kann das nicht von Haus aus, leaflet-rotate ergaenzt

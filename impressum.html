@@ -98,7 +98,9 @@
     <li><strong>Amtliche Geodaten:</strong> Bayerische Vermessungsverwaltung und Landesamt für
     Geoinformation und Landentwicklung Baden-Württemberg (Orthophotos, Relief, Flurstücke,
     Festpunkte, Höhen, Gebäude) sowie für das Orthophoto DOP20 die Vermessungsverwaltungen der
-    übrigen Länder, jeweils nur für den gezeigten Kartenausschnitt.</li>
+    übrigen Länder, Geobasis NRW (Höhen, Laserpunkte, Gebäude) und das tschechische Vermessungsamt
+    ČÚZK (Orthophoto, Relief, Katasterkarte, Höhen), jeweils nur für den gezeigten
+    Kartenausschnitt bzw. die angetippte Stelle.</li>
     <li><strong>Höhen und Gebäude über einen Vermittler:</strong> Weil die Server der
     Vermessungsverwaltungen keine Abrufe aus fremden Web-Apps zulassen, laufen diese Anfragen über
     einen kleinen Cloudflare Worker (Cloudflare, Inc., USA). Der Worker reicht sie nur weiter und
@@ -109,6 +111,9 @@
     <li><strong>Route mit dem Auto:</strong> Valhalla beim FOSSGIS e.V., mit Start und Ziel der
     Route — nur wenn du eine Route anforderst.</li>
     <li><strong>Wetter:</strong> Open-Meteo, mit der Koordinate des Punkts.</li>
+    <li><strong>Webcams:</strong> Windy.com (Windyty, SE, Tschechien) über den genannten Cloudflare
+    Worker, mit der Koordinate auf rund 1 km gerundet; die Vorschaubilder lädt dein Browser danach
+    direkt von Windy — nur wenn du den Abschnitt Wetter öffnest.</li>
     <li><strong>Regenradar:</strong> Deutscher Wetterdienst.</li>
     <li><strong>Eigener WMS-Layer:</strong> der Dienst, dessen Adresse du selbst einträgst.</li>
   </ul>
